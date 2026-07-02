@@ -39,3 +39,4 @@ yarn-error.log*
 
 # 内部ドキュメント（要件定義書は公開しない）
 *.docx
+.vercel

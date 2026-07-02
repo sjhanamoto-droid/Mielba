@@ -13,8 +13,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")           // プール接続（アプリ実行時）
+  directUrl = env("DATABASE_URL_UNPOOLED")   // 直結（マイグレーション/db push 時）
 }
 
 // ──────────────────────── AppSetting（アプリ設定・会社情報） ────────────────────────

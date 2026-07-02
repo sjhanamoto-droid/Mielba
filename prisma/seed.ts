@@ -18,6 +18,15 @@ function photo(label: string, c1: string, c2: string): string {
 }
 
 async function main() {
+  // 本番ビルド時など：既にデータがあれば上書きしない（SEED_ONLY_IF_EMPTY=1 のとき）
+  if (process.env.SEED_ONLY_IF_EMPTY === "1") {
+    const existing = await db.user.count();
+    if (existing > 0) {
+      console.log("既にデータが存在するためシードをスキップします。");
+      return;
+    }
+  }
+
   console.log("🌱 既存データを削除中...");
   // 依存関係の末端から削除
   await db.comment.deleteMany();
