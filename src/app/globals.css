@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: "Noto Sans JP", system-ui, sans-serif;
+    --app-max: 560px;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface-subtle text-ink antialiased;
+    font-feature-settings: "palt";
+    overscroll-behavior-y: none;
+  }
+
+  /* 数値・コードを読みやすく */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* スクロールバーを控えめに */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font-family: inherit;
+  }
+
+  /* iOS のズーム防止（フォントサイズ16px以上） */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  /* アプリの中央寄せコンテナ（スマホ幅基準） */
+  .app-container {
+    @apply mx-auto w-full max-w-app;
+  }
+
+  /* 安全領域（ノッチ・ホームバー） */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pb-nav {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+
+  /* カード */
+  .card {
+    @apply rounded-2xl bg-surface shadow-card border border-line;
+  }
+
+  /* セクション見出し */
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-wide text-ink-muted;
+  }
+
+  /* タップ可能な行 */
+  .tap-row {
+    @apply active:scale-[0.99] transition-transform;
+  }
+}

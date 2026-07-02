@@ -1,0 +1,427 @@
+// Mielba — 建設業向け現場管理アプリ
+// データモデル（要件定義書 v0.3 §5 準拠）
+// 顧客（元請企業）を頂点に、現場を中心軸として各エンティティが紐づく。
+// 将来フェーズ（原価・在庫・交通費・タイムライン）は nullable 項目として構造のみ確保する。
+//
+// 注: 区分は String + アプリ層(zod)で値を制約する。許容値は src/lib/constants.ts に集約。
+//     （旧: SQLite。本番 Vercel 向けに PostgreSQL へ移行）
+
+generator client {
+  provider      = "prisma-client-js"
+  // native = ローカル / rhel-openssl-3.0.x = Vercel(サーバーレス) ランタイム
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────── AppSetting（アプリ設定・会社情報） ────────────────────────
+// シングルトン（id="singleton" の1行）。管理者が編集する全社設定。
+model AppSetting {
+  id               String   @id @default("singleton")
+  companyName      String?
+  companyAddress   String?
+  companyPhone     String?
+  invoiceNumber    String? // 自社のインボイス登録番号
+  defaultStartTime String   @default("08:00") // 日報の作業開始の初期値
+  defaultEndTime   String   @default("17:00") // 日報の作業終了の初期値
+  updatedAt        DateTime @updatedAt
+}
+
+// ───────────────────────────── User（ユーザー） ─────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("STAFF") // ADMIN | STAFF
+  department   String?
+  avatarColor  String   @default("#2f63f5")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reports        DailyReport[]
+  comments       Comment[]
+  assignedTodos  Todo[]          @relation("TodoAssignee")
+  createdTodos   Todo[]          @relation("TodoCreator")
+  events         CalendarEvent[] @relation("EventOwner")
+  createdEvents  CalendarEvent[] @relation("EventCreator")
+  assignments    SiteAssignment[]
+  siteVisits     SiteVisit[]
+  eventParticipations EventParticipant[]
+}
+
+// ─────────────────────── Customer（顧客／元請企業マスター） ───────────────────────
+model Customer {
+  id                 String   @id @default(cuid())
+  name               String // 会社名（正式名称）— 表記統一の基準
+  corporateNumber    String? // 法人番号 13桁
+  invoiceNumber      String? // インボイス登録番号 T+13桁
+  industry           String? // 業種
+  capitalScale       String? // 資本金規模
+  registrationType   String   @default("PRIME") // PRIME(元請) | SUBCONTRACTOR(一次下請) | OWNER(施主)
+  tradeStatus        String   @default("NEW") // NEW(新規) | CONTINUING(継続) | SUSPENDED(取引停止)
+  firstTradeDate     DateTime?
+
+  // 住所
+  headOfficeAddress  String? // 本社住所
+  billingAddress     String? // 請求書送付先住所（本社と異なる場合）
+
+  // 入金・請求条件
+  closingDay         String? // 締め日（例: 末締め）
+  paymentDueTerm     String? // 支払期日
+  paymentMethod      String? // BANK(振込) | NOTE(手形) | DENSAI(でんさい)
+  feeBearer          String? // 振込手数料の負担区分
+
+  // その他
+  memo               String?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  contacts ContactPerson[]
+  sites    Site[]
+}
+
+// ──────────────────────── ContactPerson（顧客の担当者） ────────────────────────
+model ContactPerson {
+  id          String   @id @default(cuid())
+  customerId  String
+  name        String
+  department  String? // 部署
+  position    String? // 役職
+  phone       String?
+  mobile      String?
+  email       String?
+  contactType String   @default("SITE") // SITE(現場) | ACCOUNTING(経理) | APPROVER(決裁)
+  isActive    Boolean  @default(true) // 異動対応（過去担当は false）
+  activeFrom  DateTime?
+  activeTo    DateTime?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+// ───────────────────────── Site（現場／案件マスター） ─────────────────────────
+model Site {
+  id               String   @id @default(cuid())
+  customerId       String
+  name             String // 案件名
+  projectCode      String? // 案件コード
+  constructionCode String? // 工事コード
+  projectType      String   @default("REFORM") // REFORM | RENOVATION | NEWBUILD | MAINTENANCE
+  projectStatus    String   @default("ESTIMATING") // ESTIMATING|ORDERED|STARTED|IN_PROGRESS|COMPLETED|CLOSED
+  siteStatus       String   @default("SURVEY") // SURVEY(現調) | ACTIVE(進行中) | PAST(過去)
+
+  // 場所・契約
+  locationName     String? // 作業場所の名称
+  address          String? // 住所
+  keybox           String? // キーBOX（設置場所・解錠情報）
+  siteContactName  String? // 現場側担当者名
+  receivedDate     DateTime? // 受注日
+  contractNumber   String? // 契約書番号
+
+  // 体制
+  departmentInCharge String? // 自社担当部署
+  siteManager        String? // 現場責任者
+  salesRep           String? // 営業担当
+
+  // 工程・期間
+  plannedStartDate DateTime? // 着工予定日
+  plannedEndDate   DateTime? // 完工予定日
+  actualStartDate  DateTime? // 着工実績日
+  actualEndDate    DateTime? // 完工実績日
+  progressRate     Int      @default(0) // 進捗率（%）
+
+  // 引き継ぎ
+  handoverNote     String? // 引き継ぎ事項（前回状況・注意点・残作業）
+
+  memo             String?
+
+  // ── 将来フェーズ：金額・収支（項目定義のみ。入力UI/集計は将来有効化） ──
+  billingStatus     String? // 未請求|請求済|一部入金|入金完了
+  contractAmount    Int? // 契約金額（請負金額）
+  estimateAmount    Int? // 見積金額
+  orderAmount       Int? // 受注金額
+  budgetCost        Int? // 予算原価
+  executionBudget   Int? // 実行予算
+  actualMaterialCost Int? // 原価実績：材料費
+  actualLaborCost    Int? // 原価実績：労務費
+  actualOutsourceCost Int? // 原価実績：外注費
+  actualExpenseCost  Int? // 原価実績：経費
+  billedAmount      Int? // 請求済金額
+  paidAmount        Int? // 入金済金額
+  grossProfit       Int? // 粗利
+
+  // ── 将来フェーズ：法令・書類（項目定義のみ） ──
+  constructionPermitNumber String? // 建設業許可番号
+  hasConstructionSystemLedger Boolean? // 施工体制台帳
+  hasSafetyDocuments       Boolean? // 安全書類
+  hasAttachedDrawings      Boolean? // 図面・帳票添付フラグ
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  survey      Survey?
+  reports     DailyReport[]
+  events      CalendarEvent[]
+  todos       Todo[]
+  assignments SiteAssignment[]
+  partners    SitePartner[]
+  visits      SiteVisit[]
+
+  // 関連現場リンク（同一住所）— 双方向に検索する
+  relationsA SiteRelation[] @relation("SiteRelationA")
+  relationsB SiteRelation[] @relation("SiteRelationB")
+
+  @@index([customerId])
+  @@index([siteStatus])
+}
+
+// 協力会社（下請）情報
+model SitePartner {
+  id      String  @id @default(cuid())
+  siteId  String
+  name    String
+  role    String? // 担当工種・役割
+  contact String?
+  site    Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+}
+
+// 職人の割当（現場 × ユーザー）— 日報の個人×日と連動
+model SiteAssignment {
+  id     String @id @default(cuid())
+  siteId String
+  userId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, userId])
+  @@index([siteId])
+  @@index([userId])
+}
+
+// 現場入り（出面）— その日「誰がどの現場に行くか」。日報の起点。
+// 配属(SiteAssignment, 静的なメンバープール)とは別概念で、日ごとに変わる。
+model SiteVisit {
+  id          String   @id @default(cuid())
+  siteId      String
+  userId      String
+  date        DateTime // 対象日（ローカル午前0時）
+  note        String?
+  createdById String? // 入力者（管理者の配員 or 本人の自己申告）
+  createdAt   DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, userId, date])
+  @@index([userId, date])
+  @@index([siteId, date])
+  @@index([date])
+}
+
+// 関連現場リンク（同一住所の現場を相互参照）
+model SiteRelation {
+  id          String @id @default(cuid())
+  siteAId     String
+  siteBId     String
+  note        String?
+  createdAt   DateTime @default(now())
+  siteA Site @relation("SiteRelationA", fields: [siteAId], references: [id], onDelete: Cascade)
+  siteB Site @relation("SiteRelationB", fields: [siteBId], references: [id], onDelete: Cascade)
+
+  @@unique([siteAId, siteBId])
+  @@index([siteAId])
+  @@index([siteBId])
+}
+
+// ──────────────────────────── Survey（現調記録） ────────────────────────────
+model Survey {
+  id            String   @id @default(cuid())
+  siteId        String   @unique
+  address       String? // 住所
+  keybox        String? // キーBOX
+  situationMemo String? // 現場状況メモ（調査時の所見）
+  relatedNote   String? // 関連現場メモ
+  surveyedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  site   Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  photos Photo[]
+}
+
+// ─────────────────────────── DailyReport（日報） ───────────────────────────
+// 入力単位は「個人 × 日」。同一現場・同一日に複数人分が並列で存在する。
+model DailyReport {
+  id          String   @id @default(cuid())
+  siteId      String
+  userId      String
+  workDate    DateTime // 作業日
+  startTime   String   @default("08:00") // 作業開始（勤怠を内包・初期値8:00）
+  endTime     String   @default("17:00") // 作業終了（勤怠を内包・初期値17:00）
+  detail      String? // 現場詳細（当日の作業内容・状況）
+  aiSummary   String? // AIサポートによる要約
+  memo        String? // 注意点等のメモ（現場メモ・申し送り）
+  status      String   @default("DRAFT") // DRAFT(未提出) | SUBMITTED(提出済)
+  submittedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  site          Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  materials     MaterialUse[]
+  orders        MaterialOrder[]
+  nextProcesses NextProcess[]
+  photos        Photo[]
+  comments      Comment[]
+
+  @@index([siteId])
+  @@index([userId])
+  @@index([workDate])
+  @@unique([siteId, userId, workDate]) // 個人×日×現場で1枚
+}
+
+// 使用材料・数量
+model MaterialUse {
+  id       String  @id @default(cuid())
+  reportId String
+  name     String
+  quantity String? // 数量（単位込みの自由入力も許容）
+  unit     String?
+  report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+// 材料発注 → 配達予定日
+model MaterialOrder {
+  id           String   @id @default(cuid())
+  reportId     String
+  name         String
+  quantity     String?
+  supplier     String?
+  deliveryDate DateTime? // 配達予定日（カレンダー・現場ビューに反映）
+  report       DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+// 次回工程打合せ → 絡む業者 → 支給品納品日
+model NextProcess {
+  id                String   @id @default(cuid())
+  reportId          String
+  content           String? // 次回工程打合せ内容
+  vendors           String? // 絡む業者（複数可・カンマ区切り）
+  supplyDeliveryDate DateTime? // 支給品納品日（カレンダー・現場ビューに反映）
+  report            DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+// ──────────────────────────── Comment（コメント） ────────────────────────────
+model Comment {
+  id        String   @id @default(cuid())
+  reportId  String
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+  report    DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+// ──────────────────────────── Photo（写真／動画） ────────────────────────────
+model Photo {
+  id        String   @id @default(cuid())
+  reportId  String?
+  surveyId  String?
+  dataUrl   String // 圧縮済み base64（軽量・高速アップロード）
+  caption   String? // 連動する文章
+  kind      String   @default("WORK") // WORK | COMPANY_STOCK(弊社分) | SURVEY | OTHER
+  isVideo   Boolean  @default(false)
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now())
+
+  report DailyReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  survey Survey?      @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([surveyId])
+}
+
+// ──────────────────────── CalendarEvent（現場・個人予定） ────────────────────────
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  siteId      String?
+  ownerId     String? // 個人予定の所有者
+  title       String
+  date        DateTime // 予定日（日単位）
+  startTime   String? // "HH:mm"（任意）
+  endTime     String?
+  allDay      Boolean  @default(true)
+  category    String? // 予定のカテゴリー（打合せ/作業/検査/搬入/納品/その他）
+  location    String? // 場所（現場住所の既定 or 自由入力）
+  note        String? // 内容
+  source      String   @default("MANUAL") // MANUAL | DELIVERY(配達) | SUPPLY(支給品) | PROCESS(工程) | MILESTONE
+  reportId    String? // 日報由来の予定の出所
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  site         Site?              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  owner        User?              @relation("EventOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdBy    User?              @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  participants EventParticipant[]
+
+  @@index([siteId])
+  @@index([date])
+}
+
+// 予定の参加者（現場に行く人・複数）。SITE予定では現場入り(SiteVisit)にも連動する。
+model EventParticipant {
+  id      String @id @default(cuid())
+  eventId String
+  userId  String
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+// ──────────────────────────────── Todo（タスク） ────────────────────────────────
+model Todo {
+  id          String   @id @default(cuid())
+  siteId      String? // 現場TODO（null なら個人TODO）
+  scope       String   @default("SITE") // SITE | PERSONAL
+  title       String
+  detail      String?
+  assigneeId  String?
+  createdById String?
+  dueDate     DateTime?
+  status      String   @default("OPEN") // OPEN(未対応) | IN_PROGRESS(対応中) | DONE(完了)
+  fromReportId String? // 日報の継続事項から起票
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  site      Site? @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  assignee  User? @relation("TodoAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy User? @relation("TodoCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([siteId])
+  @@index([assigneeId])
+  @@index([status])
+}
