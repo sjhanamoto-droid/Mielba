@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
@@ -13,12 +13,17 @@ import {
   ArrowRight,
   CalendarClock,
   Pencil,
+  HardHat,
+  Loader2,
 } from "lucide-react";
 import { EventForm } from "./event-form";
 import { deleteEvent } from "./actions";
+import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton, Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/ui/misc";
 import {
   EVENT_SOURCE_LABEL,
@@ -50,6 +55,13 @@ export type CalendarEventData = {
   participants: PersonRef[]; // 参加者（現場に行く人・複数）
 };
 
+// 自分の現場入り（出面）。読み取り専用の予定チップとして表示する。
+export type CalendarVisitData = {
+  id: string;
+  date: string; // ISO 文字列
+  site: { id: string; name: string };
+};
+
 type SiteOption = { id: string; name: string; address?: string | null };
 type UserOption = { id: string; name: string; avatarColor: string };
 
@@ -66,15 +78,10 @@ function pad(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
-// "YYYY-MM-DD"（ローカル日付キー）
+// "YYYY-MM-DD"（暦日キー。クライアントは日本のユーザー前提だが、
+// Intl ベースの jstDateKey で「今日」判定をサーバー側と統一する）
 function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-// "YYYY-MM-DD" → ローカル Date
-function parseDayKey(key: string): Date {
-  const [y, m, d] = key.split("-").map(Number);
-  return new Date(y, m - 1, d);
+  return jstDateKey(d);
 }
 
 // 時刻順（終日は先頭）にソート
@@ -85,6 +92,39 @@ function sortEvents(list: CalendarEventData[]): CalendarEventData[] {
     const tb = b.startTime ?? "";
     return ta.localeCompare(tb);
   });
+}
+
+// ─────────────────── 自分の現場入り（読み取り専用チップ） ───────────────────
+// EVENT 色とは別の識別：ブランド色の破線ボーダー＋ヘルメットアイコン
+function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compact?: boolean }) {
+  return (
+    <span
+      title={`現場入り：${visit.site.name}`}
+      className={cn(
+        "flex items-center gap-1 rounded-md border border-dashed border-brand-400 bg-brand-50/60 text-brand-700",
+        compact ? "px-1 py-0.5 text-[10px] font-semibold" : "px-2 py-1 text-[11px] font-semibold",
+      )}
+    >
+      <HardHat className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"} aria-hidden />
+      <span className="truncate">{visit.site.name}</span>
+    </span>
+  );
+}
+
+// リスト表示用（選択日の予定リスト・日ビュー）
+function VisitRow({ visit }: { visit: CalendarVisitData }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+        <HardHat className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-ink">{visit.site.name}</p>
+        <p className="text-xs text-ink-muted">現場入り（出面）</p>
+      </div>
+      <Badge tone="brand">現場入り</Badge>
+    </div>
+  );
 }
 
 // 1件の予定サマリー（クリックで詳細モーダルを開く）
@@ -157,13 +197,11 @@ function EventDetailModal({
   onClose,
   onEdit,
   onDelete,
-  deleting,
 }: {
   event: CalendarEventData | null;
   onClose: () => void;
   onEdit: (ev: CalendarEventData) => void;
-  onDelete: (id: string) => void;
-  deleting: boolean;
+  onDelete: (ev: CalendarEventData) => void;
 }) {
   if (!event) return null;
   const ev = event;
@@ -271,11 +309,7 @@ function EventDetailModal({
               <Button
                 variant="ghost"
                 className="text-status-danger hover:bg-red-50"
-                disabled={deleting}
-                onClick={() => {
-                  onDelete(ev.id);
-                  onClose();
-                }}
+                onClick={() => onDelete(ev)}
               >
                 <Trash2 className="h-4 w-4" />
                 削除
@@ -348,8 +382,34 @@ function MonthEventChip({
   );
 }
 
+// ナビ用の丸ボタン（前/次）。router.push + useTransition の pending 中は無効化。
+function NavArrow({
+  onClick,
+  label,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken disabled:opacity-50 md:hover:bg-surface-sunken"
+    >
+      {children}
+    </button>
+  );
+}
+
 export function CalendarView({
   events,
+  visits = [],
   view,
   year,
   month, // 1-12
@@ -358,6 +418,7 @@ export function CalendarView({
   users,
 }: {
   events: CalendarEventData[];
+  visits?: CalendarVisitData[];
   view: CalendarViewMode;
   year: number;
   month: number;
@@ -365,8 +426,18 @@ export function CalendarView({
   sites: SiteOption[];
   users: UserOption[];
 }) {
-  const today = new Date();
-  const todayKey = dayKey(today);
+  const todayKey = jstDateKey();
+  const router = useRouter();
+  const toast = useToast();
+
+  // 月/週/日送り・ビュー切替は router.push + useTransition。
+  // 低速回線で「押したのに変わらない」無反応に見えないよう、pending 中は薄化＋スピナー。
+  const [navPending, startNav] = useTransition();
+  function navigate(href: string) {
+    startNav(() => {
+      router.push(href, { scroll: false });
+    });
+  }
 
   // 日付キー → イベント配列
   const byDay = new Map<string, CalendarEventData[]>();
@@ -376,24 +447,40 @@ export function CalendarView({
     if (arr) arr.push(ev);
     else byDay.set(key, [ev]);
   }
+  // 日付キー → 自分の現場入り
+  const visitsByDay = new Map<string, CalendarVisitData[]>();
+  for (const v of visits) {
+    const key = dayKey(new Date(v.date));
+    const arr = visitsByDay.get(key);
+    if (arr) arr.push(v);
+    else visitsByDay.set(key, [v]);
+  }
 
   // 月ビュー：選択中の日付（既定は今日が当月なら今日、なければ1日）
+  const todayDate = dateFromKey(todayKey);
   const todayInMonth =
-    today.getFullYear() === year && today.getMonth() + 1 === month;
+    todayDate.getFullYear() === year && todayDate.getMonth() + 1 === month;
   const [selectedDay, setSelectedDay] = useState<number>(
-    todayInMonth ? today.getDate() : 1,
+    todayInMonth ? todayDate.getDate() : 1,
   );
 
   const [formOpen, setFormOpen] = useState(false);
   const [formDate, setFormDate] = useState<string | null>(null);
   const [editEvent, setEditEvent] = useState<CalendarEventData | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventData | null>(null);
-  const [isPending, startTransition] = useTransition();
+  // 削除は確認ダイアログを挟む（確認なし即削除の修正）
+  const [deleteTarget, setDeleteTarget] = useState<CalendarEventData | null>(null);
 
-  function handleDelete(id: string) {
-    startTransition(async () => {
-      await deleteEvent(id);
-    });
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    const r = await deleteEvent(deleteTarget.id);
+    if (r?.error) {
+      toast(r.error, { type: "error" });
+    } else {
+      toast("予定を削除しました");
+      setSelectedEvent(null);
+    }
+    setDeleteTarget(null);
   }
 
   function openForm(dateKey: string) {
@@ -413,7 +500,7 @@ export function CalendarView({
     setEditEvent(null);
   }
 
-  // ── ビュー切替チップのリンク先 ──
+  // ── ビュー切替のリンク先 ──
   // 月：?ym=YYYY-MM を維持。週/日：?d=基準日 を使う。
   const ymStr = `${year}-${pad(month)}`;
   const monthHref = `/calendar?view=month&ym=${ymStr}`;
@@ -423,7 +510,7 @@ export function CalendarView({
   return (
     <div className="space-y-4">
       {/* ビュー切替（デスクトップでは間延びしないよう幅を抑える） */}
-      <div className="grid grid-cols-3 gap-1 rounded-full bg-surface-sunken p-1 md:mx-auto md:w-80">
+      <div className="relative grid grid-cols-3 gap-1 rounded-full bg-surface-sunken p-1 md:mx-auto md:w-80">
         {(
           [
             ["day", "日", dayHref],
@@ -431,54 +518,74 @@ export function CalendarView({
             ["month", "月", monthHref],
           ] as const
         ).map(([mode, label, href]) => (
-          <Link
+          <button
             key={mode}
-            href={href}
-            scroll={false}
+            type="button"
+            onClick={() => navigate(href)}
+            disabled={navPending}
             className={cn(
-              "flex h-9 items-center justify-center rounded-full text-sm font-bold transition-colors",
+              "flex h-9 items-center justify-center rounded-full text-sm font-bold transition-colors disabled:opacity-60",
               view === mode
                 ? "bg-surface text-ink shadow-sm"
                 : "text-ink-muted active:bg-surface-subtle md:hover:text-ink-soft",
             )}
           >
             {label}
-          </Link>
+          </button>
         ))}
+        {navPending && (
+          <span className="absolute -right-7 top-1/2 -translate-y-1/2 md:-right-8">
+            <Loader2 className="h-4 w-4 animate-spin text-brand-600" aria-label="読み込み中" />
+          </span>
+        )}
       </div>
 
-      {view === "month" && (
-        <MonthView
-          year={year}
-          month={month}
-          byDay={byDay}
-          todayKey={todayKey}
-          selectedDay={selectedDay}
-          setSelectedDay={setSelectedDay}
-          onAdd={openForm}
-          onSelect={setSelectedEvent}
-        />
-      )}
+      {/* pending 中はカレンダー全体を薄化して「反応している」ことを示す */}
+      <div className={cn(navPending && "pointer-events-none opacity-60 transition-opacity")}>
+        <div className="space-y-4">
+          {view === "month" && (
+            <MonthView
+              year={year}
+              month={month}
+              byDay={byDay}
+              visitsByDay={visitsByDay}
+              todayKey={todayKey}
+              selectedDay={selectedDay}
+              setSelectedDay={setSelectedDay}
+              onAdd={openForm}
+              onSelect={setSelectedEvent}
+              navigate={navigate}
+              navPending={navPending}
+            />
+          )}
 
-      {view === "week" && (
-        <WeekView
-          baseDay={baseDay}
-          byDay={byDay}
-          todayKey={todayKey}
-          onAdd={openForm}
-          onSelect={setSelectedEvent}
-        />
-      )}
+          {view === "week" && (
+            <WeekView
+              baseDay={baseDay}
+              byDay={byDay}
+              visitsByDay={visitsByDay}
+              todayKey={todayKey}
+              onAdd={openForm}
+              onSelect={setSelectedEvent}
+              navigate={navigate}
+              navPending={navPending}
+            />
+          )}
 
-      {view === "day" && (
-        <DayView
-          baseDay={baseDay}
-          byDay={byDay}
-          todayKey={todayKey}
-          onAdd={openForm}
-          onSelect={setSelectedEvent}
-        />
-      )}
+          {view === "day" && (
+            <DayView
+              baseDay={baseDay}
+              byDay={byDay}
+              visitsByDay={visitsByDay}
+              todayKey={todayKey}
+              onAdd={openForm}
+              onSelect={setSelectedEvent}
+              navigate={navigate}
+              navPending={navPending}
+            />
+          )}
+        </div>
+      </div>
 
       {/* 凡例（全ビュー共通） */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1">
@@ -491,6 +598,10 @@ export function CalendarView({
             {src === "MANUAL" ? "手動予定" : `日報：${EVENT_SOURCE_LABEL[src]}`}
           </span>
         ))}
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
+          <HardHat className="h-3 w-3 text-brand-600" aria-hidden />
+          自分の現場入り
+        </span>
       </div>
 
       {formOpen && (
@@ -507,8 +618,23 @@ export function CalendarView({
         event={selectedEvent}
         onClose={() => setSelectedEvent(null)}
         onEdit={handleEdit}
-        onDelete={handleDelete}
-        deleting={isPending}
+        onDelete={(ev) => setDeleteTarget(ev)}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="予定を削除しますか？"
+        description={
+          deleteTarget ? (
+            <>
+              「{deleteTarget.title}」を削除します。この操作は取り消せません。
+            </>
+          ) : undefined
+        }
+        confirmLabel="削除する"
+        danger
       />
     </div>
   );
@@ -519,20 +645,26 @@ function MonthView({
   year,
   month,
   byDay,
+  visitsByDay,
   todayKey,
   selectedDay,
   setSelectedDay,
   onAdd,
   onSelect,
+  navigate,
+  navPending,
 }: {
   year: number;
   month: number;
   byDay: Map<string, CalendarEventData[]>;
+  visitsByDay: Map<string, CalendarVisitData[]>;
   todayKey: string;
   selectedDay: number;
   setSelectedDay: (d: number) => void;
   onAdd: (dateKey: string) => void;
   onSelect: (ev: CalendarEventData) => void;
+  navigate: (href: string) => void;
+  navPending: boolean;
 }) {
   // 当月のセル配列を生成
   const firstDay = new Date(year, month - 1, 1);
@@ -548,33 +680,32 @@ function MonthView({
   const prevYm = month === 1 ? `${year - 1}-12` : `${year}-${pad(month - 1)}`;
   const nextYm = month === 12 ? `${year + 1}-01` : `${year}-${pad(month + 1)}`;
 
-  const selectedDate = new Date(year, month - 1, selectedDay);
-  const selectedKey = dayKey(selectedDate);
+  const selectedKey = `${year}-${pad(month)}-${pad(selectedDay)}`;
+  const selectedDate = dateFromKey(selectedKey);
   const selectedEvents = sortEvents(byDay.get(selectedKey) ?? []);
+  const selectedVisits = visitsByDay.get(selectedKey) ?? [];
 
   return (
     <>
       {/* 月ナビ */}
       <div className="flex items-center justify-between">
-        <Link
-          href={`/calendar?view=month&ym=${prevYm}`}
-          scroll={false}
-          aria-label="前の月"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken md:hover:bg-surface-sunken"
+        <NavArrow
+          onClick={() => navigate(`/calendar?view=month&ym=${prevYm}`)}
+          label="前の月"
+          disabled={navPending}
         >
           <ChevronLeft className="h-6 w-6" />
-        </Link>
+        </NavArrow>
         <p className="text-base font-bold text-ink tnum md:text-xl">
           {year}年 {month}月
         </p>
-        <Link
-          href={`/calendar?view=month&ym=${nextYm}`}
-          scroll={false}
-          aria-label="次の月"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken md:hover:bg-surface-sunken"
+        <NavArrow
+          onClick={() => navigate(`/calendar?view=month&ym=${nextYm}`)}
+          label="次の月"
+          disabled={navPending}
         >
           <ChevronRight className="h-6 w-6" />
-        </Link>
+        </NavArrow>
       </div>
 
       {/* デスクトップは2カラム（左：大きな月グリッド / 右：選択日の予定）。スマホは縦積み。 */}
@@ -602,9 +733,9 @@ function MonthView({
                   />
                 );
               }
-              const cellDate = new Date(year, month - 1, day);
-              const key = dayKey(cellDate);
+              const key = `${year}-${pad(month)}-${pad(day)}`;
               const dayEvents = sortEvents(byDay.get(key) ?? []);
+              const dayVisits = visitsByDay.get(key) ?? [];
               const isSelected = day === selectedDay;
               const isToday = key === todayKey;
               const dow = idx % 7;
@@ -631,8 +762,11 @@ function MonthView({
                   >
                     {day}
                   </span>
-                  {/* スマホ：出所色のドット（最大4個） */}
+                  {/* スマホ：現場入りはヘルメット、予定は出所色のドット（最大4個） */}
                   <span className="mt-0.5 flex min-h-[8px] flex-wrap items-center justify-center gap-0.5 md:hidden">
+                    {dayVisits.length > 0 && (
+                      <HardHat className="h-2.5 w-2.5 text-brand-600" aria-label="現場入り" />
+                    )}
                     {dayEvents.slice(0, 4).map((ev) => (
                       <span
                         key={ev.id}
@@ -645,8 +779,11 @@ function MonthView({
                       />
                     ))}
                   </span>
-                  {/* md 以上：ドット＋タイトルで複数件表示 */}
+                  {/* md 以上：現場入りチップ＋（ドット＋タイトル）で複数件表示 */}
                   <span className="hidden min-w-0 flex-col gap-0.5 md:flex">
+                    {dayVisits.map((v) => (
+                      <VisitChip key={v.id} visit={v} compact />
+                    ))}
                     {dayEvents.slice(0, 3).map((ev) => (
                       <MonthEventChip key={ev.id} ev={ev} onSelect={onSelect} />
                     ))}
@@ -678,10 +815,13 @@ function MonthView({
             </button>
           </div>
 
-          {selectedEvents.length === 0 ? (
+          {selectedEvents.length === 0 && selectedVisits.length === 0 ? (
             <EmptyState title="この日の予定はありません" description="「＋予定を追加」から登録できます" />
           ) : (
             <div className="card divide-y divide-line">
+              {selectedVisits.map((v) => (
+                <VisitRow key={v.id} visit={v} />
+              ))}
               {selectedEvents.map((ev) => (
                 <EventRow key={ev.id} ev={ev} onSelect={onSelect} />
               ))}
@@ -735,64 +875,62 @@ function WeekEventChip({
 function WeekView({
   baseDay,
   byDay,
+  visitsByDay,
   todayKey,
   onAdd,
   onSelect,
+  navigate,
+  navPending,
 }: {
   baseDay: string;
   byDay: Map<string, CalendarEventData[]>;
+  visitsByDay: Map<string, CalendarVisitData[]>;
   todayKey: string;
   onAdd: (dateKey: string) => void;
   onSelect: (ev: CalendarEventData) => void;
+  navigate: (href: string) => void;
+  navPending: boolean;
 }) {
-  const base = parseDayKey(baseDay);
-  const weekStart = new Date(base);
-  weekStart.setDate(base.getDate() - base.getDay());
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
+  const base = dateFromKey(baseDay);
+  // 週の起点（日曜）のキー
+  const weekStartKey = addDaysKey(baseDay, -base.getDay());
+  const dayKeys: string[] = [];
+  for (let i = 0; i < 7; i++) dayKeys.push(addDaysKey(weekStartKey, i));
+  const weekStart = dateFromKey(dayKeys[0]);
+  const weekEnd = dateFromKey(dayKeys[6]);
 
-  const prevBase = new Date(weekStart);
-  prevBase.setDate(weekStart.getDate() - 7);
-  const nextBase = new Date(weekStart);
-  nextBase.setDate(weekStart.getDate() + 7);
-
-  const days: Date[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    days.push(d);
-  }
+  const prevKey = addDaysKey(weekStartKey, -7);
+  const nextKey = addDaysKey(weekStartKey, 7);
 
   return (
     <>
       {/* 週ナビ */}
       <div className="flex items-center justify-between">
-        <Link
-          href={`/calendar?view=week&d=${dayKey(prevBase)}`}
-          scroll={false}
-          aria-label="前の週"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken md:hover:bg-surface-sunken"
+        <NavArrow
+          onClick={() => navigate(`/calendar?view=week&d=${prevKey}`)}
+          label="前の週"
+          disabled={navPending}
         >
           <ChevronLeft className="h-6 w-6" />
-        </Link>
+        </NavArrow>
         <p className="text-sm font-bold text-ink tnum md:text-xl">
           {weekStart.getMonth() + 1}/{weekStart.getDate()} 〜 {weekEnd.getMonth() + 1}/{weekEnd.getDate()}
         </p>
-        <Link
-          href={`/calendar?view=week&d=${dayKey(nextBase)}`}
-          scroll={false}
-          aria-label="次の週"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken md:hover:bg-surface-sunken"
+        <NavArrow
+          onClick={() => navigate(`/calendar?view=week&d=${nextKey}`)}
+          label="次の週"
+          disabled={navPending}
         >
           <ChevronRight className="h-6 w-6" />
-        </Link>
+        </NavArrow>
       </div>
 
       {/* スマホ：7日の縦リスト / md 以上：全幅の7カラム週ボード（等高） */}
       <div className="space-y-3 md:grid md:grid-cols-7 md:gap-2 md:space-y-0">
-        {days.map((d) => {
-          const key = dayKey(d);
+        {dayKeys.map((key) => {
+          const d = dateFromKey(key);
           const list = sortEvents(byDay.get(key) ?? []);
+          const dayVisits = visitsByDay.get(key) ?? [];
           const isToday = key === todayKey;
           const dow = d.getDay();
           return (
@@ -840,7 +978,10 @@ function WeekView({
               </div>
               {/* イベント */}
               <div className="space-y-1.5 p-1.5 md:flex-1">
-                {list.length === 0 ? (
+                {dayVisits.map((v) => (
+                  <VisitChip key={v.id} visit={v} />
+                ))}
+                {list.length === 0 && dayVisits.length === 0 ? (
                   <p className="px-1 py-2 text-[11px] text-ink-faint">予定なし</p>
                 ) : (
                   list.map((ev) => <WeekEventChip key={ev.id} ev={ev} onSelect={onSelect} />)
@@ -909,10 +1050,12 @@ function layoutTimed(events: CalendarEventData[]): Placed[] {
 function DayTimeline({
   allDay,
   timed,
+  visits,
   onSelect,
 }: {
   allDay: CalendarEventData[];
   timed: CalendarEventData[];
+  visits: CalendarVisitData[];
   onSelect: (ev: CalendarEventData) => void;
 }) {
   const HOUR_H = 60;
@@ -931,11 +1074,14 @@ function DayTimeline({
 
   return (
     <div className="card p-3">
-      {/* 終日 */}
-      {allDay.length > 0 && (
+      {/* 終日（現場入りも終日枠に表示） */}
+      {(allDay.length > 0 || visits.length > 0) && (
         <div className="mb-3 flex gap-2 border-b border-line pb-3">
           <div className="w-14 shrink-0 pt-1 text-right text-[11px] font-bold text-ink-muted">終日</div>
           <div className="flex flex-1 flex-wrap gap-1.5">
+            {visits.map((v) => (
+              <VisitChip key={v.id} visit={v} />
+            ))}
             {allDay.map((ev) => {
               const color = EVENT_SOURCE_COLOR[ev.source as EventSource] ?? EVENT_SOURCE_COLOR.MANUAL;
               return (
@@ -1021,26 +1167,31 @@ function DayTimeline({
 function DayView({
   baseDay,
   byDay,
+  visitsByDay,
   todayKey,
   onAdd,
   onSelect,
+  navigate,
+  navPending,
 }: {
   baseDay: string;
   byDay: Map<string, CalendarEventData[]>;
+  visitsByDay: Map<string, CalendarVisitData[]>;
   todayKey: string;
   onAdd: (dateKey: string) => void;
   onSelect: (ev: CalendarEventData) => void;
+  navigate: (href: string) => void;
+  navPending: boolean;
 }) {
-  const base = parseDayKey(baseDay);
-  const key = dayKey(base);
+  const key = baseDay;
+  const base = dateFromKey(key);
   const isToday = key === todayKey;
 
-  const prev = new Date(base);
-  prev.setDate(base.getDate() - 1);
-  const next = new Date(base);
-  next.setDate(base.getDate() + 1);
+  const prevKey = addDaysKey(key, -1);
+  const nextKey = addDaysKey(key, 1);
 
   const list = sortEvents(byDay.get(key) ?? []);
+  const dayVisits = visitsByDay.get(key) ?? [];
   const allDayEvents = list.filter((e) => e.allDay);
   const timedEvents = list.filter((e) => !e.allDay);
 
@@ -1048,25 +1199,23 @@ function DayView({
     <div className="space-y-4">
       {/* 日ナビ */}
       <div className="flex items-center justify-between">
-        <Link
-          href={`/calendar?view=day&d=${dayKey(prev)}`}
-          scroll={false}
-          aria-label="前の日"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken md:hover:bg-surface-sunken"
+        <NavArrow
+          onClick={() => navigate(`/calendar?view=day&d=${prevKey}`)}
+          label="前の日"
+          disabled={navPending}
         >
           <ChevronLeft className="h-6 w-6" />
-        </Link>
+        </NavArrow>
         <p className={cn("text-base font-bold tnum md:text-xl", isToday ? "text-brand-600" : "text-ink")}>
           {fmtDateWithDay(base)}
         </p>
-        <Link
-          href={`/calendar?view=day&d=${dayKey(next)}`}
-          scroll={false}
-          aria-label="次の日"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken md:hover:bg-surface-sunken"
+        <NavArrow
+          onClick={() => navigate(`/calendar?view=day&d=${nextKey}`)}
+          label="次の日"
+          disabled={navPending}
         >
           <ChevronRight className="h-6 w-6" />
-        </Link>
+        </NavArrow>
       </div>
 
       <div className="flex justify-end px-1">
@@ -1080,12 +1229,22 @@ function DayView({
         </button>
       </div>
 
-      {list.length === 0 ? (
+      {list.length === 0 && dayVisits.length === 0 ? (
         <EmptyState title="この日の予定はありません" description="「＋予定を追加」から登録できます" />
       ) : (
         <>
           {/* スマホ：リスト */}
           <div className="space-y-3 md:hidden">
+            {dayVisits.length > 0 && (
+              <div className="space-y-1.5">
+                <h3 className="px-1 text-xs font-bold text-ink-muted">現場入り</h3>
+                <div className="card divide-y divide-line">
+                  {dayVisits.map((v) => (
+                    <VisitRow key={v.id} visit={v} />
+                  ))}
+                </div>
+              </div>
+            )}
             {allDayEvents.length > 0 && (
               <div className="space-y-1.5">
                 <h3 className="px-1 text-xs font-bold text-ink-muted">終日</h3>
@@ -1109,7 +1268,7 @@ function DayView({
           </div>
           {/* PC/タブレット：全幅タイムライン */}
           <div className="hidden md:block">
-            <DayTimeline allDay={allDayEvents} timed={timedEvents} onSelect={onSelect} />
+            <DayTimeline allDay={allDayEvents} timed={timedEvents} visits={dayVisits} onSelect={onSelect} />
           </div>
         </>
       )}

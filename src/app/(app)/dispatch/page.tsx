@@ -1,29 +1,18 @@
-import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
+import { jstDateKey, dateFromKey, dayRangeForKey, addDaysKey } from "@/lib/date";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
-import { DispatchBoard } from "@/features/visits/dispatch-board";
+import { DispatchBoard, DispatchDateNav, type ReportStatus } from "@/features/visits/dispatch-board";
 import { fmtDateWithDay } from "@/lib/utils";
 
-function pad(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`;
-}
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-function parseDay(s: string | undefined): Date {
-  if (s) {
-    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
-    if (m) {
-      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-      d.setHours(0, 0, 0, 0);
-      return d;
-    }
+// ?d=YYYY-MM-DD を解釈。不正なら「今日」（日本時間の暦日）。
+function parseDayKey(s: string | undefined): string {
+  if (s && /^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+    const d = dateFromKey(s);
+    if (!Number.isNaN(d.getTime())) return s;
   }
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return jstDateKey();
 }
 
 export default async function DispatchPage({
@@ -33,26 +22,35 @@ export default async function DispatchPage({
 }) {
   await requireAdmin();
   const sp = await searchParams;
-  const date = parseDay(sp.d);
-  const dateStr = dayKey(date);
-  const todayStr = dayKey(new Date());
+  const dateStr = parseDayKey(sp.d);
+  const range = dayRangeForKey(dateStr);
+  const todayStr = jstDateKey();
 
-  const prev = new Date(date);
-  prev.setDate(date.getDate() - 1);
-  const next = new Date(date);
-  next.setDate(date.getDate() + 1);
-
-  const sites = await db.site.findMany({
-    where: { siteStatus: "ACTIVE" },
-    include: {
-      customer: { select: { name: true } },
-      assignments: {
-        include: { user: { select: { id: true, name: true, avatarColor: true, active: true } } },
+  const [sites, reports] = await Promise.all([
+    db.site.findMany({
+      where: { siteStatus: "ACTIVE" },
+      include: {
+        customer: { select: { name: true } },
+        assignments: {
+          include: { user: { select: { id: true, name: true, avatarColor: true, active: true } } },
+        },
+        visits: { where: { date: range } },
       },
-      visits: { where: { date } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+      orderBy: { updatedAt: "desc" },
+    }),
+    // 当日の日報（未打刻/下書き/提出済のドット表示用）
+    db.dailyReport.findMany({
+      where: { workDate: range },
+      select: { siteId: true, userId: true, status: true },
+    }),
+  ]);
+
+  const statusByKey = new Map<string, ReportStatus>(
+    reports.map((r) => [
+      `${r.siteId}_${r.userId}`,
+      (r.status === "SUBMITTED" ? "submitted" : "draft") as ReportStatus,
+    ]),
+  );
 
   const rows = sites.map((s) => ({
     id: s.id,
@@ -62,37 +60,24 @@ export default async function DispatchPage({
       .filter((a) => a.user.active)
       .map((a) => ({ id: a.user.id, name: a.user.name, avatarColor: a.user.avatarColor })),
     visitedIds: s.visits.map((v) => v.userId),
+    reportStatusByUserId: Object.fromEntries(
+      s.assignments
+        .filter((a) => a.user.active)
+        .map((a) => [a.user.id, statusByKey.get(`${s.id}_${a.user.id}`) ?? ("none" as ReportStatus)]),
+    ),
   }));
 
   return (
     <div>
       <PageHeader title="配員（現場入り）" subtitle="その日に誰がどの現場へ行くか" backHref="/" />
       <PageContainer>
-        {/* 日付ナビ */}
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <Link
-            href={`/dispatch?d=${dayKey(prev)}`}
-            aria-label="前の日"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft hover:bg-surface-sunken"
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </Link>
-          <div className="text-center">
-            <p className="text-base font-bold text-ink tnum md:text-lg">{fmtDateWithDay(date)}</p>
-            {dateStr !== todayStr && (
-              <Link href="/dispatch" className="text-xs font-semibold text-brand-600">
-                今日に戻る
-              </Link>
-            )}
-          </div>
-          <Link
-            href={`/dispatch?d=${dayKey(next)}`}
-            aria-label="次の日"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft hover:bg-surface-sunken"
-          >
-            <ChevronRight className="h-6 w-6" />
-          </Link>
-        </div>
+        {/* 日付ナビ（クライアント側で isPending 表示） */}
+        <DispatchDateNav
+          prevKey={addDaysKey(dateStr, -1)}
+          nextKey={addDaysKey(dateStr, 1)}
+          isToday={dateStr === todayStr}
+          label={fmtDateWithDay(dateFromKey(dateStr))}
+        />
 
         <DispatchBoard key={dateStr} sites={rows} dateStr={dateStr} />
       </PageContainer>

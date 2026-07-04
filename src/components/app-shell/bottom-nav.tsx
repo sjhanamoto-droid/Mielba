@@ -6,10 +6,10 @@ import { navForRole } from "./nav-items";
 import { cn } from "@/lib/utils";
 
 // スマホ用のボトムナビ（md 未満のみ表示。md 以上は Sidebar）。
-// 役割別ナビの先頭5件をモバイルに表示する（スタッフは日報が前面に）。
+// navForRole は「ちょうど5件」を返す契約（溢れる項目は sidebarNavForRole / AppMenu 側に置く）。
 export function BottomNav({ role }: { role: string }) {
   const pathname = usePathname();
-  const items = navForRole(role).slice(0, 5);
+  const items = navForRole(role);
 
   return (
     <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-app -translate-x-1/2 border-t border-line bg-surface/95 shadow-nav backdrop-blur-md safe-bottom md:hidden">

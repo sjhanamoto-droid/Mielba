@@ -119,11 +119,21 @@ export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
 };
 
 // ── 写真 ──
-export type PhotoKind = "WORK" | "COMPANY_STOCK" | "SURVEY" | "OTHER";
+export type PhotoKind =
+  | "WORK"
+  | "COMPANY_STOCK"
+  | "SURVEY"
+  | "DRAWING"
+  | "SCHEDULE"
+  | "KEYBOX"
+  | "OTHER";
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   WORK: "作業",
   COMPANY_STOCK: "弊社分",
   SURVEY: "現調",
+  DRAWING: "図面",
+  SCHEDULE: "工程表",
+  KEYBOX: "キーBOX",
   OTHER: "その他",
 };
 

@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
+import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
 
 // ── 区分の許容値（@/lib/constants の型に対応） ──
 const PROJECT_TYPES = ["REFORM", "RENOVATION", "NEWBUILD", "MAINTENANCE"] as const;
@@ -31,6 +33,16 @@ const optionalDate = z.preprocess(
   z.string().optional(),
 );
 
+// 空文字 → undefined（任意の0以上整数。人工など）
+const optionalNonNegInt = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z.coerce
+    .number({ invalid_type_error: "数値で入力してください" })
+    .int("整数で入力してください")
+    .min(0, "0以上で入力してください")
+    .optional(),
+);
+
 const siteSchema = z.object({
   customerId: z.string().min(1, "元請企業を選択してください"),
   name: z.string().min(1, "案件名を入力してください"),
@@ -45,8 +57,12 @@ const siteSchema = z.object({
   ),
   locationName: optionalText,
   address: optionalText,
-  keybox: optionalText,
   siteContactName: optionalText,
+  siteContactPhone: optionalText,
+  keyboxNumber: optionalText,
+  keyboxPlace: optionalText,
+  targetManDays: optionalNonNegInt,
+  finalManDays: optionalNonNegInt,
   receivedDate: optionalDate,
   contractNumber: optionalText,
   departmentInCharge: optionalText,
@@ -79,8 +95,12 @@ function parseSiteForm(formData: FormData) {
     billingStatus: formData.get("billingStatus"),
     locationName: formData.get("locationName"),
     address: formData.get("address"),
-    keybox: formData.get("keybox"),
     siteContactName: formData.get("siteContactName"),
+    siteContactPhone: formData.get("siteContactPhone"),
+    keyboxNumber: formData.get("keyboxNumber"),
+    keyboxPlace: formData.get("keyboxPlace"),
+    targetManDays: formData.get("targetManDays"),
+    finalManDays: formData.get("finalManDays"),
     receivedDate: formData.get("receivedDate"),
     contractNumber: formData.get("contractNumber"),
     departmentInCharge: formData.get("departmentInCharge"),
@@ -97,6 +117,8 @@ function parseSiteForm(formData: FormData) {
 }
 
 // data 形（create / update 共通）
+// 注: 旧 keybox フィールドは v0.4 で「旧キーBOXメモ（表示のみ）」となったため、
+//     フォームからは更新しない（値は保持される）。
 function toData(d: z.infer<typeof siteSchema>) {
   return {
     customerId: d.customerId,
@@ -109,8 +131,12 @@ function toData(d: z.infer<typeof siteSchema>) {
     billingStatus: d.billingStatus ?? null,
     locationName: d.locationName ?? null,
     address: d.address ?? null,
-    keybox: d.keybox ?? null,
     siteContactName: d.siteContactName ?? null,
+    siteContactPhone: d.siteContactPhone ?? null,
+    keyboxNumber: d.keyboxNumber ?? null,
+    keyboxPlace: d.keyboxPlace ?? null,
+    targetManDays: d.targetManDays ?? null,
+    finalManDays: d.finalManDays ?? null,
     receivedDate: toDate(d.receivedDate),
     contractNumber: d.contractNumber ?? null,
     departmentInCharge: d.departmentInCharge ?? null,
@@ -126,17 +152,83 @@ function toData(d: z.infer<typeof siteSchema>) {
   };
 }
 
+// ── 現場直付け写真（キーBOX / 図面 / 工程表）──
+// フォームの hidden JSON（共有契約2の形式）を kind ごとに受け取る。
+const SITE_PHOTO_FIELDS = [
+  { field: "keyboxPhotos", kind: "KEYBOX" },
+  { field: "drawingPhotos", kind: "DRAWING" },
+  { field: "schedulePhotos", kind: "SCHEDULE" },
+] as const;
+
+type SitePhotoSet = { kind: string; kept: string[]; added: NewPhotoInput[] };
+
+function parseSitePhotoFields(formData: FormData): SitePhotoSet[] | { error: string } {
+  const sets: SitePhotoSet[] = [];
+  for (const spec of SITE_PHOTO_FIELDS) {
+    const raw = formData.get(spec.field);
+    const parsed = parseAndValidatePhotosField(typeof raw === "string" ? raw : "");
+    if ("error" in parsed) return { error: parsed.error };
+    sets.push({ kind: spec.kind, kept: parsed.kept, added: parsed.added });
+  }
+  return sets;
+}
+
+// kind ごとに「kept に無い既存写真を削除 → added を作成」する
+async function applySitePhotoSets(
+  tx: Prisma.TransactionClient,
+  siteId: string,
+  sets: SitePhotoSet[],
+) {
+  for (const set of sets) {
+    await tx.photo.deleteMany({
+      where: { siteId, kind: set.kind, id: { notIn: set.kept } },
+    });
+    if (set.added.length > 0) {
+      await tx.photo.createMany({
+        data: set.added.map((p) => ({
+          siteId,
+          kind: set.kind, // アップロード欄の kind に固定
+          dataUrl: p.dataUrl,
+          thumbUrl: p.thumbUrl ?? null,
+          caption: p.caption.trim() === "" ? null : p.caption,
+          isVideo: p.isVideo,
+          width: p.width ?? null,
+          height: p.height ?? null,
+        })),
+      });
+    }
+  }
+}
+
 export async function createSite(formData: FormData) {
   await requireAdmin();
   const parsed = parseSiteForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
   }
-  const site = await db.site.create({ data: toData(parsed.data) });
+  const photoSets = parseSitePhotoFields(formData);
+  if (!Array.isArray(photoSets)) {
+    return { error: photoSets.error };
+  }
+
+  let siteId: string;
+  let customerId: string;
+  try {
+    const site = await db.$transaction(async (tx) => {
+      const created = await tx.site.create({ data: toData(parsed.data) });
+      await applySitePhotoSets(tx, created.id, photoSets);
+      return created;
+    });
+    siteId = site.id;
+    customerId = site.customerId;
+  } catch {
+    return { error: "現場の保存に失敗しました。時間をおいて再度お試しください" };
+  }
+
   revalidatePath("/sites");
   revalidatePath("/");
-  revalidatePath(`/customers/${site.customerId}`);
-  redirect(`/sites/${site.id}`);
+  revalidatePath(`/customers/${customerId}`);
+  redirect(`/sites/${siteId}?toast=${encodeURIComponent("保存しました")}`);
 }
 
 export async function updateSite(siteId: string, formData: FormData) {
@@ -145,12 +237,57 @@ export async function updateSite(siteId: string, formData: FormData) {
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
   }
-  const site = await db.site.update({ where: { id: siteId }, data: toData(parsed.data) });
+  const photoSets = parseSitePhotoFields(formData);
+  if (!Array.isArray(photoSets)) {
+    return { error: photoSets.error };
+  }
+
+  let customerId: string;
+  try {
+    const site = await db.$transaction(async (tx) => {
+      const updated = await tx.site.update({
+        where: { id: siteId },
+        data: toData(parsed.data),
+      });
+      await applySitePhotoSets(tx, siteId, photoSets);
+      return updated;
+    });
+    customerId = site.customerId;
+  } catch {
+    return { error: "現場の保存に失敗しました。時間をおいて再度お試しください" };
+  }
+
   revalidatePath("/sites");
   revalidatePath(`/sites/${siteId}`);
   revalidatePath("/");
+  revalidatePath(`/customers/${customerId}`);
+  redirect(`/sites/${siteId}?toast=${encodeURIComponent("保存しました")}`);
+}
+
+// ── 現場の削除（管理者のみ・日報が無い場合のみ） ──
+export async function deleteSite(siteId: string) {
+  await requireAdmin();
+  if (!siteId) return { error: "現場が指定されていません" };
+
+  const site = await db.site.findUnique({
+    where: { id: siteId },
+    select: { id: true, customerId: true, _count: { select: { reports: true } } },
+  });
+  if (!site) return { error: "現場が見つかりません" };
+  if (site._count.reports > 0) {
+    return {
+      error: "日報が存在する現場は削除できません。ステータスを『過去』にしてください",
+    };
+  }
+  try {
+    await db.site.delete({ where: { id: siteId } });
+  } catch {
+    return { error: "現場の削除に失敗しました。時間をおいて再度お試しください" };
+  }
+  revalidatePath("/sites");
+  revalidatePath("/");
   revalidatePath(`/customers/${site.customerId}`);
-  redirect(`/sites/${site.id}`);
+  redirect(`/sites?toast=${encodeURIComponent("現場を削除しました")}`);
 }
 
 // ── ステータス変更（SURVEY / ACTIVE / PAST） ──
@@ -187,26 +324,6 @@ const surveySchema = z.object({
   relatedNote: optionalText,
 });
 
-// 現調写真（reports/actions.ts の writeNested と同等）
-const surveyPhotoSchema = z.object({
-  dataUrl: z.string().min(1),
-  caption: z.string().optional().nullable(),
-  kind: z.string().optional().nullable(),
-  isVideo: z.boolean().optional(),
-  width: z.number().optional().nullable(),
-  height: z.number().optional().nullable(),
-});
-
-function parseJson<T>(value: FormDataEntryValue | null): T[] {
-  if (typeof value !== "string" || value.trim() === "") return [];
-  try {
-    const arr = JSON.parse(value);
-    return Array.isArray(arr) ? (arr as T[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 function clean(v: string | null | undefined): string | null {
   if (v === null || v === undefined) return null;
   const t = v.trim();
@@ -224,6 +341,14 @@ export async function saveSurvey(siteId: string, formData: FormData) {
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
   }
+
+  // 現調写真: 既存={id} は維持、新規は追加（共有契約2）
+  const rawPhotos = formData.get("photos");
+  const photos = parseAndValidatePhotosField(typeof rawPhotos === "string" ? rawPhotos : "");
+  if ("error" in photos) {
+    return { error: photos.error };
+  }
+
   const d = parsed.data;
   const data = {
     address: d.address ?? null,
@@ -231,30 +356,37 @@ export async function saveSurvey(siteId: string, formData: FormData) {
     situationMemo: d.situationMemo ?? null,
     relatedNote: d.relatedNote ?? null,
   };
-  const survey = await db.survey.upsert({
-    where: { siteId },
-    create: { siteId, surveyedAt: new Date(), ...data },
-    update: data,
-  });
 
-  // 現調写真の保存（hidden JSON → 作り直し）
-  const photos = parseJson<z.infer<typeof surveyPhotoSchema>>(formData.get("photos")).filter(
-    (p) => p && typeof p.dataUrl === "string" && p.dataUrl !== "",
-  );
-  await db.photo.deleteMany({ where: { surveyId: survey.id } });
-  if (photos.length > 0) {
-    await db.photo.createMany({
-      data: photos.map((p) => ({
-        surveyId: survey.id,
-        reportId: null,
-        dataUrl: p.dataUrl,
-        caption: clean(p.caption),
-        kind: clean(p.kind) ?? "SURVEY",
-        isVideo: Boolean(p.isVideo),
-        width: typeof p.width === "number" ? p.width : null,
-        height: typeof p.height === "number" ? p.height : null,
-      })),
+  try {
+    await db.$transaction(async (tx) => {
+      const survey = await tx.survey.upsert({
+        where: { siteId },
+        create: { siteId, surveyedAt: new Date(), ...data },
+        update: data,
+      });
+
+      // kept に無い既存写真のみ削除し、新規を追加（全削除→再作成はしない）
+      await tx.photo.deleteMany({
+        where: { surveyId: survey.id, id: { notIn: photos.kept } },
+      });
+      if (photos.added.length > 0) {
+        await tx.photo.createMany({
+          data: photos.added.map((p) => ({
+            surveyId: survey.id,
+            reportId: null,
+            dataUrl: p.dataUrl,
+            thumbUrl: p.thumbUrl ?? null,
+            caption: clean(p.caption),
+            kind: p.kind && p.kind !== "WORK" ? p.kind : "SURVEY",
+            isVideo: p.isVideo,
+            width: p.width ?? null,
+            height: p.height ?? null,
+          })),
+        });
+      }
     });
+  } catch {
+    return { error: "現調の保存に失敗しました。時間をおいて再度お試しください" };
   }
 
   // 現調→進行中の再入力不要（§4.2.8 フローB）: Site の住所/キーBOX が未設定なら補完

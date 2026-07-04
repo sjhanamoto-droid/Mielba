@@ -1,37 +1,71 @@
 import Link from "next/link";
 import {
-  FileText, AlertTriangle, CalendarClock, ChevronRight, HardHat,
+  FileText, CalendarClock, ChevronRight, HardHat,
   CheckSquare, Truck, PackageCheck, Plus, ClipboardList,
+  AlertTriangle, MapPin, Users, ArrowRight, Sun,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
+import { jstDateKey, todayRange, tomorrowKey, dayRangeForKey, dateFromKey } from "@/lib/date";
 import { AppMenu } from "@/components/app-shell/app-menu";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { SiteCard } from "@/components/site-card";
+import { mapSearchUrl } from "@/lib/utils";
 import { TodoItem } from "@/components/todo-item";
+import { HandoverAlert } from "@/components/handover-alert";
 import { StatTile, EmptyState } from "@/components/ui/misc";
 import { SectionTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
-import { fmtDateWithDay, dueLabel, isOverdue, isToday } from "@/lib/utils";
+import { cn, fmtDateWithDay, fmtMonthDay } from "@/lib/utils";
 import { EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, type EventSource } from "@/lib/constants";
 
 function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 5) return "お疲れさまです";
-  if (h < 11) return "おはようございます";
-  if (h < 18) return "お疲れさまです";
+  // 日本時間の時刻で挨拶を切り替える（サーバーが UTC でもずれないように）
+  const h = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", hour12: false })
+      .format(new Date()),
+  );
+  if (h >= 5 && h < 11) return "おはようございます";
   return "お疲れさまです";
 }
+
+// ── ホーム「次にやること」のタスク表現 ──
+type TaskTone = "danger" | "warn" | "info";
+type HomeTask = {
+  key: string;
+  tone: TaskTone; // 赤=至急 / 黄=今日中 / 青=情報
+  title: string;
+  sub?: string;
+  href: string;
+  cta: string;
+};
+
+const TONE_HERO: Record<TaskTone, string> = {
+  danger: "border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/40",
+  warn: "border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40",
+  info: "border-blue-200 bg-blue-50 dark:border-blue-900/60 dark:bg-blue-950/40",
+};
+const TONE_NUMBER: Record<TaskTone, string> = {
+  danger: "bg-red-500 text-white",
+  warn: "bg-amber-500 text-white",
+  info: "bg-blue-500 text-white",
+};
+const TONE_TEXT: Record<TaskTone, string> = {
+  danger: "text-red-700 dark:text-red-300",
+  warn: "text-amber-700 dark:text-amber-300",
+  info: "text-blue-700 dark:text-blue-300",
+};
 
 export default async function HomePage() {
   const user = await requireUser();
   const admin = isAdmin(user);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // 「今日」は日本時間の暦日で判定する（UTC サーバーで朝9時まで前日扱いになるバグの修正）
+  const todayKey = jstDateKey();
+  const today = todayRange(); // { gte, lt }
+  const tmrwKey = tomorrowKey();
+  const tomorrow = dayRangeForKey(tmrwKey);
 
   // 担当現場（進行中）
   const activeSites = await db.site.findMany({
@@ -48,14 +82,14 @@ export default async function HomePage() {
 
   // 今日の現場入り（出面）。日報・未提出はこれに連動（配属ではなく「当日行く現場」）。
   const todayVisits = await db.siteVisit.findMany({
-    where: { userId: user.id, date: { gte: today, lt: tomorrow } },
+    where: { userId: user.id, date: today },
     include: { site: { select: { id: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
 
   // 本日分の自分の日報（状態判定用）— ステータス込みで取得
   const myReportsToday = await db.dailyReport.findMany({
-    where: { userId: user.id, workDate: { gte: today, lt: tomorrow } },
+    where: { userId: user.id, workDate: today },
     select: { id: true, siteId: true, status: true },
   });
   const reportBySiteId = new Map(myReportsToday.map((r) => [r.siteId, r]));
@@ -67,16 +101,41 @@ export default async function HomePage() {
     (s) => reportBySiteId.get(s.id)?.status === "DRAFT",
   );
 
+  // 今日行く現場の未解決の引き継ぎ事項（スタッフ向けにホームでも確認できるように）
+  const visitSiteIds = visitSites.map((s) => s.id);
+  let openHandovers: { id: string; content: string; createdAt: Date; createdByName?: string }[] = [];
+  if (visitSiteIds.length > 0) {
+    const handovers = await db.handover.findMany({
+      where: { siteId: { in: visitSiteIds }, resolvedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, content: true, createdAt: true, createdById: true, site: { select: { name: true } } },
+    });
+    const creatorIds = Array.from(
+      new Set(handovers.map((h) => h.createdById).filter((v): v is string => !!v)),
+    );
+    const creators = creatorIds.length
+      ? await db.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+      : [];
+    const nameById = new Map(creators.map((u) => [u.id, u.name]));
+    openHandovers = handovers.map((h) => ({
+      id: h.id,
+      // どの現場の引き継ぎか分かるよう現場名を前置する
+      content: visitSiteIds.length > 1 ? `【${h.site.name}】${h.content}` : h.content,
+      createdAt: h.createdAt,
+      createdByName: h.createdById ? nameById.get(h.createdById) : undefined,
+    }));
+  }
+
   // 管理者向け：今日の配員サマリー（全スタッフの現場入りと提出状況）
   let dispatchSummary = { going: 0, submitted: 0, pending: 0 };
   if (admin) {
     const allVisitsToday = await db.siteVisit.findMany({
-      where: { date: { gte: today, lt: tomorrow } },
+      where: { date: today },
       select: { siteId: true, userId: true },
     });
     if (allVisitsToday.length > 0) {
       const subs = await db.dailyReport.findMany({
-        where: { status: "SUBMITTED", workDate: { gte: today, lt: tomorrow } },
+        where: { status: "SUBMITTED", workDate: today },
         select: { siteId: true, userId: true },
       });
       const subSet = new Set(subs.map((r) => `${r.siteId}_${r.userId}`));
@@ -89,22 +148,23 @@ export default async function HomePage() {
     }
   }
 
-  // 自分宛の未対応TODO
+  // 自分宛の未対応TODO（期限判定は日本時間の暦日キーで行う）
   const myTodos = await db.todo.findMany({
     where: { assigneeId: user.id, status: { not: "DONE" } },
     include: { site: { select: { id: true, name: true } }, assignee: { select: { name: true } } },
     orderBy: [{ dueDate: "asc" }],
   });
-  const overdueTodos = myTodos.filter((t) => isOverdue(t.dueDate));
-  // 自分宛で本日締切のTODO（期限切れは別枠なので除外）
-  const todayDueTodos = myTodos.filter(
-    (t) => t.dueDate && isToday(t.dueDate) && !isOverdue(t.dueDate),
-  );
+  const dueKey = (d: Date | null) => (d ? jstDateKey(d) : null);
+  const overdueTodos = myTodos.filter((t) => {
+    const k = dueKey(t.dueDate);
+    return k !== null && k < todayKey;
+  });
+  const todayDueTodos = myTodos.filter((t) => dueKey(t.dueDate) === todayKey);
 
   // 本日の予定
   const todayEvents = await db.calendarEvent.findMany({
     where: {
-      date: { gte: today, lt: tomorrow },
+      date: today,
       ...(admin
         ? {}
         : { OR: [{ ownerId: user.id }, { site: { assignments: { some: { userId: user.id } } } }] }),
@@ -113,16 +173,88 @@ export default async function HomePage() {
     orderBy: [{ startTime: "asc" }],
   });
 
-  // 本日の現場予定のうち 配達(DELIVERY)/支給品(SUPPLY) は上部に通知として引き上げる
+  // 本日の配達(DELIVERY)/支給品(SUPPLY)予定は「情報」タスクとして知らせる
   const deliveryEvents = todayEvents.filter(
     (e) => e.source === "DELIVERY" || e.source === "SUPPLY",
   );
+
+  // 明日の現場入り（自分の分）。管理者は全体の配員状況も確認する。
+  const myTomorrowVisits = await db.siteVisit.findMany({
+    where: { userId: user.id, date: tomorrow },
+    include: { site: { select: { id: true, name: true, address: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  const tomorrowGoingCount = admin
+    ? await db.siteVisit.count({ where: { date: tomorrow } })
+    : 0;
 
   // 統計（管理者向け）
   const [surveyCount, openTodoCount] = await Promise.all([
     admin ? db.site.count({ where: { siteStatus: "SURVEY" } }) : Promise.resolve(0),
     db.todo.count({ where: { assigneeId: user.id, status: { not: "DONE" } } }),
   ]);
+
+  // ── 「次にやること」を優先度順に組み立てる ──
+  // 優先順: 未打刻 > 未解決の引き継ぎ確認 > 未提出下書き > 期限切れTODO > 本日締切TODO > 情報（配達等）
+  const tasks: HomeTask[] = [
+    ...sitesNotStarted.map((s) => ({
+      key: `report-${s.id}`,
+      tone: "danger" as const,
+      title: "日報を書く（未打刻）",
+      sub: s.name,
+      href: `/reports/new?siteId=${s.id}`,
+      cta: "日報を書く",
+    })),
+    ...(openHandovers.length > 0
+      ? [{
+          key: "handovers",
+          tone: "warn" as const,
+          title: `引き継ぎ事項を確認する（${openHandovers.length}件）`,
+          sub: "前の担当者からの申し送りがあります",
+          href: "#handovers",
+          cta: "内容を確認",
+        }]
+      : []),
+    ...sitesDraft.map((s) => ({
+      key: `draft-${s.id}`,
+      tone: "warn" as const,
+      title: "日報の下書きを提出する",
+      sub: s.name,
+      href: `/reports/${reportBySiteId.get(s.id)!.id}`,
+      cta: "下書きを開く",
+    })),
+    ...(overdueTodos.length > 0
+      ? [{
+          key: "overdue-todos",
+          tone: "danger" as const,
+          title: `期限切れのTODOに対応する（${overdueTodos.length}件）`,
+          sub: overdueTodos[0]?.title,
+          href: "/todos",
+          cta: "TODOを開く",
+        }]
+      : []),
+    ...(todayDueTodos.length > 0
+      ? [{
+          key: "today-todos",
+          tone: "warn" as const,
+          title: `本日締切のTODOを片付ける（${todayDueTodos.length}件）`,
+          sub: todayDueTodos[0]?.title,
+          href: "/todos",
+          cta: "TODOを開く",
+        }]
+      : []),
+    ...deliveryEvents.map((e) => ({
+      key: `event-${e.id}`,
+      tone: "info" as const,
+      title: `本日 ${EVENT_SOURCE_LABEL[e.source as EventSource]}：${e.title}`,
+      sub: e.site?.name ?? undefined,
+      href: e.site ? `/sites/${e.site.id}` : "/calendar",
+      cta: "詳細を見る",
+    })),
+  ];
+
+  const heroTask = tasks[0];
+  const restTasks = tasks.slice(1);
 
   return (
     <div>
@@ -136,7 +268,7 @@ export default async function HomePage() {
             </div>
             <AppMenu user={user} />
           </div>
-          <p className="mt-3 text-xs font-medium text-brand-100">{fmtDateWithDay(today)}</p>
+          <p className="mt-3 text-xs font-medium text-brand-100">{fmtDateWithDay(dateFromKey(todayKey))}</p>
         </div>
       </header>
 
@@ -145,75 +277,78 @@ export default async function HomePage() {
         <section className="space-y-2.5">
           <SectionTitle>次にやること</SectionTitle>
 
-          {/* 未打刻（本日・日報なし） */}
-          {sitesNotStarted.length > 0 && (
-            <div className="overflow-hidden rounded-2xl border border-red-200 bg-red-50">
-              <div className="flex items-center gap-2 px-4 pt-3 text-sm font-bold text-red-700">
-                <FileText className="h-4 w-4" />
-                未打刻です（本日・日報なし）
-                <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
-                  {sitesNotStarted.length}
-                </span>
-              </div>
-              <div className="divide-y divide-red-100">
-                {sitesNotStarted.map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/reports/new?siteId=${s.id}`}
-                    className="flex items-center justify-between gap-2 px-4 py-3 active:bg-red-100/50"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-ink">{s.name}</p>
-                      <p className="truncate text-xs text-red-600">タップで日報を作成・打刻</p>
-                    </div>
-                    <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-500 px-3 py-1.5 text-xs font-bold text-white">
-                      <Plus className="h-3.5 w-3.5" />作成
-                    </span>
-                  </Link>
-                ))}
+          {tasks.length === 0 ? (
+            /* 全部完了 */
+            <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 dark:border-emerald-900/60 dark:bg-emerald-950/40">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                <CheckSquare className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">本日のタスクは完了です</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400">お疲れさまでした。予定と現場は下で確認できます。</p>
               </div>
             </div>
+          ) : (
+            <>
+              {/* 最優先タスク：大きなヒーローカード */}
+              <div className={cn("rounded-2xl border p-4", TONE_HERO[heroTask.tone])}>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[11px] font-bold",
+                    TONE_NUMBER[heroTask.tone],
+                  )}>
+                    いま最優先
+                  </span>
+                  {heroTask.tone === "danger" && (
+                    <AlertTriangle className="h-4 w-4 text-red-500" aria-hidden />
+                  )}
+                </div>
+                <p className={cn("mt-2.5 text-lg font-bold leading-snug", TONE_TEXT[heroTask.tone])}>
+                  {heroTask.title}
+                </p>
+                {heroTask.sub && (
+                  <p className="mt-0.5 truncate text-sm font-medium text-ink-soft">{heroTask.sub}</p>
+                )}
+                <LinkButton href={heroTask.href} size="lg" className="mt-3 w-full">
+                  {heroTask.cta}
+                  <ArrowRight className="h-5 w-5" />
+                </LinkButton>
+              </div>
+
+              {/* 残りタスク：番号付きチェックリスト（重要度順） */}
+              {restTasks.length > 0 && (
+                <ol className="card divide-y divide-line">
+                  {restTasks.map((t, i) => (
+                    <li key={t.key}>
+                      <Link
+                        href={t.href}
+                        className="flex items-center gap-3 px-4 py-3 active:bg-surface-subtle"
+                      >
+                        <span className={cn(
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold tnum",
+                          TONE_NUMBER[t.tone],
+                        )}>
+                          {i + 2}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className={cn("truncate text-sm font-bold", TONE_TEXT[t.tone])}>{t.title}</p>
+                          {t.sub && <p className="truncate text-xs text-ink-muted">{t.sub}</p>}
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
           )}
 
-          {/* 未提出（打刻済・下書きのまま） */}
-          {sitesDraft.length > 0 && (
-            <div className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50">
-              <div className="flex items-center gap-2 px-4 pt-3 text-sm font-bold text-amber-800">
-                <FileText className="h-4 w-4" />
-                未提出です（下書きのまま）
-                <span className="ml-auto rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
-                  {sitesDraft.length}
-                </span>
-              </div>
-              <div className="divide-y divide-amber-100">
-                {sitesDraft.map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/reports/${reportBySiteId.get(s.id)!.id}`}
-                    className="flex items-center justify-between gap-2 px-4 py-3 active:bg-amber-100/50"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-ink">{s.name}</p>
-                      <p className="truncate text-xs text-amber-700">タップで下書きを確認・提出</p>
-                    </div>
-                    <span className="flex shrink-0 items-center gap-1 rounded-full bg-amber-500 px-3 py-1.5 text-xs font-bold text-white">
-                      下書き
-                    </span>
-                  </Link>
-                ))}
-              </div>
+          {/* 今日行く現場の引き継ぎ事項（「確認して停止」でその場で解決できる） */}
+          {openHandovers.length > 0 && (
+            <div id="handovers" className="scroll-mt-4">
+              <HandoverAlert handovers={openHandovers} />
             </div>
           )}
-
-          {/* 今日の現場入りがすべて提出済みのとき */}
-          {todayVisits.length > 0 &&
-            sitesNotStarted.length === 0 &&
-            sitesDraft.length === 0 && (
-              <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                <CheckSquare className="h-4 w-4" />
-                本日の日報・勤怠はすべて提出済みです
-              </div>
-            )}
 
           {/* 管理者：今日の配員サマリー（→配員ボード） */}
           {admin && (
@@ -222,7 +357,7 @@ export default async function HomePage() {
               className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 active:bg-surface-subtle"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                <HardHat className="h-5 w-5" />
+                <Users className="h-5 w-5" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-ink">今日の配員（現場入り）</p>
@@ -233,8 +368,9 @@ export default async function HomePage() {
                 </p>
               </div>
               {dispatchSummary.pending > 0 && (
-                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">
+                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-center text-xs font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
                   未提出 {dispatchSummary.pending}
+                  <span className="block text-[10px] font-semibold">配員ボードで確認</span>
                 </span>
               )}
               <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
@@ -252,68 +388,68 @@ export default async function HomePage() {
               <span className="text-xs font-semibold text-brand-600">日報から追加</span>
             </Link>
           )}
+        </section>
 
-          {/* 本日の配達・支給品予定の通知 */}
-          {deliveryEvents.length > 0 && (
-            <div className="overflow-hidden rounded-2xl border border-line bg-surface">
-              {deliveryEvents.map((e) => {
-                const color = EVENT_SOURCE_COLOR[e.source as EventSource];
-                const Icon = e.source === "DELIVERY" ? Truck : PackageCheck;
-                const href = e.site ? `/sites/${e.site.id}` : "/calendar";
-                return (
-                  <Link
-                    key={e.id}
-                    href={href}
-                    className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0 active:bg-surface-subtle"
-                  >
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                      style={{ backgroundColor: `${color}1a`, color }}
-                    >
-                      <Icon className="h-5 w-5" />
+        {/* 明日の現場入り */}
+        {(myTomorrowVisits.length > 0 || admin) && (
+          <section className="space-y-2.5">
+            <SectionTitle>明日の現場入り</SectionTitle>
+            {myTomorrowVisits.length > 0 ? (
+              <div className="card divide-y divide-line">
+                {myTomorrowVisits.map((v) => (
+                  <div key={v.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                      <Sun className="h-5 w-5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-ink">{e.title}</p>
-                      <p className="truncate text-xs text-ink-muted">
-                        本日 {EVENT_SOURCE_LABEL[e.source as EventSource]}
-                        {e.site ? `・${e.site.name}` : ""}
+                      <p className="text-xs font-semibold text-ink-muted">
+                        明日 {fmtMonthDay(dateFromKey(tmrwKey))} は
                       </p>
+                      <Link href={`/sites/${v.site.id}`} className="block truncate text-sm font-bold text-ink">
+                        {v.site.name}
+                      </Link>
+                      {v.site.address && (
+                        <a
+                          href={mapSearchUrl(v.site.address)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-0.5 flex items-center gap-1 text-xs font-medium text-brand-600"
+                        >
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          <span className="truncate underline underline-offset-2">{v.site.address}</span>
+                        </a>
+                      )}
                     </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-
-          {/* 期限切れTODO */}
-          {overdueTodos.length > 0 && (
-            <Link
-              href="/todos"
-              className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 active:bg-red-100"
-            >
-              <AlertTriangle className="h-4 w-4 text-status-danger" />
-              <span className="flex-1 text-sm font-semibold text-red-600">
-                期限切れのTODOが {overdueTodos.length} 件あります
-              </span>
-              <ChevronRight className="h-4 w-4 text-red-400" />
-            </Link>
-          )}
-
-          {/* 本日締切のTODO（自分宛） */}
-          {todayDueTodos.length > 0 && (
-            <Link
-              href="/todos"
-              className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 active:bg-amber-100"
-            >
-              <CalendarClock className="h-4 w-4 text-amber-600" />
-              <span className="flex-1 text-sm font-semibold text-amber-700">
-                本日締切のTODOが {todayDueTodos.length} 件あります
-              </span>
-              <ChevronRight className="h-4 w-4 text-amber-400" />
-            </Link>
-          )}
-        </section>
+                    <Link href={`/sites/${v.site.id}`} aria-label="現場詳細へ">
+                      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            ) : admin && tomorrowGoingCount === 0 ? (
+              <Link
+                href={`/dispatch?d=${tmrwKey}`}
+                className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 active:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40"
+              >
+                <Users className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+                <span className="flex-1 text-sm font-semibold text-amber-700 dark:text-amber-300">
+                  明日の配員が未設定です
+                </span>
+                <span className="text-xs font-bold text-brand-600">配員ボードへ</span>
+                <ChevronRight className="h-4 w-4 text-amber-400" />
+              </Link>
+            ) : admin ? (
+              <Link
+                href={`/dispatch?d=${tmrwKey}`}
+                className="flex items-center gap-2 rounded-2xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted active:bg-surface-subtle"
+              >
+                <Users className="h-4 w-4 shrink-0 text-ink-faint" />
+                <span className="flex-1">明日は {tomorrowGoingCount}名が現場入り予定</span>
+                <span className="text-xs font-semibold text-brand-600">配員ボードで確認</span>
+              </Link>
+            ) : null}
+          </section>
+        )}
 
         {/* 統計タイル */}
         <section className="grid grid-cols-3 gap-2.5 lg:gap-4">

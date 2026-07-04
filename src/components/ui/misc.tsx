@@ -29,7 +29,9 @@ export function EmptyState({
       )}
       <p className="text-sm font-semibold text-ink-soft">{title}</p>
       {description && (
-        <p className="mt-1 max-w-xs text-xs text-ink-muted">{description}</p>
+        <p className="mt-1 max-w-xs text-xs leading-relaxed text-ink-muted">
+          {description}
+        </p>
       )}
       {action && <div className="mt-4">{action}</div>}
     </div>
@@ -74,12 +76,14 @@ export function StatTile({
   tone?: "neutral" | "warn" | "danger" | "brand" | "active";
   href?: string;
 }) {
+  // brand はトークンでダーク自動追従。Tailwind パレット色は dark: で明度を反転
   const tones: Record<string, string> = {
     neutral: "bg-surface text-ink",
-    warn: "bg-amber-50 text-amber-700",
-    danger: "bg-red-50 text-red-600",
+    warn: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+    danger: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300",
     brand: "bg-brand-50 text-brand-700",
-    active: "bg-emerald-50 text-emerald-700",
+    active:
+      "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   };
   const inner = (
     <div
@@ -89,7 +93,7 @@ export function StatTile({
       )}
     >
       <span className="text-2xl font-bold tnum leading-none">{value}</span>
-      <span className="mt-1 text-xs font-medium opacity-80">{label}</span>
+      <span className="mt-1 text-xs font-semibold opacity-90">{label}</span>
     </div>
   );
   return href ? (

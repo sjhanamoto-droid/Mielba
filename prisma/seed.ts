@@ -29,6 +29,8 @@ async function main() {
 
   console.log("🌱 既存データを削除中...");
   // 依存関係の末端から削除
+  await db.handover.deleteMany();
+  await db.materialMaster.deleteMany();
   await db.comment.deleteMany();
   await db.photo.deleteMany();
   await db.materialUse.deleteMany();
@@ -69,6 +71,24 @@ async function main() {
       defaultStartTime: "08:00",
       defaultEndTime: "17:00",
     },
+  });
+
+  console.log("🧱 材料マスターを作成中...");
+  await db.materialMaster.createMany({
+    data: [
+      { name: "石膏ボード 12.5mm", unit: "枚", sortOrder: 1 },
+      { name: "クロス", unit: "m", sortOrder: 2 },
+      { name: "パテ", unit: "袋", sortOrder: 3 },
+      { name: "LGS 65", unit: "本", sortOrder: 4 },
+      { name: "塗料（白）", unit: "缶", sortOrder: 5 },
+      { name: "シーリング材", unit: "本", sortOrder: 6 },
+      { name: "配管 VP20", unit: "本", sortOrder: 7 },
+      { name: "電線 VVF2.0", unit: "m", sortOrder: 8 },
+      { name: "断熱材", unit: "枚", sortOrder: 9 },
+      { name: "ビス各種", unit: "箱", sortOrder: 10 },
+      { name: "木材 2x4", unit: "本", sortOrder: 11 },
+      { name: "養生シート", unit: "巻", sortOrder: 12 },
+    ],
   });
 
   console.log("👷 ユーザーを作成中...");
@@ -190,6 +210,7 @@ async function main() {
       siteContactName: "工藤 誠", receivedDate: day(-30), contractNumber: "C-2024-0101",
       departmentInCharge: "工事部", siteManager: "田中 太郎", salesRep: "佐藤 健",
       plannedStartDate: day(-14), plannedEndDate: day(20), actualStartDate: day(-14), progressRate: 55,
+      siteContactPhone: "090-1111-2222", keyboxNumber: "4823", keyboxPlace: "玄関右ボックス", targetManDays: 45,
       handoverNote: "302号室の浴室解体まで完了。配管に一部劣化あり、設備の渡辺に共有済み。キーBOXの番号は4823。",
       contractAmount: 4800000, budgetCost: 3100000, executionBudget: 3300000,
       memo: "管理組合への作業時間連絡を毎週金曜に行うこと（9-17時厳守）。",
@@ -217,6 +238,7 @@ async function main() {
       siteContactName: "森田 浩二", receivedDate: day(-60), contractNumber: "C-2024-0210",
       departmentInCharge: "工事部", siteManager: "鈴木 一郎", salesRep: "佐藤 健",
       plannedStartDate: day(-45), plannedEndDate: day(15), actualStartDate: day(-45), progressRate: 70,
+      siteContactPhone: "090-2222-3333", keyboxPlace: "管理人室", targetManDays: 120,
       handoverNote: "外壁塗装は3面完了。残り東面と共用部。足場は来週解体予定。",
       contractAmount: 12500000, budgetCost: 8800000, executionBudget: 9200000,
       partners: { create: [ { name: "横浜塗装", role: "外壁塗装" }, { name: "足場の達人", role: "仮設足場" } ] },
@@ -230,6 +252,7 @@ async function main() {
       locationName: "田村邸", address: "東京都世田谷区下北沢2-10-5", keybox: "施主在宅のため不要（事前連絡要）",
       siteContactName: "田村 隆弘", receivedDate: day(-20), departmentInCharge: "内装", siteManager: "高橋 美咲",
       plannedStartDate: day(-3), plannedEndDate: day(25), actualStartDate: day(-3), progressRate: 20,
+      siteContactPhone: "090-4444-5555", targetManDays: 20,
       handoverNote: "施主こだわり強め。キッチンの面材サンプルを次回持参すること。",
       contractAmount: 2800000, budgetCost: 1900000,
       assignments: { create: [ { userId: takahashi.id } ] },
@@ -283,6 +306,8 @@ async function main() {
   const r1 = await db.dailyReport.create({
     data: {
       siteId: siteA1.id, userId: sato.id, workDate: day(-1), startTime: "08:30", endTime: "17:30", status: "SUBMITTED", submittedAt: day(-1),
+      parkingFee: 800,
+      handover: "給水管の腐食箇所は追加工事の判断待ち。管理組合への連絡は済み。明日のユニット搬入は午前指定。",
       detail: "302号室の浴室解体を実施。既存ユニットバスを撤去し、配管の状態を確認。給水管に一部腐食が見られたため写真を撮影し、設備担当へ共有した。床下の防水は良好。明日は新規ユニットの搬入を予定。",
       aiSummary: "【要約】浴室ユニット撤去完了。給水管に腐食ありで設備へ共有。床下防水は良好。翌日ユニット搬入予定。",
       memo: "給水管の腐食は管理組合にも一報入れた方がよい。元請の工藤さんに電話済み。",
@@ -321,6 +346,8 @@ async function main() {
   const r4 = await db.dailyReport.create({
     data: {
       siteId: siteB.id, userId: suzuki.id, workDate: day(-1), startTime: "08:00", endTime: "17:00", status: "SUBMITTED", submittedAt: day(-1),
+      parkingFee: 1200,
+      handover: "足場の是正が完了するまで東面には上がらないこと。是正完了は足場業者から連絡が入る。",
       detail: "B棟東面の高圧洗浄を実施。明日からシーラー塗布。天候は晴れ、作業良好。足場の一部にぐらつきがあり足場業者へ連絡した。",
       aiSummary: "【要約】東面の高圧洗浄完了。翌日シーラー塗布へ。足場のぐらつきを業者へ連絡。",
       memo: "足場の安全確認を朝礼で再周知すること。",
@@ -340,6 +367,14 @@ async function main() {
       nextProcesses: { create: [ { content: "面材サンプル（木目3種）持参。食洗機位置の最終確認。", vendors: "メーカー・キッチンハウス", supplyDeliveryDate: day(5) } ] },
     },
   });
+
+  console.log("📌 引き継ぎ事項を作成中...");
+  await db.handover.createMany({ data: [
+    // 未解決（siteA1 の日報から起票 → 次の担当者が確認する）
+    { siteId: siteA1.id, reportId: r1.id, content: "給水管の腐食箇所は追加工事の判断待ち。管理組合への連絡は済み。明日のユニット搬入は午前指定。", createdById: sato.id, createdAt: day(-1) },
+    // 解決済み（siteB — 足場の件は確認済み）
+    { siteId: siteB.id, reportId: r4.id, content: "足場の是正が完了するまで東面には上がらないこと。是正完了は足場業者から連絡が入る。", createdById: suzuki.id, createdAt: day(-1), resolvedAt: day(0), resolvedById: admin.id },
+  ] });
 
   console.log("📅 カレンダー予定を作成中...");
   // 日報由来の予定（配達・支給品）＋手動予定

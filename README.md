@@ -78,12 +78,34 @@
 - **カレンダーは全幅表示**：重要画面のため上限幅を外し、サイドバーを畳むと画面いっぱいに。月＝大きなグリッド、週＝全幅7カラムボード（参加者アバター表示）、日＝時刻軸タイムライン（重なりは自動で列分け）で表示します。
 - **予定クリックで詳細モーダル**：月・週・日すべてで予定をタップ/クリックすると、日時・現場・場所・内容・参加者・入力者を**モーダル表示**。「**現場詳細を見る**」ボタンからその現場の詳細画面へ移動できます。手動予定はモーダルから**編集**（件名・日時・現場・場所・内容・**参加者の追加/変更**）・削除が可能で、参加者を変えると各自の**現場入り＝日報にも自動連動**します。
 
+## v0.4 の主な変更点
+- **写真の配信方式を刷新**：写真（base64）をページの RSC ペイロードに載せず、認証必須の
+  `GET /api/photos/[id]`（`?v=thumb` でサムネイル）から `<img loading="lazy">` で配信。
+  一覧・詳細ページの転送量を大幅削減（本番サイトが重い問題の修正）
+- **タイムゾーン修正**：「今日」の判定を `src/lib/date.ts`（Asia/Tokyo 基準）に統一。
+  Vercel（UTC）で朝9時まで前日扱いになるバグを解消
+- **引き継ぎ事項（Handover）**：日報から現場への引き継ぎを登録し、未解決分を
+  アンバー警告バナーで表示。「確認して停止」で解決済みにできる
+- **材料マスタ（MaterialMaster）**：日報の材料入力をマスタ選択式に
+- **人工（にんく）管理**：現場に予定人工・最終人工、日報に駐車場代を追加
+- **現場情報の拡充**：現場連絡先電話・キーBOX（番号/場所）・図面/工程表/キーBOX写真
+- **PWA 対応**：ホーム画面に追加してアプリとして起動可能（standalone）。
+  オフライン時はフォールバックページを表示（`public/sw.js`。API・写真はキャッシュしない）
+- **ログイン画面の改善**：デモ認証情報の画面表示を撤去し、パスワード再設定の案内を常設。
+  同一メールで5回連続失敗すると60秒の待機（簡易レート制限）
+- **ダークモード**：設定画面のテーマ切替（ライト/ダーク/システム）
+- **マイグレーション運用**：本番（PostgreSQL）を `prisma migrate deploy` 方式へ移行（後述）
+- **AIサポートの実LLM対応**：環境変数 `ANTHROPIC_API_KEY` を設定すると
+  `@anthropic-ai/sdk`（モデルは `ANTHROPIC_MODEL`、既定 `claude-opus-4-8`）で日報を要約。
+  未設定時は従来のローカルエンジン（`src/lib/ai.ts`）に自動フォールバック
+
 ## 技術スタック
 - **Next.js 15**（App Router）/ React 19 / TypeScript
-- **Prisma** + **SQLite**（ローカル開発。Postgres へ差し替え可能）
+- **Prisma** + **SQLite**（ローカル開発。本番は PostgreSQL/Neon）
 - **Tailwind CSS**（スマホファーストのデザインシステム）
 - 認証：Cookie セッション（JWT/jose）+ bcrypt。Middleware でルート保護
-- AIサポート：ローカルの決定論的エンジン（`src/lib/ai.ts`。実LLMへ差し替え可能なシーム）
+- AIサポート：`ANTHROPIC_API_KEY` 設定時は Claude API、未設定時はローカルの決定論的エンジン（`src/lib/ai.ts`）
+- PWA：`public/manifest.webmanifest` + `public/sw.js`（オフラインフォールバックのみ。プッシュ通知は将来フェーズ）
 
 ## セットアップ
 
@@ -99,7 +121,10 @@ npm run dev
 # → http://localhost:3000
 ```
 
-### デモ用ログイン（パスワード共通：`mielba123`）
+### デモ用ログイン（開発用。パスワード共通：`mielba123`）
+> セキュリティのため、v0.4 からログイン画面にはデモ認証情報を表示しません。
+> 開発時はこの表を参照してください（シードデータ `prisma/seed.ts` 由来）。
+
 | 区分 | メール |
 | --- | --- |
 | 管理者 | `admin@mielba.app` |
@@ -113,6 +138,22 @@ npm run db:reset    # DB を初期化して再シード
 npm run db:studio   # Prisma Studio でデータ閲覧
 npm run build       # 本番ビルド
 ```
+
+## マイグレーション（本番 = PostgreSQL）
+本番（Vercel / Neon PostgreSQL）は `prisma migrate deploy` 方式で運用する。
+毎デプロイ `prisma db push` を実行する旧方式は、スキーマ差分の強制適用により
+本番データを破壊するリスクがあったため廃止した。
+
+- `prisma/migrations/**` は **PostgreSQL 専用**。ローカル（SQLite）では使用しない。
+  - `0000_baseline` … v0.3 時点の全スキーマ（db push で構築済みの既存本番DBのベースライン）
+  - `0001_v0_4_features` … v0.4 の追加分（ADD COLUMN / CREATE TABLE のみ、additive）
+- `vercel-build` は `scripts/migrate-deploy.mjs` を実行する：
+  - 既存DB（`User` テーブルあり・`_prisma_migrations` なし）→ `prisma migrate resolve --applied 0000_baseline` でベースライン化してから `prisma migrate deploy`
+  - 空DB / migrate 管理下のDB → そのまま `prisma migrate deploy`（未適用分のみ適用）
+- **ローカル開発は従来通り `npm run db:push`（SQLite への db push）**。マイグレーションファイルは使わない。
+- 今後スキーマを変更するときは、PG 版スキーマ同士の `prisma migrate diff --script` で
+  additive な SQL を生成し、`prisma/migrations/000N_xxx/migration.sql` として追加すること
+  （DROP を含む差分はレビュー必須）。
 
 ## ディレクトリ構成
 ```

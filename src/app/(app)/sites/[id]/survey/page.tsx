@@ -21,7 +21,13 @@ export default async function SiteSurveyPage({
       id: true,
       name: true,
       survey: {
-        include: { photos: { orderBy: { createdAt: "asc" } } },
+        include: {
+          // base64（dataUrl/thumbUrl）はRSCペイロードに載せない（既存写真は {id} 参照で維持）
+          photos: {
+            select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
       },
     },
   });
@@ -29,8 +35,9 @@ export default async function SiteSurveyPage({
   if (!site) notFound();
 
   const survey = site.survey;
+  // 既存写真は {id} 参照のみ（base64 を再送しない。プレビューは photoSrc(id, true)）
   const photos: UploadPhoto[] = (survey?.photos ?? []).map((p) => ({
-    dataUrl: p.dataUrl,
+    id: p.id,
     caption: p.caption ?? "",
     kind: (p.kind as PhotoKind) ?? "SURVEY",
     isVideo: p.isVideo,

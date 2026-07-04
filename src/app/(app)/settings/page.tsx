@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { Users2, Building2, UserCog, ChevronRight, Info } from "lucide-react";
+import { Users2, Building2, UserCog, ChevronRight, Info, Package } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { SectionTitle } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { MaterialsManager } from "@/features/settings/materials-manager";
 
 function SettingRow({
   href, icon, title, desc,
@@ -28,7 +30,15 @@ function SettingRow({
 export default async function SettingsPage() {
   const user = await requireUser();
   const admin = isAdmin(user);
-  const staffCount = admin ? await db.user.count() : 0;
+  const [staffCount, materials] = await Promise.all([
+    admin ? db.user.count() : Promise.resolve(0),
+    admin
+      ? db.materialMaster.findMany({
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          select: { id: true, name: true, unit: true, active: true },
+        })
+      : Promise.resolve([]),
+  ]);
 
   return (
     <div>
@@ -55,6 +65,19 @@ export default async function SettingsPage() {
             </section>
           )}
 
+          {/* 材料マスタ（管理者のみ） */}
+          {admin && (
+            <section className="space-y-2.5">
+              <SectionTitle>
+                <span className="flex items-center gap-1.5">
+                  <Package className="h-4 w-4" />
+                  材料マスタ
+                </span>
+              </SectionTitle>
+              <MaterialsManager materials={materials} />
+            </section>
+          )}
+
           <section className="space-y-2.5">
             <SectionTitle>アカウント</SectionTitle>
             <SettingRow
@@ -63,6 +86,17 @@ export default async function SettingsPage() {
               title="アカウント設定"
               desc="氏名・部署・アバター色・パスワードの変更"
             />
+          </section>
+
+          {/* 画面の明るさ（テーマ切替） */}
+          <section className="space-y-2.5">
+            <SectionTitle>画面の明るさ</SectionTitle>
+            <div className="card p-4">
+              <ThemeToggle />
+              <p className="mt-2 text-xs text-ink-muted">
+                「端末に合わせる」を選ぶと、スマホ・PCの設定に合わせて自動で切り替わります。
+              </p>
+            </div>
           </section>
 
           <section className="space-y-2.5">

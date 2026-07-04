@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const fieldBase =
-  "w-full rounded-xl border border-line-strong bg-surface px-3.5 text-[16px] text-ink placeholder:text-ink-faint transition-colors focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-surface-sunken disabled:text-ink-muted";
+  "w-full rounded-xl border border-line-strong bg-surface px-3.5 text-[16px] text-ink placeholder:text-ink-faint transition-colors focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-surface-sunken disabled:text-ink-muted aria-[invalid=true]:border-status-danger";
 
 export function Label({
   children,
@@ -37,6 +37,7 @@ export function Field({
   children,
   className,
   description,
+  error,
 }: {
   label?: string;
   required?: boolean;
@@ -45,17 +46,24 @@ export function Field({
   children: React.ReactNode;
   className?: string;
   description?: string;
+  /** フィールド単位のエラー。指定すると赤枠（.field-error）＋メッセージを表示 */
+  error?: string;
 }) {
   return (
-    <div className={cn("", className)}>
+    <div className={cn(error && "field-error", className)}>
       {label && (
         <Label htmlFor={htmlFor} required={required} hint={hint}>
           {label}
         </Label>
       )}
       {children}
+      {error && (
+        <p role="alert" className="mt-1 text-xs font-semibold text-status-danger">
+          {error}
+        </p>
+      )}
       {description && (
-        <p className="mt-1 text-xs text-ink-faint">{description}</p>
+        <p className="mt-1 text-xs text-ink-muted">{description}</p>
       )}
     </div>
   );

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   HardHat, LogOut, ChevronRight, Settings, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
-import { navForRole } from "./nav-items";
+import { sidebarNavForRole } from "./nav-items";
 import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { logoutAction } from "@/features/auth/actions";
@@ -23,7 +23,8 @@ export function Sidebar({
   onToggle: () => void;
 }) {
   const pathname = usePathname();
-  const items = navForRole(user.role);
+  // PC は幅があるので全項目（管理者は 配員・顧客・TODO も含む）を表示する
+  const items = sidebarNavForRole(user.role);
 
   return (
     <aside

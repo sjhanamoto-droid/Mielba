@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText, Plus, Check, PenLine, HardHat } from "lucide-react";
+import { FileText, Plus, Check, PenLine, HardHat, ChevronDown } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
@@ -11,19 +11,25 @@ import { EmptyState } from "@/components/ui/misc";
 import { ReportCard } from "@/components/report-card";
 import { AddMyVisit } from "@/features/visits/add-my-visit";
 import { fmtDateWithDay } from "@/lib/utils";
+import { todayRange, jstDateKey } from "@/lib/date";
+
+const PAGE_SIZE = 20;
 
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-export default async function ReportsHubPage() {
+export default async function ReportsHubPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ take?: string }>;
+}) {
   const user = await requireUser();
   const admin = isAdmin(user);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // 「今日」は Asia/Tokyo の暦日で判定する（Vercel=UTCで朝9時まで前日扱いになるバグの修正）
+  const { gte: today, lt: tomorrow } = todayRange();
+  const todayStr = jstDateKey();
 
   // ─────────────── スタッフ：日報の最短入力ハブ ───────────────
   if (!admin) {
@@ -39,15 +45,21 @@ export default async function ReportsHubPage() {
     });
     const byId = new Map(todayReports.map((r) => [r.siteId, r]));
 
-    // 「別の現場に行った」候補：配属済みの進行中現場で、今日まだ現場入りしていない現場
+    // 「別の現場に行った」候補：配属に限定せず、進行中の全現場から
+    // 今日まだ現場入りしていない現場（配属現場を上にグループ表示）
     const visitedSiteIds = new Set(todayVisits.map((v) => v.siteId));
-    const assignedActive = await db.site.findMany({
-      where: { siteStatus: "ACTIVE", assignments: { some: { userId: user.id } } },
-      select: { id: true, name: true },
+    const activeSites = await db.site.findMany({
+      where: { siteStatus: "ACTIVE" },
+      select: {
+        id: true,
+        name: true,
+        assignments: { where: { userId: user.id }, select: { id: true } },
+      },
       orderBy: { updatedAt: "desc" },
     });
-    const addableSites = assignedActive.filter((s) => !visitedSiteIds.has(s.id));
-    const todayStr = dayKey(today);
+    const addableSites = activeSites
+      .filter((s) => !visitedSiteIds.has(s.id))
+      .map((s) => ({ id: s.id, name: s.name, assigned: s.assignments.length > 0 }));
 
     const myRecent = await db.dailyReport.findMany({
       where: { userId: user.id },
@@ -97,7 +109,7 @@ export default async function ReportsHubPage() {
                             {status === "SUBMITTED" ? (
                               <Link
                                 href={`/reports/${r!.id}`}
-                                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 py-2.5 text-sm font-bold text-emerald-700"
+                                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 py-2.5 text-sm font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
                               >
                                 <Check className="h-4 w-4" />提出済み・確認する
                               </Link>
@@ -140,15 +152,25 @@ export default async function ReportsHubPage() {
   }
 
   // ─────────────── 管理者：日報の全体確認（現場の動き） ───────────────
-  const recent = await db.dailyReport.findMany({
+  // ページネーション：20件＋「さらに表示」（?take=）
+  const { take: takeRaw } = await searchParams;
+  const parsedTake = Number.parseInt(takeRaw ?? "", 10);
+  const take = Number.isFinite(parsedTake)
+    ? Math.min(Math.max(parsedTake, PAGE_SIZE), 500)
+    : PAGE_SIZE;
+
+  // 1件多く取得して「さらに表示」の有無を判定する
+  const fetched = await db.dailyReport.findMany({
     include: {
       user: { select: { name: true, avatarColor: true } },
       site: { select: { id: true, name: true } },
       _count: { select: { photos: true, comments: true, materials: true } },
     },
     orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
-    take: 40,
+    take: take + 1,
   });
+  const hasMore = fetched.length > take;
+  const recent = hasMore ? fetched.slice(0, take) : fetched;
 
   // 作業日でグループ化
   const groups: { key: string; date: Date; items: typeof recent }[] = [];
@@ -193,6 +215,16 @@ export default async function ReportsHubPage() {
                 </div>
               </section>
             ))}
+
+            {hasMore && (
+              <Link
+                href={`/reports?take=${take + PAGE_SIZE}`}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-line-strong bg-surface-subtle py-3 text-sm font-semibold text-ink-muted active:scale-[0.99]"
+              >
+                <ChevronDown className="h-4 w-4" />
+                さらに表示（次の{PAGE_SIZE}件）
+              </Link>
+            )}
           </div>
         )}
       </PageContainer>

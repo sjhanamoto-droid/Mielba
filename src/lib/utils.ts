@@ -97,3 +97,8 @@ export function toDateInputValue(d: Date | string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return "";
   return format(date, "yyyy-MM-dd");
 }
+
+// 住所 → Google マップ検索 URL（サーバー/クライアント両用）
+export function mapSearchUrl(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}

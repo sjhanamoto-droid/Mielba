@@ -1,42 +1,48 @@
-import { Search, Plus, Building2, MapPin, Users, ChevronRight } from "lucide-react";
+import { Search, Plus, Building2, MapPin, ChevronRight, ChevronDown } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { CardLink } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Fab, EmptyState } from "@/components/ui/misc";
 import { Input } from "@/components/ui/form";
-import {
-  REGISTRATION_TYPE_LABEL,
-  TRADE_STATUS_LABEL,
-  TRADE_STATUS_COLOR,
-  type RegistrationType,
-  type TradeStatus,
-} from "@/lib/constants";
+import { LinkButton } from "@/components/ui/button";
+import { SearchParamToast } from "@/components/ui/toast";
+
+const PAGE_SIZE = 20;
+
+function buildHref(params: { q?: string; page?: number }): string {
+  const sp = new URLSearchParams();
+  if (params.q) sp.set("q", params.q);
+  if (params.page && params.page > 1) sp.set("page", String(params.page));
+  const qs = sp.toString();
+  return qs ? `/customers?${qs}` : "/customers";
+}
 
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; page?: string }>;
 }) {
   const user = await requireUser();
   const admin = isAdmin(user);
-  const { q } = await searchParams;
+  const { q, page } = await searchParams;
   const query = (q ?? "").trim();
 
-  const customers = await db.customer.findMany({
+  // 「さらに表示」方式のページネーション（page * 20 件まで表示）
+  const pageNum = Math.max(1, Math.min(500, Number.parseInt(page ?? "1", 10) || 1));
+  const shown = pageNum * PAGE_SIZE;
+
+  const customersRaw = await db.customer.findMany({
     where: query ? { name: { contains: query } } : undefined,
     orderBy: { name: "asc" },
     include: {
-      _count: {
-        select: {
-          sites: true,
-          contacts: { where: { isActive: true } },
-        },
-      },
+      _count: { select: { sites: true } },
     },
+    take: shown + 1, // 「さらに表示」の有無を判定するため1件多く取得
   });
+  const hasMore = customersRaw.length > shown;
+  const customers = hasMore ? customersRaw.slice(0, shown) : customersRaw;
 
   return (
     <div>
@@ -54,6 +60,7 @@ export default async function CustomersPage({
       </PageHeader>
 
       <PageContainer>
+        <SearchParamToast />
         {customers.length === 0 ? (
           <EmptyState
             icon={<Building2 className="h-6 w-6" />}
@@ -67,49 +74,52 @@ export default async function CustomersPage({
             }
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {customers.map((c) => {
-            const reg = c.registrationType as RegistrationType;
-            const trade = c.tradeStatus as TradeStatus;
-            return (
-              <CardLink key={c.id} href={`/customers/${c.id}`} className="h-full p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge tone="brand">
-                        {REGISTRATION_TYPE_LABEL[reg] ?? c.registrationType}
-                      </Badge>
-                      <Badge tone={TRADE_STATUS_COLOR[trade] as "info" | "active" | "past"}>
-                        {TRADE_STATUS_LABEL[trade] ?? c.tradeStatus}
-                      </Badge>
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {customers.map((c) => (
+                <CardLink key={c.id} href={`/customers/${c.id}`} className="h-full p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-[15px] font-bold leading-snug text-ink">
+                        {c.name}
+                      </h3>
+                      {c.headOfficeAddress && (
+                        <p className="mt-1 flex items-center gap-1 truncate text-xs text-ink-muted">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{c.headOfficeAddress}</span>
+                        </p>
+                      )}
+                      {c.memo && (
+                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-muted">
+                          {c.memo}
+                        </p>
+                      )}
                     </div>
-                    <h3 className="truncate text-[15px] font-bold leading-snug text-ink">
-                      {c.name}
-                    </h3>
-                    {c.headOfficeAddress && (
-                      <p className="mt-1 flex items-center gap-1 truncate text-xs text-ink-muted">
-                        <MapPin className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{c.headOfficeAddress}</span>
-                      </p>
-                    )}
+                    <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-ink-faint" />
                   </div>
-                  <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-ink-faint" />
-                </div>
 
-                <div className="mt-3 flex items-center gap-4 border-t border-line pt-2.5 text-xs font-medium text-ink-muted">
-                  <span className="flex items-center gap-1">
-                    <Building2 className="h-3.5 w-3.5" />
-                    現場 {c._count.sites}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5" />
-                    担当者 {c._count.contacts}
-                  </span>
-                </div>
-              </CardLink>
-            );
-          })}
-          </div>
+                  <div className="mt-3 flex items-center gap-4 border-t border-line pt-2.5 text-xs font-medium text-ink-muted">
+                    <span className="flex items-center gap-1">
+                      <Building2 className="h-3.5 w-3.5" />
+                      現場 {c._count.sites}
+                    </span>
+                  </div>
+                </CardLink>
+              ))}
+            </div>
+            {hasMore && (
+              <LinkButton
+                href={buildHref({ q: query || undefined, page: pageNum + 1 })}
+                variant="outline"
+                size="md"
+                className="mt-4 w-full"
+                scroll={false}
+              >
+                <ChevronDown className="h-4 w-4" />
+                さらに表示
+              </LinkButton>
+            )}
+          </>
         )}
       </PageContainer>
 

@@ -63,28 +63,34 @@ export async function createCustomer(
     return { error: parsed.error.errors[0]?.message ?? "入力エラー" };
   }
   const d = parsed.data;
-  const customer = await db.customer.create({
-    data: {
-      name: d.name,
-      corporateNumber: d.corporateNumber,
-      invoiceNumber: d.invoiceNumber,
-      industry: d.industry,
-      capitalScale: d.capitalScale,
-      registrationType: d.registrationType,
-      tradeStatus: d.tradeStatus,
-      firstTradeDate: d.firstTradeDate ? new Date(d.firstTradeDate) : null,
-      headOfficeAddress: d.headOfficeAddress,
-      billingAddress: d.billingAddress,
-      closingDay: d.closingDay,
-      paymentDueTerm: d.paymentDueTerm,
-      paymentMethod: d.paymentMethod,
-      feeBearer: d.feeBearer,
-      memo: d.memo,
-    },
-  });
+  let customerId: string;
+  try {
+    const customer = await db.customer.create({
+      data: {
+        name: d.name,
+        corporateNumber: d.corporateNumber,
+        invoiceNumber: d.invoiceNumber,
+        industry: d.industry,
+        capitalScale: d.capitalScale,
+        registrationType: d.registrationType,
+        tradeStatus: d.tradeStatus,
+        firstTradeDate: d.firstTradeDate ? new Date(d.firstTradeDate) : null,
+        headOfficeAddress: d.headOfficeAddress,
+        billingAddress: d.billingAddress,
+        closingDay: d.closingDay,
+        paymentDueTerm: d.paymentDueTerm,
+        paymentMethod: d.paymentMethod,
+        feeBearer: d.feeBearer,
+        memo: d.memo,
+      },
+    });
+    customerId = customer.id;
+  } catch {
+    return { error: "顧客の保存に失敗しました。時間をおいて再度お試しください" };
+  }
   revalidatePath("/customers");
-  revalidatePath(`/customers/${customer.id}`);
-  redirect(`/customers/${customer.id}`);
+  revalidatePath(`/customers/${customerId}`);
+  redirect(`/customers/${customerId}?toast=${encodeURIComponent("保存しました")}`);
 }
 
 export async function updateCustomer(
@@ -101,29 +107,33 @@ export async function updateCustomer(
     return { error: parsed.error.errors[0]?.message ?? "入力エラー" };
   }
   const d = parsed.data;
-  await db.customer.update({
-    where: { id },
-    data: {
-      name: d.name,
-      corporateNumber: d.corporateNumber,
-      invoiceNumber: d.invoiceNumber,
-      industry: d.industry,
-      capitalScale: d.capitalScale,
-      registrationType: d.registrationType,
-      tradeStatus: d.tradeStatus,
-      firstTradeDate: d.firstTradeDate ? new Date(d.firstTradeDate) : null,
-      headOfficeAddress: d.headOfficeAddress,
-      billingAddress: d.billingAddress,
-      closingDay: d.closingDay,
-      paymentDueTerm: d.paymentDueTerm,
-      paymentMethod: d.paymentMethod,
-      feeBearer: d.feeBearer,
-      memo: d.memo,
-    },
-  });
+  try {
+    await db.customer.update({
+      where: { id },
+      data: {
+        name: d.name,
+        corporateNumber: d.corporateNumber,
+        invoiceNumber: d.invoiceNumber,
+        industry: d.industry,
+        capitalScale: d.capitalScale,
+        registrationType: d.registrationType,
+        tradeStatus: d.tradeStatus,
+        firstTradeDate: d.firstTradeDate ? new Date(d.firstTradeDate) : null,
+        headOfficeAddress: d.headOfficeAddress,
+        billingAddress: d.billingAddress,
+        closingDay: d.closingDay,
+        paymentDueTerm: d.paymentDueTerm,
+        paymentMethod: d.paymentMethod,
+        feeBearer: d.feeBearer,
+        memo: d.memo,
+      },
+    });
+  } catch {
+    return { error: "顧客の保存に失敗しました。時間をおいて再度お試しください" };
+  }
   revalidatePath("/customers");
   revalidatePath(`/customers/${id}`);
-  redirect(`/customers/${id}`);
+  redirect(`/customers/${id}?toast=${encodeURIComponent("保存しました")}`);
 }
 
 const contactSchema = z.object({
@@ -192,9 +202,15 @@ export async function deleteCustomer(formData: FormData) {
   // 紐づく現場が1件以上ある場合は削除不可（先に現場を整理する）
   const siteCount = await db.site.count({ where: { customerId: id } });
   if (siteCount > 0) {
-    return { error: `紐づく現場が ${siteCount} 件あるため削除できません` };
+    return {
+      error: `紐づく現場が ${siteCount} 件あるため削除できません。先に紐づく現場を削除してください`,
+    };
   }
-  await db.customer.delete({ where: { id } });
+  try {
+    await db.customer.delete({ where: { id } });
+  } catch {
+    return { error: "顧客の削除に失敗しました。時間をおいて再度お試しください" };
+  }
   revalidatePath("/customers");
-  redirect("/customers");
+  redirect(`/customers?toast=${encodeURIComponent("顧客を削除しました")}`);
 }

@@ -3,7 +3,8 @@ import Link from "next/link";
 import {
   Pencil, Building2, MapPin, KeyRound, Users2, HardHat, CalendarClock,
   FileText, ClipboardList, Plus, ChevronRight, Truck, PackageCheck,
-  ClipboardCheck, Wallet, ScrollText, Phone, ArrowRight,
+  ClipboardCheck, Wallet, ScrollText, Phone, ArrowRight, Map, CalendarRange,
+  UserRound, CircleParking,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -12,18 +13,24 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { Card, CardLink, SectionTitle, DataList, DataRow } from "@/components/ui/card";
 import { Badge, SiteStatusBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { LinkButton } from "@/components/ui/button";
+import { LinkButton, buttonClass } from "@/components/ui/button";
 import { ProgressBar } from "@/components/site-card";
 import { ReportCard } from "@/components/report-card";
 import { TodoItem } from "@/components/todo-item";
 import { EmptyState } from "@/components/ui/misc";
 import { Input } from "@/components/ui/form";
+import { PhotoGrid, type PhotoData } from "@/components/photo-grid";
+import { HandoverAlert } from "@/components/handover-alert";
+import { SearchParamToast } from "@/components/ui/toast";
 import { createTodo } from "@/features/todos/actions";
+import { getOpenHandovers } from "@/features/handovers/actions";
 import { SiteStatusControl } from "@/features/sites/site-status-control";
 import { AssignControl } from "@/features/sites/assign-control";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
-import { fmtDate, fmtMonthDay } from "@/lib/utils";
+import { photoSrc } from "@/lib/photos";
+import { todayRange } from "@/lib/date";
+import { fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
 import {
   PROJECT_TYPE_LABEL,
   PROJECT_STATUS_LABEL,
@@ -52,8 +59,8 @@ export default async function SiteDetailPage({
   const admin = isAdmin(user);
   const { id } = await params;
 
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  // 「今日以降」の判定は Asia/Tokyo の暦日で行う（UTCサーバーでの前日ズレ防止）
+  const { gte: today } = todayRange();
 
   const site = await db.site.findUnique({
     where: { id },
@@ -71,7 +78,7 @@ export default async function SiteDetailPage({
         take: 3,
       },
       events: {
-        where: { date: { gte: now } },
+        where: { date: { gte: today } },
         orderBy: [{ date: "asc" }, { startTime: "asc" }],
         take: 6,
       },
@@ -94,7 +101,41 @@ export default async function SiteDetailPage({
     notFound();
   }
 
-  const reportCount = await db.dailyReport.count({ where: { siteId: site.id } });
+  // 日報数・未解決引き継ぎ・現場写真（base64は載せない）・人工実績・駐車場代累計
+  const [reportCount, openHandovers, sitePhotos, visitCount, parkingAgg] = await Promise.all([
+    db.dailyReport.count({ where: { siteId: site.id } }),
+    getOpenHandovers(site.id),
+    db.photo.findMany({
+      where: { siteId: site.id },
+      select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.siteVisit.count({ where: { siteId: site.id } }),
+    db.dailyReport.aggregate({
+      where: { siteId: site.id },
+      _sum: { parkingFee: true },
+    }),
+  ]);
+
+  const parkingTotal = parkingAgg._sum.parkingFee ?? 0;
+
+  // kind 別に写真を仕分け（PDF は width を持たない＝画像グリッドではなくリンクで開く）
+  const isPdfLike = (p: { isVideo: boolean; width: number | null }) => !p.isVideo && p.width == null;
+  const keyboxPhotos: PhotoData[] = sitePhotos.filter((p) => p.kind === "KEYBOX" && !isPdfLike(p));
+  const drawingImages: PhotoData[] = sitePhotos.filter((p) => p.kind === "DRAWING" && !isPdfLike(p));
+  const drawingPdfs = sitePhotos.filter((p) => p.kind === "DRAWING" && isPdfLike(p));
+  const scheduleImages: PhotoData[] = sitePhotos.filter((p) => p.kind === "SCHEDULE" && !isPdfLike(p));
+  const schedulePdfs = sitePhotos.filter((p) => p.kind === "SCHEDULE" && isPdfLike(p));
+  const hasDocuments =
+    drawingImages.length + drawingPdfs.length + scheduleImages.length + schedulePdfs.length > 0;
+
+  const mapsUrl = site.address
+    ? `https://maps.google.com/?q=${encodeURIComponent(site.address)}`
+    : null;
+  const manDaysPercent =
+    site.targetManDays && site.targetManDays > 0
+      ? Math.min(100, Math.round((visitCount / site.targetManDays) * 100))
+      : null;
 
   // 関連現場を双方向から集約
   const related = [
@@ -149,7 +190,11 @@ export default async function SiteDetailPage({
       />
 
       <PageContainer>
+       <SearchParamToast />
        <div className="space-y-5">
+        {/* 未解決の引き継ぎ事項（最優先で表示） */}
+        {openHandovers.length > 0 && <HandoverAlert handovers={openHandovers} />}
+
         {/* ステータス */}
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -168,6 +213,171 @@ export default async function SiteDetailPage({
         <div className="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
          {/* ===== メイン列 ===== */}
          <div className="space-y-5 lg:col-span-2">
+
+        {/* ⓪-1 現場入り情報（ぱっと見で分かる） */}
+        <section className="space-y-2.5">
+          <SectionTitle>現場入り情報</SectionTitle>
+          <Card className="space-y-4 p-4">
+            {/* キーBOX番号を大きく表示 */}
+            <div className="rounded-xl bg-surface-sunken p-3.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                <KeyRound className="h-4 w-4" />
+                キーBOX番号
+              </p>
+              <p className="mt-1 text-3xl font-bold tracking-wider text-ink tnum">
+                {site.keyboxNumber || "—"}
+              </p>
+              {site.keyboxPlace && (
+                <p className="mt-1.5 text-sm font-medium text-ink-soft">
+                  場所: {site.keyboxPlace}
+                </p>
+              )}
+              {!site.keyboxNumber && site.keybox && (
+                <p className="mt-1.5 text-xs text-ink-muted">旧キーBOXメモ: {site.keybox}</p>
+              )}
+            </div>
+
+            {/* キーBOXの写真（タップで拡大） */}
+            {keyboxPhotos.length > 0 && <PhotoGrid photos={keyboxPhotos} />}
+
+            {/* 住所・現場担当者 */}
+            <DataList>
+              <DataRow label="住所" value={site.address} />
+              <DataRow
+                label="現場担当者"
+                value={
+                  site.siteContactName ? (
+                    <span className="inline-flex items-center gap-1">
+                      <UserRound className="h-3.5 w-3.5 text-ink-muted" />
+                      {site.siteContactName}
+                    </span>
+                  ) : null
+                }
+              />
+            </DataList>
+
+            {/* 大きなアクションボタン（44px以上） */}
+            {(mapsUrl || site.siteContactPhone) && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {mapsUrl && (
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={buttonClass({ variant: "outline", size: "md", className: "w-full" })}
+                  >
+                    <Map className="h-5 w-5" />
+                    地図を開く
+                  </a>
+                )}
+                {site.siteContactPhone && (
+                  <a
+                    href={`tel:${site.siteContactPhone}`}
+                    className={buttonClass({ size: "md", className: "w-full" })}
+                  >
+                    <Phone className="h-5 w-5" />
+                    {site.siteContactName ? `${site.siteContactName}さんに電話` : "現場担当に電話"}
+                  </a>
+                )}
+              </div>
+            )}
+          </Card>
+        </section>
+
+        {/* ⓪-2 人工（実績 / 目標） */}
+        <section className="space-y-2.5">
+          <SectionTitle>人工</SectionTitle>
+          <Card className="space-y-3 p-4">
+            <div className="flex items-end justify-between">
+              <span className="text-xs font-semibold text-ink-muted">実績 / 目標</span>
+              <span className="text-2xl font-bold text-ink tnum">
+                {visitCount}
+                <span className="text-sm font-semibold text-ink-muted">
+                  {" "}
+                  / {site.targetManDays ?? "—"} 人工
+                </span>
+              </span>
+            </div>
+            {manDaysPercent !== null && (
+              <div>
+                <ProgressBar value={manDaysPercent} />
+                <p className="mt-1 text-right text-[11px] font-semibold text-ink-muted tnum">
+                  {manDaysPercent}%
+                </p>
+              </div>
+            )}
+            <DataList>
+              <DataRow
+                label="最終人工数"
+                value={site.finalManDays != null ? `${site.finalManDays} 人工` : null}
+              />
+              <DataRow
+                label="駐車場代 累計"
+                value={
+                  parkingTotal > 0 ? (
+                    <span className="inline-flex items-center gap-1">
+                      <CircleParking className="h-3.5 w-3.5 text-ink-muted" />
+                      {fmtYen(parkingTotal)}
+                    </span>
+                  ) : null
+                }
+              />
+            </DataList>
+          </Card>
+        </section>
+
+        {/* ⓪-3 図面・工程表 */}
+        {hasDocuments && (
+          <section className="space-y-2.5">
+            <SectionTitle>図面・工程表</SectionTitle>
+            <Card className="space-y-4 p-4">
+              {(drawingImages.length > 0 || drawingPdfs.length > 0) && (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                    <FileText className="h-4 w-4" />
+                    図面
+                  </p>
+                  {drawingImages.length > 0 && <PhotoGrid photos={drawingImages} />}
+                  {drawingPdfs.map((p) => (
+                    <a
+                      key={p.id}
+                      href={photoSrc(p.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-line bg-surface-subtle px-3.5 py-2.5 text-sm font-semibold text-ink hover:border-line-strong"
+                    >
+                      <FileText className="h-5 w-5 shrink-0 text-red-500" />
+                      <span className="min-w-0 flex-1 truncate">{p.caption || "図面PDF"}</span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+                    </a>
+                  ))}
+                </div>
+              )}
+              {(scheduleImages.length > 0 || schedulePdfs.length > 0) && (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                    <CalendarRange className="h-4 w-4" />
+                    工程表
+                  </p>
+                  {scheduleImages.length > 0 && <PhotoGrid photos={scheduleImages} />}
+                  {schedulePdfs.map((p) => (
+                    <a
+                      key={p.id}
+                      href={photoSrc(p.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-line bg-surface-subtle px-3.5 py-2.5 text-sm font-semibold text-ink hover:border-line-strong"
+                    >
+                      <FileText className="h-5 w-5 shrink-0 text-red-500" />
+                      <span className="min-w-0 flex-1 truncate">{p.caption || "工程表PDF"}</span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </section>
+        )}
 
         {/* ① 基本情報 */}
         <section className="space-y-2.5">
@@ -257,10 +467,13 @@ export default async function SiteDetailPage({
                       <span className="font-semibold text-ink">{p.name}</span>
                       {p.role && <span className="text-xs text-ink-muted">{p.role}</span>}
                       {p.contact && (
-                        <span className="ml-auto flex items-center gap-0.5 text-xs text-ink-muted">
-                          <Phone className="h-3 w-3" />
+                        <a
+                          href={`tel:${p.contact}`}
+                          className="ml-auto flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-xs font-semibold text-brand-600"
+                        >
+                          <Phone className="h-3.5 w-3.5" />
                           {p.contact}
-                        </span>
+                        </a>
                       )}
                     </div>
                   ))}

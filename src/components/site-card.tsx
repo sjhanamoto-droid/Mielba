@@ -1,8 +1,13 @@
+"use client";
+
 import { MapPin, ChevronRight } from "lucide-react";
 import { CardLink } from "@/components/ui/card";
 import { SiteStatusBadge, Badge } from "@/components/ui/badge";
 import { PROJECT_TYPE_LABEL, type ProjectType } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+
+// 住所 → Google マップ検索 URL は @/lib/utils に移動（サーバーコンポーネントからも使うため）
+import { mapSearchUrl } from "@/lib/utils";
 
 export function ProgressBar({
   value,
@@ -57,9 +62,30 @@ export function SiteCard({
             </p>
           )}
           {site.address && (
+            // カード全体が <Link> のため、住所は role="link" で地図アプリを開く
+            // （preventDefault + stopPropagation でカード遷移と両立）
             <p className="mt-1 flex items-center gap-1 truncate text-xs text-ink-muted">
-              <MapPin className="h-3 w-3 shrink-0" />
-              <span className="truncate">{site.address}</span>
+              <MapPin className="h-3 w-3 shrink-0 text-brand-500" />
+              <span
+                role="link"
+                tabIndex={0}
+                aria-label={`${site.address} を地図で開く`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  window.open(mapSearchUrl(site.address!), "_blank", "noopener,noreferrer");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.open(mapSearchUrl(site.address!), "_blank", "noopener,noreferrer");
+                  }
+                }}
+                className="truncate underline decoration-line-strong underline-offset-2 hover:text-brand-600"
+              >
+                {site.address}
+              </span>
             </p>
           )}
         </div>

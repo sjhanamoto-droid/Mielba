@@ -1,11 +1,16 @@
 import type { Config } from "tailwindcss";
 
+// CSS変数トークンを参照するヘルパー（globals.css の :root / :root[data-theme="dark"] で定義）
+const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
+
 const config: Config = {
   content: [
     "./src/app/**/*.{ts,tsx}",
     "./src/components/**/*.{ts,tsx}",
     "./src/features/**/*.{ts,tsx}",
   ],
+  // html[data-theme="dark"] でダークモード（layout.tsx のインラインスクリプトが必ずセット）
+  darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       fontFamily: {
@@ -21,56 +26,56 @@ const config: Config = {
         ],
       },
       colors: {
-        // ブランド（信頼感のあるディープブルー）
+        // ブランド（信頼感のあるディープブルー。実値は globals.css の CSS変数）
         brand: {
-          50: "#eef4ff",
-          100: "#d9e6ff",
-          200: "#bcd3ff",
-          300: "#8eb6ff",
-          400: "#598dff",
-          500: "#2f63f5",
-          600: "#1947e8",
-          700: "#1436d4",
-          800: "#172eac",
-          900: "#192d88",
-          950: "#141d52",
+          50: v("brand-50"),
+          100: v("brand-100"),
+          200: v("brand-200"),
+          300: v("brand-300"),
+          400: v("brand-400"),
+          500: v("brand-500"),
+          600: v("brand-600"),
+          700: v("brand-700"),
+          800: v("brand-800"),
+          900: v("brand-900"),
+          950: v("brand-950"),
         },
         // アクセント（現場の安全色＝アンバー）
         accent: {
-          50: "#fff8eb",
-          100: "#ffedc6",
-          200: "#ffd888",
-          300: "#ffbe4a",
-          400: "#ffa620",
-          500: "#f98307",
-          600: "#dd6002",
-          700: "#b74106",
-          800: "#94330c",
-          900: "#7a2b0d",
+          50: v("accent-50"),
+          100: v("accent-100"),
+          200: v("accent-200"),
+          300: v("accent-300"),
+          400: v("accent-400"),
+          500: v("accent-500"),
+          600: v("accent-600"),
+          700: v("accent-700"),
+          800: v("accent-800"),
+          900: v("accent-900"),
         },
         ink: {
-          DEFAULT: "#0f172a",
-          soft: "#334155",
-          muted: "#64748b",
-          faint: "#94a3b8",
+          DEFAULT: v("ink"),
+          soft: v("ink-soft"),
+          muted: v("ink-muted"),
+          faint: v("ink-faint"),
         },
         surface: {
-          DEFAULT: "#ffffff",
-          subtle: "#f7f8fb",
-          sunken: "#eef1f6",
+          DEFAULT: v("surface"),
+          subtle: v("surface-subtle"),
+          sunken: v("surface-sunken"),
         },
         line: {
-          DEFAULT: "#e6e9f0",
-          strong: "#d4d9e3",
+          DEFAULT: v("line"),
+          strong: v("line-strong"),
         },
         // ステータス色
         status: {
-          survey: "#8b5cf6", // 現調
-          active: "#10b981", // 進行中
-          past: "#94a3b8", // 過去
-          warn: "#f59e0b",
-          danger: "#ef4444",
-          info: "#3b82f6",
+          survey: v("status-survey"), // 現調
+          active: v("status-active"), // 進行中
+          past: v("status-past"), // 過去
+          warn: v("status-warn"),
+          danger: v("status-danger"),
+          info: v("status-info"),
         },
       },
       borderRadius: {
@@ -79,9 +84,10 @@ const config: Config = {
         "3xl": "1.5rem",
       },
       boxShadow: {
-        card: "0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.06)",
-        float: "0 8px 24px rgba(16,24,40,0.12)",
-        nav: "0 -1px 0 rgba(16,24,40,0.06), 0 -8px 24px rgba(16,24,40,0.06)",
+        // ダークで沈まないよう変数化（globals.css でテーマ別に定義）
+        card: "var(--shadow-card)",
+        float: "var(--shadow-float)",
+        nav: "var(--shadow-nav)",
       },
       maxWidth: {
         app: "560px",

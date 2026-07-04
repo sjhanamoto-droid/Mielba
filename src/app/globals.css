@@ -3,9 +3,121 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * デザイントークン（RGBトリプレット）
+   * tailwind.config.ts が rgb(var(--xxx) / <alpha-value>) で参照する。
+   * ダークモードは html[data-theme="dark"] で再定義（layout.tsx のインライン
+   * スクリプトが localStorage 'mielba-theme' を解決して必ずセットする）。
+   */
   :root {
     --font-sans: "Noto Sans JP", system-ui, sans-serif;
     --app-max: 560px;
+    color-scheme: light;
+
+    /* ブランド（信頼感のあるディープブルー） */
+    --brand-50: 238 244 255;
+    --brand-100: 217 230 255;
+    --brand-200: 188 211 255;
+    --brand-300: 142 182 255;
+    --brand-400: 89 141 255;
+    --brand-500: 47 99 245;
+    --brand-600: 25 71 232;
+    --brand-700: 20 54 212;
+    --brand-800: 23 46 172;
+    --brand-900: 25 45 136;
+    --brand-950: 20 29 82;
+
+    /* アクセント（現場の安全色＝アンバー） */
+    --accent-50: 255 248 235;
+    --accent-100: 255 237 198;
+    --accent-200: 255 216 136;
+    --accent-300: 255 190 74;
+    --accent-400: 255 166 32;
+    --accent-500: 249 131 7;
+    --accent-600: 221 96 2;
+    --accent-700: 183 65 6;
+    --accent-800: 148 51 12;
+    --accent-900: 122 43 13;
+
+    /* テキスト */
+    --ink: 15 23 42;
+    --ink-soft: 51 65 85;
+    --ink-muted: 100 116 139;
+    --ink-faint: 148 163 184;
+
+    /* 面 */
+    --surface: 255 255 255;
+    --surface-subtle: 247 248 251;
+    --surface-sunken: 238 241 246;
+
+    /* 罫線 */
+    --line: 230 233 240;
+    --line-strong: 212 217 227;
+
+    /* ステータス色 */
+    --status-survey: 139 92 246;
+    --status-active: 16 185 129;
+    --status-past: 148 163 184;
+    --status-warn: 245 158 11;
+    --status-danger: 239 68 68;
+    --status-info: 59 130 246;
+
+    /* 影（ダークでは沈むので変数化） */
+    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+    --shadow-float: 0 8px 24px rgba(16, 24, 40, 0.12);
+    --shadow-nav: 0 -1px 0 rgba(16, 24, 40, 0.06), 0 -8px 24px rgba(16, 24, 40, 0.06);
+  }
+
+  /* ダークモード：夜間の現場でも眩しくない暗色。コントラストは WCAG AA 基準 */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* ブランド（暗背景では明度を上げる。600 は白文字で AA を満たす明度） */
+    --brand-50: 28 37 71;
+    --brand-100: 34 48 88;
+    --brand-200: 43 61 116;
+    --brand-300: 61 85 166;
+    --brand-400: 91 124 240;
+    --brand-500: 108 139 242;
+    --brand-600: 76 108 235;
+    --brand-700: 123 150 247;
+    --brand-800: 165 184 251;
+    --brand-900: 199 211 253;
+    --brand-950: 227 234 254;
+
+    /* アクセント（淡色段だけ暗背景用に反転） */
+    --accent-50: 58 42 14;
+    --accent-100: 74 52 16;
+    --accent-200: 116 80 22;
+    --accent-300: 200 130 30;
+
+    /* テキスト */
+    --ink: 231 234 242;
+    --ink-soft: 195 201 217;
+    --ink-muted: 143 151 171;
+    --ink-faint: 102 112 137;
+
+    /* 面 */
+    --surface: 29 32 39;
+    --surface-subtle: 20 22 28;
+    --surface-sunken: 38 42 51;
+
+    /* 罫線 */
+    --line: 44 49 64;
+    --line-strong: 58 64 84;
+
+    /* ステータス色（暗背景で視認できる明度に） */
+    --status-survey: 167 139 250;
+    --status-active: 52 211 153;
+    --status-past: 115 126 147;
+    --status-warn: 251 191 36;
+    --status-danger: 248 113 113;
+    --status-info: 96 165 250;
+
+    /* 影は沈むので弱め＋境界は border（--line）で補強する */
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.55);
+    --shadow-nav: 0 -1px 0 rgba(0, 0, 0, 0.4), 0 -8px 24px rgba(0, 0, 0, 0.35);
   }
 
   * {
@@ -53,6 +165,12 @@
 }
 
 @layer components {
+  /*
+   * 最小フォントサイズの指針：
+   * 屋外・軍手・老眼でも読めるよう、本文/操作ラベルは text-sm(14px) 以上、
+   * 補足でも text-xs(12px) 以上を使うこと。text-[10px]/text-[11px] は使わない。
+   */
+
   /* アプリの中央寄せコンテナ（スマホ幅基準） */
   .app-container {
     @apply mx-auto w-full max-w-app;
@@ -82,5 +200,24 @@
   /* タップ可能な行 */
   .tap-row {
     @apply active:scale-[0.99] transition-transform;
+  }
+
+  /* 警告・通知バナー（bg/border/text セット、ライト/ダーク両対応） */
+  .alert-danger {
+    @apply rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-800 dark:border-red-900/70 dark:bg-red-950/50 dark:text-red-300;
+  }
+  .alert-warn {
+    @apply rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/50 dark:text-amber-300;
+  }
+  .alert-success {
+    @apply rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300;
+  }
+  .alert-info {
+    @apply rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-3 text-sm text-blue-800 dark:border-blue-800/60 dark:bg-blue-950/50 dark:text-blue-300;
+  }
+
+  /* Field の error 指定時にフォーム部品を赤枠にする（ui/form.tsx が付与） */
+  .field-error :is(input, textarea, select) {
+    @apply border-status-danger focus:border-status-danger focus:ring-red-100 dark:focus:ring-red-950;
   }
 }

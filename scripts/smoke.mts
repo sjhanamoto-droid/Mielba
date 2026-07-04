@@ -58,9 +58,9 @@ async function main() {
   console.log("\n=== 管理者 ===");
   results.push(await check("/", a, ["次にやること", admin.name]));
   results.push(await check("/customers", a, ["顧客", customer.name]));
-  results.push(await check(`/customers/${customer.id}`, a, [customer.name, "担当者"]));
-  results.push(await check(`/customers/${customer.id}/edit`, a, ["会社名", customer.name]));
-  results.push(await check("/customers/new", a, ["会社名"]));
+  results.push(await check(`/customers/${customer.id}`, a, [customer.name, "この顧客の現場"]));
+  results.push(await check(`/customers/${customer.id}/edit`, a, ["顧客名", customer.name]));
+  results.push(await check("/customers/new", a, ["顧客名"]));
   results.push(await check("/sites", a, ["現場"]));
   results.push(await check("/sites?status=SURVEY", a, ["現場"]));
   results.push(await check(`/sites/${site.id}`, a, [site.name, "引き継ぎ", "職人", "関連現場", "協力会社"]));
@@ -96,6 +96,9 @@ async function main() {
   results.push(await check("/calendar", s, ["カレンダー"]));
   results.push(await check(`/reports/new?siteId=${site.id}`, s, [site.name]));
 
+  // 注: (app)/loading.tsx 追加によりページはストリーミング配信となり、
+  //     ページ内の redirect()/notFound() は HTTP 200 のままストリーム内で通知される
+  //     （リダイレクトは meta refresh + NEXT_REDIRECT、404 は not-found UI）。新仕様として両対応で判定する。
   console.log("\n=== 認可（スタッフは未割当現場を閲覧不可＝404） ===");
   let authzOk = true;
   if (unassignedSite) {
@@ -103,28 +106,33 @@ async function main() {
       headers: { Cookie: `mielba_session=${s}` },
       redirect: "manual",
     });
-    authzOk = r.status === 404;
-    console.log(`${authzOk ? "✅" : "❌"}  ${r.status} /sites/${unassignedSite.id}（404期待: ${unassignedSite.name}）`);
+    const body = r.status === 200 ? await r.text() : "";
+    const streamedNotFound =
+      r.status === 200 &&
+      body.includes("This page could not be found") &&
+      !body.includes(unassignedSite.name); // 現場情報が漏れていないこと
+    const ok = r.status === 404 || streamedNotFound;
+    authzOk = ok;
+    console.log(`${ok ? "✅" : "❌"}  ${r.status} /sites/${unassignedSite.id}（404期待: ${unassignedSite.name}${streamedNotFound ? " / ストリーム内404" : ""}）`);
   } else {
     console.log("⚠️  未割当の進行中現場が無く認可テストをスキップ");
   }
 
-  // スタッフは管理者専用の設定（スタッフ管理）に入れない＝ホームへリダイレクト
-  const radmin = await fetch(BASE + "/settings/staff", {
-    headers: { Cookie: `mielba_session=${s}` },
-    redirect: "manual",
-  });
-  const adminOnlyOk = radmin.status === 307 || radmin.status === 302;
-  authzOk = authzOk && adminOnlyOk;
-  console.log(`${adminOnlyOk ? "✅" : "❌"}  ${radmin.status} /settings/staff（スタッフ→リダイレクト期待）`);
-
-  const rdisp = await fetch(BASE + "/dispatch", {
-    headers: { Cookie: `mielba_session=${s}` },
-    redirect: "manual",
-  });
-  const dispOk = rdisp.status === 307 || rdisp.status === 302;
-  authzOk = authzOk && dispOk;
-  console.log(`${dispOk ? "✅" : "❌"}  ${rdisp.status} /dispatch（スタッフ→リダイレクト期待）`);
+  // 管理者専用ページ: 302/307 またはストリーム内リダイレクト（meta refresh + NEXT_REDIRECT）を許容
+  async function checkAdminOnlyRedirect(path: string) {
+    const r = await fetch(BASE + path, {
+      headers: { Cookie: `mielba_session=${s}` },
+      redirect: "manual",
+    });
+    const body = r.status === 200 ? await r.text() : "";
+    const streamedRedirect =
+      r.status === 200 && /http-equiv="refresh"/.test(body) && body.includes("NEXT_REDIRECT");
+    const ok = r.status === 307 || r.status === 302 || streamedRedirect;
+    console.log(`${ok ? "✅" : "❌"}  ${r.status} ${path}（スタッフ→リダイレクト期待${streamedRedirect ? " / ストリーム内リダイレクト" : ""}）`);
+    return ok;
+  }
+  authzOk = (await checkAdminOnlyRedirect("/settings/staff")) && authzOk;
+  authzOk = (await checkAdminOnlyRedirect("/dispatch")) && authzOk;
 
   console.log("\n=== ガード（未ログイン→/login） ===");
   const noauth = await fetch(BASE + "/", { redirect: "manual" });

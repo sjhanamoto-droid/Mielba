@@ -143,6 +143,13 @@ model Site {
   // 引き継ぎ
   handoverNote     String? // 引き継ぎ事項（前回状況・注意点・残作業）
 
+  // ── v0.4 追加：現場連絡先・キーBOX・工数 ──
+  siteContactPhone String? // 現場側担当者の電話番号
+  keyboxNumber     String? // キーBOXの番号
+  keyboxPlace      String? // キーBOXの設置場所
+  targetManDays    Int? // 目標人工（工数）
+  finalManDays     Int? // 最終人工（実績）
+
   memo             String?
 
   // ── 将来フェーズ：金額・収支（項目定義のみ。入力UI/集計は将来有効化） ──
@@ -177,6 +184,8 @@ model Site {
   assignments SiteAssignment[]
   partners    SitePartner[]
   visits      SiteVisit[]
+  photos      Photo[] // 現場に直接紐づく写真（図面・工程表・キーBOX等）
+  handovers   Handover[]
 
   // 関連現場リンク（同一住所）— 双方向に検索する
   relationsA SiteRelation[] @relation("SiteRelationA")
@@ -276,6 +285,8 @@ model DailyReport {
   memo        String? // 注意点等のメモ（現場メモ・申し送り）
   status      String   @default("DRAFT") // DRAFT(未提出) | SUBMITTED(提出済)
   submittedAt DateTime?
+  parkingFee  Int? // 駐車場代（円）
+  handover    String? // 引き継ぎ事項（次の担当者への申し送り）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -348,9 +359,11 @@ model Photo {
   id        String   @id @default(cuid())
   reportId  String?
   surveyId  String?
+  siteId    String? // 現場直付けの写真（図面・工程表・キーBOX等）
   dataUrl   String // 圧縮済み base64（軽量・高速アップロード）
+  thumbUrl  String? // サムネイル（base64、一覧表示用）
   caption   String? // 連動する文章
-  kind      String   @default("WORK") // WORK | COMPANY_STOCK(弊社分) | SURVEY | OTHER
+  kind      String   @default("WORK") // WORK | COMPANY_STOCK(弊社分) | SURVEY | DRAWING(図面) | SCHEDULE(工程表) | KEYBOX(キーBOX) | OTHER
   isVideo   Boolean  @default(false)
   width     Int?
   height    Int?
@@ -358,9 +371,44 @@ model Photo {
 
   report DailyReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
   survey Survey?      @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  site   Site?        @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
   @@index([surveyId])
+  @@index([siteId])
+}
+
+// ──────────────────────── MaterialMaster（材料マスター） ────────────────────────
+// 日報の使用材料・発注の入力候補となる材料マスター。管理者が編集する。
+model MaterialMaster {
+  id        String   @id @default(cuid())
+  name      String // 材料名
+  unit      String? // 単位（枚・本・袋 等）
+  active    Boolean  @default(true) // 無効化（削除の代わり）
+  sortOrder Int      @default(0) // 表示順
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}
+
+// ──────────────────────── Handover（引き継ぎ事項） ────────────────────────
+// 現場ごとの申し送り。日報提出時に起票され、次の担当者が「確認して停止」で解決する。
+model Handover {
+  id           String    @id @default(cuid())
+  siteId       String
+  reportId     String? // 起票元の日報（任意）
+  content      String // 引き継ぎ内容
+  createdById  String? // 起票者
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime? // 解決日時（null = 未解決）
+  resolvedById String? // 解決者
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+  @@index([resolvedAt])
+  @@index([siteId, resolvedAt])
 }
 
 // ──────────────────────── CalendarEvent（現場・個人予定） ────────────────────────

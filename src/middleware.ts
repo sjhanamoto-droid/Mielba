@@ -10,6 +10,10 @@ export async function middleware(req: NextRequest) {
   const isLoginPage = pathname === "/login";
 
   if (!session && !isLoginPage) {
+    // API（写真配信等）は HTML へリダイレクトせず 401 を返す（<img> やスクリプトからの参照のため）
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+    }
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("from", pathname);
@@ -27,8 +31,8 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // _next, 静的アセット, favicon, manifest 等を除外
+  // _next, 静的アセット, favicon, PWA アセット（manifest / sw.js / icons）等を除外
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg|apple-icon.png|robots.txt).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icons/|apple-touch-icon.png|icon.svg|apple-icon.png|robots.txt).*)",
   ],
 };

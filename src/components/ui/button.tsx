@@ -6,7 +6,7 @@ type Variant = "primary" | "accent" | "secondary" | "ghost" | "danger" | "outlin
 type Size = "sm" | "md" | "lg" | "icon";
 
 const base =
-  "inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-1 whitespace-nowrap";
+  "inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1 focus-visible:ring-offset-surface-subtle whitespace-nowrap";
 
 const variants: Record<Variant, string> = {
   primary: "bg-brand-600 text-white shadow-card hover:bg-brand-700",
@@ -17,8 +17,9 @@ const variants: Record<Variant, string> = {
   outline: "border border-line-strong bg-surface text-ink hover:bg-surface-subtle",
 };
 
+// タップターゲットは軍手前提で 40px 以上（md 以上は 44px 以上）を確保する
 const sizes: Record<Size, string> = {
-  sm: "h-9 px-3 text-sm",
+  sm: "h-10 px-3.5 text-sm",
   md: "h-11 px-4 text-[15px]",
   lg: "h-[52px] px-5 text-base",
   icon: "h-11 w-11 p-0",

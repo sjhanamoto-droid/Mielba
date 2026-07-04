@@ -25,16 +25,17 @@ export default function LoginPage() {
           <p className="mb-5 text-sm text-ink-muted">アカウント情報を入力してください</p>
           <LoginForm />
 
+          {/* パスワードを忘れた場合の常設ヘルプ（デモ認証情報の画面表示は v0.4 で撤去済み） */}
           <div className="mt-6 rounded-xl bg-surface-subtle p-3 text-xs leading-relaxed text-ink-muted">
-            <p className="mb-1 font-semibold text-ink-soft">デモ用アカウント</p>
-            <p>管理者：admin@mielba.app</p>
-            <p>スタッフ：sato@mielba.app</p>
-            <p>パスワード（共通）：mielba123</p>
+            <p>
+              パスワードを忘れた場合は管理者（事務所）へ連絡してください。
+              管理者は 設定 → スタッフ管理 から再設定できます。
+            </p>
           </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-brand-200/80">
-          © 2026 Mielba — 建設業向け現場管理アプリ v0.3
+          © 2026 Mielba — 建設業向け現場管理アプリ v0.4
         </p>
       </div>
     </main>

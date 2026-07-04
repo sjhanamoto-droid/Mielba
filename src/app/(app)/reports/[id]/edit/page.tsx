@@ -21,7 +21,11 @@ export default async function EditReportPage({
       materials: true,
       orders: true,
       nextProcesses: true,
-      photos: { orderBy: { createdAt: "asc" } },
+      // base64（dataUrl/thumbUrl）はRSCペイロードに載せない（既存写真は {id} 参照で維持）
+      photos: {
+        select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
   if (!report) notFound();
@@ -31,6 +35,13 @@ export default async function EditReportPage({
     redirect(`/reports/${report.id}`);
   }
 
+  // 材料マスター（使用材料のセレクト候補）
+  const materialOptions = await db.materialMaster.findMany({
+    where: { active: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, unit: true },
+  });
+
   const initial: ReportFormData = {
     id: report.id,
     workDate: report.workDate,
@@ -39,6 +50,8 @@ export default async function EditReportPage({
     detail: report.detail,
     aiSummary: report.aiSummary,
     memo: report.memo,
+    handover: report.handover,
+    parkingFee: report.parkingFee,
     materials: report.materials.map((m) => ({
       name: m.name,
       quantity: m.quantity,
@@ -55,8 +68,9 @@ export default async function EditReportPage({
       vendors: p.vendors,
       supplyDeliveryDate: p.supplyDeliveryDate,
     })),
+    // 既存写真は {id} 参照のみ（base64 を再送しない）。プレビューは photoSrc(id, true)。
     photos: report.photos.map((p) => ({
-      dataUrl: p.dataUrl,
+      id: p.id,
       caption: p.caption ?? "",
       kind: (p.kind as PhotoKind) ?? "WORK",
       isVideo: p.isVideo,
@@ -78,6 +92,8 @@ export default async function EditReportPage({
           siteId={report.site.id}
           siteName={report.site.name}
           initial={initial}
+          materialOptions={materialOptions}
+          aiEnabled={Boolean(process.env.ANTHROPIC_API_KEY)}
         />
       </PageContainer>
     </div>

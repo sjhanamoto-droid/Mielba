@@ -1,19 +1,110 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, AlertCircle, HardHat } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  Check, HardHat, Loader2, ChevronLeft, ChevronRight,
+} from "lucide-react";
+import Link from "next/link";
 import { toggleVisit } from "./actions";
 import { Avatar } from "@/components/ui/avatar";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 type Staff = { id: string; name: string; avatarColor: string };
+// 当日の日報状況: none=未打刻 / draft=下書き / submitted=提出済
+export type ReportStatus = "none" | "draft" | "submitted";
 type SiteRow = {
   id: string;
   name: string;
   customerName: string | null;
   staff: Staff[];
   visitedIds: string[];
+  /** userId → 当日の日報状況（現場入りONの人の提出状況表示に使う） */
+  reportStatusByUserId?: Record<string, ReportStatus>;
 };
+
+// 日報状況のドット（未打刻=赤 / 下書き=黄 / 提出済=緑）
+function StatusDot({ status }: { status: ReportStatus }) {
+  const cls =
+    status === "submitted"
+      ? "bg-emerald-500"
+      : status === "draft"
+        ? "bg-amber-400"
+        : "bg-red-500";
+  const label =
+    status === "submitted" ? "日報 提出済" : status === "draft" ? "日報 下書き" : "日報 未打刻";
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface", cls)}
+    />
+  );
+}
+
+// 日付送りナビ（クライアント）。router.push + useTransition で
+// 低速回線でも「反応していない」ように見えないようスピナーを出す。
+export function DispatchDateNav({
+  prevKey,
+  nextKey,
+  isToday,
+  label,
+}: {
+  prevKey: string;
+  nextKey: string;
+  isToday: boolean;
+  label: string;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  function go(key: string | null) {
+    startTransition(() => {
+      router.push(key ? `/dispatch?d=${key}` : "/dispatch");
+    });
+  }
+
+  return (
+    <div className={cn("mb-4 flex items-center justify-between gap-2", isPending && "opacity-60")}>
+      <button
+        type="button"
+        onClick={() => go(prevKey)}
+        disabled={isPending}
+        aria-label="前の日"
+        className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft hover:bg-surface-sunken disabled:opacity-50"
+      >
+        <ChevronLeft className="h-6 w-6" />
+      </button>
+      <div className="text-center">
+        <p className="flex items-center justify-center gap-1.5 text-base font-bold text-ink tnum md:text-lg">
+          {isPending && <Loader2 className="h-4 w-4 animate-spin text-brand-600" aria-hidden />}
+          {label}
+        </p>
+        {!isToday && (
+          <button
+            type="button"
+            onClick={() => go(null)}
+            disabled={isPending}
+            className="text-xs font-semibold text-brand-600 disabled:opacity-50"
+          >
+            今日に戻る
+          </button>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => go(nextKey)}
+        disabled={isPending}
+        aria-label="次の日"
+        className="flex h-11 w-11 items-center justify-center rounded-full text-ink-soft hover:bg-surface-sunken disabled:opacity-50"
+      >
+        <ChevronRight className="h-6 w-6" />
+      </button>
+    </div>
+  );
+}
 
 export function DispatchBoard({
   sites,
@@ -22,8 +113,10 @@ export function DispatchBoard({
   sites: SiteRow[];
   dateStr: string;
 }) {
-  const [pending, start] = useTransition();
-  const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
+  const [, start] = useTransition();
+  // セル単位の pending（`${siteId}_${userId}`）。1タップで全ボタンをロックしない。
+  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const [visited, setVisited] = useState<Record<string, Set<string>>>(() => {
     const m: Record<string, Set<string>> = {};
     for (const s of sites) m[s.id] = new Set(s.visitedIds);
@@ -31,7 +124,8 @@ export function DispatchBoard({
   });
 
   function toggle(siteId: string, userId: string) {
-    setErr(null);
+    const key = `${siteId}_${userId}`;
+    if (pendingKeys.has(key)) return; // 同一セルの多重タップは無視
     const was = visited[siteId]?.has(userId) ?? false;
     // 楽観的更新
     setVisited((prev) => {
@@ -42,10 +136,16 @@ export function DispatchBoard({
       n[siteId] = set;
       return n;
     });
+    setPendingKeys((prev) => new Set(prev).add(key));
     start(async () => {
       const r = await toggleVisit(siteId, userId, dateStr);
+      setPendingKeys((prev) => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
       if (r?.error) {
-        setErr(r.error);
+        toast(r.error, { type: "error" });
         // 失敗時は戻す
         setVisited((prev) => {
           const n = { ...prev };
@@ -68,12 +168,6 @@ export function DispatchBoard({
         <span className="text-lg font-bold tnum text-brand-700">{totalGoing}名</span>
       </div>
 
-      {err && (
-        <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" />{err}
-        </div>
-      )}
-
       <div className="space-y-3">
         {sites.map((s) => {
           const goingCount = visited[s.id]?.size ?? 0;
@@ -81,14 +175,18 @@ export function DispatchBoard({
             <div key={s.id} className="card p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-[15px] font-bold text-ink">{s.name}</p>
+                  <Link href={`/sites/${s.id}`} className="block truncate text-[15px] font-bold text-ink">
+                    {s.name}
+                  </Link>
                   {s.customerName && (
                     <p className="truncate text-xs text-ink-muted">{s.customerName}</p>
                   )}
                 </div>
                 <span className={cn(
                   "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold",
-                  goingCount > 0 ? "bg-emerald-50 text-emerald-700" : "bg-surface-sunken text-ink-muted",
+                  goingCount > 0
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "bg-surface-sunken text-ink-muted",
                 )}>
                   {goingCount}名
                 </span>
@@ -100,12 +198,14 @@ export function DispatchBoard({
                 <div className="flex flex-wrap gap-2">
                   {s.staff.map((u) => {
                     const on = visited[s.id]?.has(u.id) ?? false;
+                    const cellPending = pendingKeys.has(`${s.id}_${u.id}`);
+                    const reportStatus = s.reportStatusByUserId?.[u.id] ?? "none";
                     return (
                       <button
                         key={u.id}
                         type="button"
                         onClick={() => toggle(s.id, u.id)}
-                        disabled={pending}
+                        disabled={cellPending}
                         aria-pressed={on}
                         className={cn(
                           "flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-sm font-semibold transition-all active:scale-95 disabled:opacity-60",
@@ -121,8 +221,13 @@ export function DispatchBoard({
                               <Check className="h-2.5 w-2.5 text-brand-600" strokeWidth={4} />
                             </span>
                           )}
+                          {/* 現場入りONの人だけ、当日の日報状況をドットで表示 */}
+                          {on && !cellPending && <StatusDot status={reportStatus} />}
                         </span>
                         {u.name}
+                        {cellPending && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        )}
                       </button>
                     );
                   })}
@@ -140,9 +245,14 @@ export function DispatchBoard({
         </div>
       )}
 
-      <p className="px-1 text-xs text-ink-faint">
-        スタッフをタップで「この日の現場入り」をON/OFF。ONにした人だけ、その日の日報対象になります。
-      </p>
+      <div className="space-y-1 px-1 text-xs text-ink-faint">
+        <p>スタッフをタップで「この日の現場入り」をON/OFF。ONにした人だけ、その日の日報対象になります。</p>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />未打刻</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />下書き</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />提出済</span>
+        </p>
+      </div>
     </div>
   );
 }

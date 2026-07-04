@@ -4,67 +4,97 @@ import { useState, useTransition } from "react";
 import { Sparkles, AlertTriangle, Wand2, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { assistReportAction } from "./actions";
+import { aiAssistLlm } from "./ai-actions";
 import type { AiAssist } from "@/lib/ai";
 
 // 現場詳細・材料/写真の有無は props で受け取り、要約反映は onApply コールバックで
 // 親フォームの state を更新する（DOM 直接参照は廃止）。
+// aiEnabled=true（ANTHROPIC_API_KEY あり）のときは「AIで整える」ボタンで
+// 実LLM（ai-actions.ts）を呼び、結果を差し替える。
 export function AiAssistPanel({
   detail,
   hasMaterials,
   hasPhotos,
   appliedSummary,
   onApply,
+  aiEnabled = false,
 }: {
   detail: string;
   hasMaterials: boolean;
   hasPhotos: boolean;
   appliedSummary: string;
   onApply: (summary: string) => void;
+  aiEnabled?: boolean;
 }) {
   const [result, setResult] = useState<AiAssist | null>(null);
   const [pending, startTransition] = useTransition();
+  // どちらのボタンが実行中かを表示に使う
+  const [runningLlm, setRunningLlm] = useState(false);
 
   // 反映済み判定は親 state（appliedSummary）と今回の要約が一致するかで行う
   const applied = Boolean(result?.summary) && appliedSummary === result?.summary;
 
-  function runAssist() {
+  function runAssist(useLlm: boolean) {
+    setRunningLlm(useLlm);
     startTransition(async () => {
-      const res = await assistReportAction(detail, hasMaterials, hasPhotos);
+      const res = useLlm
+        ? await aiAssistLlm({ detail, hasMaterials, hasPhotos })
+        : await assistReportAction(detail, hasMaterials, hasPhotos);
       setResult(res);
     });
   }
 
-  function applySummary() {
-    if (!result?.summary) return;
-    onApply(result.summary);
-  }
-
   return (
     <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-sm font-bold text-brand-700">
           <Sparkles className="h-4 w-4" />
           AIサポート
         </span>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={runAssist}
-          disabled={pending}
-        >
-          {pending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              解析中...
-            </>
-          ) : (
-            <>
-              <Wand2 className="h-4 w-4" />
-              要約・チェック
-            </>
+        <span className="flex gap-2">
+          {/* ローカル即時プレビュー（従来動作） */}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => runAssist(false)}
+            disabled={pending}
+          >
+            {pending && !runningLlm ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                解析中...
+              </>
+            ) : (
+              <>
+                <Wand2 className="h-4 w-4" />
+                要約・チェック
+              </>
+            )}
+          </Button>
+          {/* 実LLM（ANTHROPIC_API_KEY があるときのみ表示） */}
+          {aiEnabled && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => runAssist(true)}
+              disabled={pending}
+            >
+              {pending && runningLlm ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  AI解析中...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  AIで整える
+                </>
+              )}
+            </Button>
           )}
-        </Button>
+        </span>
       </div>
 
       <p className="mt-1.5 text-[11px] text-ink-faint">
@@ -84,7 +114,7 @@ export function AiAssistPanel({
                 type="button"
                 variant={applied ? "outline" : "primary"}
                 size="sm"
-                onClick={applySummary}
+                onClick={() => result?.summary && onApply(result.summary)}
                 className="mt-2"
                 disabled={applied}
               >
@@ -113,7 +143,7 @@ export function AiAssistPanel({
                   <li key={i} className="flex items-center gap-1.5 text-sm text-ink">
                     <span className="text-status-danger line-through">{c.from}</span>
                     <span className="text-ink-faint">→</span>
-                    <span className="font-semibold text-emerald-600">{c.to}</span>
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{c.to}</span>
                   </li>
                 ))}
               </ul>
@@ -122,14 +152,14 @@ export function AiAssistPanel({
 
           {/* 書き漏れ警告 */}
           {result.warnings.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+            <div className="alert-warn">
+              <p className="flex items-center gap-1.5 text-xs font-semibold">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 書き漏れチェック
               </p>
               <ul className="mt-1.5 space-y-1.5">
                 {result.warnings.map((w, i) => (
-                  <li key={i} className="text-sm leading-relaxed text-amber-700">
+                  <li key={i} className="text-sm leading-relaxed">
                     {w}
                   </li>
                 ))}
@@ -140,7 +170,7 @@ export function AiAssistPanel({
           {result.corrections.length === 0 &&
             result.warnings.length === 0 &&
             result.summary && (
-              <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                 <Check className="h-3.5 w-3.5" />
                 書き漏れ・誤記は見つかりませんでした。
               </p>

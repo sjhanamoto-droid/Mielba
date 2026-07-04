@@ -68,10 +68,13 @@ export function PartnerControl({
               <span className="font-semibold text-ink">{p.name}</span>
               {p.role && <span className="text-xs text-ink-muted">{p.role}</span>}
               {p.contact && (
-                <span className="flex items-center gap-0.5 text-xs text-ink-muted">
-                  <Phone className="h-3 w-3" />
+                <a
+                  href={`tel:${p.contact}`}
+                  className="flex min-h-[44px] items-center gap-1 rounded-lg px-1.5 text-xs font-semibold text-brand-600"
+                >
+                  <Phone className="h-3.5 w-3.5" />
                   {p.contact}
-                </span>
+                </a>
               )}
               <button
                 type="button"

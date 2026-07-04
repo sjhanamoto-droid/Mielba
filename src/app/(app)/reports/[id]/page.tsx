@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   Clock, Package, Truck, ClipboardList, StickyNote, Sparkles, MessageSquare,
-  Pencil, ChevronRight, CalendarDays, Users,
+  Pencil, ChevronRight, CalendarDays, Users, Printer, ArrowRightLeft, CircleParking,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -13,8 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { LinkButton } from "@/components/ui/button";
 import { PhotoGrid } from "@/components/photo-grid";
+import { SearchParamToast } from "@/components/ui/toast";
 import { CommentForm } from "@/features/reports/comment-form";
-import { fmtDateWithDay, fmtDate, fmtDateTime, workHours } from "@/lib/utils";
+import { fmtDateWithDay, fmtDate, fmtDateTime, fmtYen, workHours } from "@/lib/utils";
 import { REPORT_STATUS_LABEL, type ReportStatus } from "@/lib/constants";
 
 export default async function ReportDetailPage({
@@ -33,7 +34,11 @@ export default async function ReportDetailPage({
       materials: true,
       orders: true,
       nextProcesses: true,
-      photos: { orderBy: { createdAt: "asc" } },
+      // base64（dataUrl/thumbUrl）はRSCペイロードに載せない（/api/photos/[id] で配信）
+      photos: {
+        select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+        orderBy: { createdAt: "asc" },
+      },
       comments: {
         include: { user: { select: { name: true, avatarColor: true } } },
         orderBy: { createdAt: "asc" },
@@ -52,14 +57,23 @@ export default async function ReportDetailPage({
         subtitle={report.site.name}
         backHref={`/sites/${report.site.id}/reports`}
         right={
-          canEdit ? (
-            <LinkButton href={`/reports/${report.id}/edit`} variant="ghost" size="sm">
-              <Pencil className="h-4 w-4" />
-              編集
+          <span className="flex items-center gap-1">
+            <LinkButton href={`/reports/${report.id}/print`} variant="ghost" size="sm">
+              <Printer className="h-4 w-4" />
+              PDF・印刷
             </LinkButton>
-          ) : undefined
+            {canEdit && (
+              <LinkButton href={`/reports/${report.id}/edit`} variant="ghost" size="sm">
+                <Pencil className="h-4 w-4" />
+                編集
+              </LinkButton>
+            )}
+          </span>
         }
       />
+
+      {/* 提出・保存成功のトースト（?toast=...） */}
+      <SearchParamToast />
 
       <PageContainer>
         <div className="space-y-4 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
@@ -87,6 +101,15 @@ export default async function ReportDetailPage({
             </span>
             <span className="text-ink-faint">実働 {workHours(report.startTime, report.endTime)}</span>
           </div>
+
+          {/* 駐車場代 */}
+          {report.parkingFee != null && (
+            <div className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2.5 text-sm">
+              <CircleParking className="h-4 w-4 text-ink-muted" />
+              <span className="text-ink-soft">駐車場代</span>
+              <span className="ml-auto font-bold tnum text-ink">{fmtYen(report.parkingFee)}</span>
+            </div>
+          )}
 
           <Link
             href={`/sites/${report.site.id}`}
@@ -211,8 +234,23 @@ export default async function ReportDetailPage({
             <SectionTitle>
               <span className="flex items-center gap-1.5"><StickyNote className="h-4 w-4" />注意点メモ</span>
             </SectionTitle>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-800">{report.memo}</p>
+            <div className="alert-warn rounded-2xl p-4">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{report.memo}</p>
+            </div>
+          </section>
+        )}
+
+        {/* 引き継ぎ事項（次に入る人への申し送り） */}
+        {report.handover && (
+          <section className="space-y-2">
+            <SectionTitle>
+              <span className="flex items-center gap-1.5"><ArrowRightLeft className="h-4 w-4" />引き継ぎ事項</span>
+            </SectionTitle>
+            <div className="alert-warn rounded-2xl p-4">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{report.handover}</p>
+              <p className="mt-1.5 text-xs opacity-80">
+                提出時に現場の引き継ぎとして起票され、次の担当者が確認するまで表示されます。
+              </p>
             </div>
           </section>
         )}

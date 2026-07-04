@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "vercel-build": "prisma generate && prisma db push && SEED_ONLY_IF_EMPTY=1 tsx prisma/seed.ts && next build",
+    "vercel-build": "prisma generate && node scripts/migrate-deploy.mjs && SEED_ONLY_IF_EMPTY=1 tsx prisma/seed.ts && next build",
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
@@ -21,6 +21,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@prisma/client": "^6.3.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
