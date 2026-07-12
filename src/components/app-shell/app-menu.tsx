@@ -34,7 +34,7 @@ export function AppMenu({
       <button
         onClick={() => setOpen(true)}
         aria-label="メニューを開く"
-        className="flex items-center gap-1.5 rounded-full bg-white/15 py-1 pl-1.5 pr-3 text-white active:scale-95"
+        className="flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1.5 pr-3 text-ink-soft shadow-card active:scale-95"
       >
         <Avatar name={user.name} color={user.avatarColor} size="sm" />
         <Menu className="h-4 w-4" aria-hidden />

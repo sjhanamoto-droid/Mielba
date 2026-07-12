@@ -1,6 +1,8 @@
 import * as React from "react";
 import Link from "next/link";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { IconBadge, type IconTone } from "@/components/ui/icon-badge";
 
 export function EmptyState({
   icon,
@@ -64,17 +66,29 @@ export function Divider({ className }: { className?: string }) {
   return <div className={cn("h-px bg-line", className)} />;
 }
 
-// 統計の小タイル
+// 統計の小タイル。
+// icon を渡すと参考デザイン風の「白地カード＋カラフルな丸アイコン」表現になる。
+// icon 省略時は従来の淡色地・数値主体タイル（後方互換）。
+const STAT_ICON_TONE: Record<string, IconTone> = {
+  neutral: "slate",
+  warn: "amber",
+  danger: "rose",
+  brand: "brand",
+  active: "emerald",
+};
+
 export function StatTile({
   label,
   value,
   tone = "neutral",
   href,
+  icon,
 }: {
   label: string;
   value: React.ReactNode;
   tone?: "neutral" | "warn" | "danger" | "brand" | "active";
   href?: string;
+  icon?: LucideIcon;
 }) {
   // brand はトークンでダーク自動追従。Tailwind パレット色は dark: で明度を反転
   const tones: Record<string, string> = {
@@ -85,7 +99,17 @@ export function StatTile({
     active:
       "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   };
-  const inner = (
+
+  const inner = icon ? (
+    // アイコン付き：白地カード＋丸アイコン（参考デザイン準拠）
+    <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3 shadow-card md:gap-3.5 md:p-4">
+      <IconBadge icon={icon} tone={STAT_ICON_TONE[tone] ?? "slate"} />
+      <div className="min-w-0">
+        <span className="block text-2xl font-bold tnum leading-none text-ink">{value}</span>
+        <span className="mt-1 block truncate text-xs font-semibold text-ink-muted">{label}</span>
+      </div>
+    </div>
+  ) : (
     <div
       className={cn(
         "flex flex-col rounded-2xl border border-line p-3 shadow-card",
