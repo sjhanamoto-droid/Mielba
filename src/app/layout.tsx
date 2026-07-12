@@ -6,7 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Mielba（ミエルバ）| 建設業 現場管理",
   description:
-    "建設業向け現場管理アプリ。顧客・現場・カレンダー・日報・TODO を現場中心に一元管理。",
+    "建設業向け現場管理アプリ。顧客・現場・カレンダー・日報を現場中心に一元管理。",
   applicationName: "Mielba",
   // PWA: ホーム画面追加用の manifest とアイコン（public/ 配下）
   manifest: "/manifest.webmanifest",

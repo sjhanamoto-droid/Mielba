@@ -13,7 +13,6 @@ import { AppMenu } from "@/components/app-shell/app-menu";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { SiteCard } from "@/components/site-card";
 import { mapSearchUrl } from "@/lib/utils";
-import { TodoItem } from "@/components/todo-item";
 import { HandoverAlert } from "@/components/handover-alert";
 import { StatTile, EmptyState } from "@/components/ui/misc";
 import { IconBadge, type IconTone } from "@/components/ui/icon-badge";
@@ -222,19 +221,6 @@ export default async function HomePage() {
     }
   }
 
-  // 自分宛の未対応TODO（期限判定は日本時間の暦日キーで行う）
-  const myTodos = await db.todo.findMany({
-    where: { assigneeId: user.id, status: { not: "DONE" } },
-    include: { site: { select: { id: true, name: true } }, assignee: { select: { name: true } } },
-    orderBy: [{ dueDate: "asc" }],
-  });
-  const dueKey = (d: Date | null) => (d ? jstDateKey(d) : null);
-  const overdueTodos = myTodos.filter((t) => {
-    const k = dueKey(t.dueDate);
-    return k !== null && k < todayKey;
-  });
-  const todayDueTodos = myTodos.filter((t) => dueKey(t.dueDate) === todayKey);
-
   // 本日の予定
   const todayEvents = await db.calendarEvent.findMany({
     where: {
@@ -300,13 +286,12 @@ export default async function HomePage() {
     : 0;
 
   // 統計（管理者向け）
-  const [surveyCount, openTodoCount] = await Promise.all([
-    admin ? db.site.count({ where: { siteStatus: "SURVEY" } }) : Promise.resolve(0),
-    db.todo.count({ where: { assigneeId: user.id, status: { not: "DONE" } } }),
-  ]);
+  const surveyCount = admin
+    ? await db.site.count({ where: { siteStatus: "SURVEY" } })
+    : 0;
 
   // ── 「次にやること」を優先度順に組み立てる ──
-  // 優先順: 未打刻 > 未解決の引き継ぎ確認 > 未提出下書き > 期限切れTODO > 本日締切TODO > 情報（配達等）
+  // 優先順: 未打刻 > 未解決の引き継ぎ確認 > 未提出下書き > 情報（配達等）
   const tasks: HomeTask[] = [
     ...sitesNotStarted.map((s) => ({
       key: `report-${s.id}`,
@@ -334,26 +319,6 @@ export default async function HomePage() {
       href: `/reports/${reportBySiteId.get(s.id)!.id}`,
       cta: "下書きを開く",
     })),
-    ...(overdueTodos.length > 0
-      ? [{
-          key: "overdue-todos",
-          tone: "danger" as const,
-          title: `期限切れのTODOに対応する（${overdueTodos.length}件）`,
-          sub: overdueTodos[0]?.title,
-          href: "/todos",
-          cta: "TODOを開く",
-        }]
-      : []),
-    ...(todayDueTodos.length > 0
-      ? [{
-          key: "today-todos",
-          tone: "warn" as const,
-          title: `本日締切のTODOを片付ける（${todayDueTodos.length}件）`,
-          sub: todayDueTodos[0]?.title,
-          href: "/todos",
-          cta: "TODOを開く",
-        }]
-      : []),
     ...deliveryEvents.map((e) => ({
       key: `event-${e.id}`,
       tone: "info" as const,
@@ -385,7 +350,6 @@ export default async function HomePage() {
     : [
         { href: "/reports", label: "日報を書く", icon: FileText, tone: "emerald" },
         { href: "/calendar", label: "予定を確認する", icon: CalendarClock, tone: "sky" },
-        { href: "/todos", label: "自分のTODO", icon: CheckSquare, tone: "amber" },
         { href: "/sites", label: "現場一覧", icon: HardHat, tone: "violet" },
       ];
 
@@ -711,15 +675,15 @@ export default async function HomePage() {
               </div>
             </section>
 
-            {/* 統計タイル */}
+            {/* 統計タイル（現場・カレンダー中心） */}
             <section className="grid grid-cols-3 gap-2.5 lg:gap-4">
               <StatTile label="担当の進行中" value={activeSites.length} tone="brand" icon={HardHat} href="/sites?status=ACTIVE" />
-              <StatTile label="未対応TODO" value={openTodoCount} tone={openTodoCount > 0 ? "warn" : "neutral"} icon={CheckSquare} href="/todos" />
               {admin ? (
                 <StatTile label="現調中" value={surveyCount} tone="neutral" icon={ClipboardList} href="/sites?status=SURVEY" />
               ) : (
-                <StatTile label="本日の予定" value={todayEvents.length} tone="neutral" icon={CalendarClock} href="/calendar" />
+                <StatTile label="今週の予定" value={weekEventCount} tone="neutral" icon={CalendarDays} href="/calendar" />
               )}
+              <StatTile label="本日の予定" value={todayEvents.length} tone="neutral" icon={CalendarClock} href="/calendar" />
             </section>
 
             {/* 明日の現場入り */}
@@ -778,20 +742,6 @@ export default async function HomePage() {
                     <span className="text-xs font-semibold text-brand-600">配員ボードで確認</span>
                   </Link>
                 ) : null}
-              </section>
-            )}
-
-            {/* 自分宛TODO */}
-            {myTodos.length > 0 && (
-              <section className="space-y-2.5">
-                <SectionTitle action={<Link href="/todos" className="text-xs font-semibold text-brand-600">すべて</Link>}>
-                  自分のTODO
-                </SectionTitle>
-                <div className="space-y-2">
-                  {myTodos.slice(0, 5).map((t) => (
-                    <TodoItem key={t.id} todo={t} />
-                  ))}
-                </div>
               </section>
             )}
 

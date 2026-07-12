@@ -16,13 +16,10 @@ import { Avatar } from "@/components/ui/avatar";
 import { LinkButton, buttonClass } from "@/components/ui/button";
 import { ProgressBar } from "@/components/site-card";
 import { ReportCard } from "@/components/report-card";
-import { TodoItem } from "@/components/todo-item";
 import { EmptyState } from "@/components/ui/misc";
-import { Input } from "@/components/ui/form";
 import { PhotoGrid, type PhotoData } from "@/components/photo-grid";
 import { HandoverAlert } from "@/components/handover-alert";
 import { SearchParamToast } from "@/components/ui/toast";
-import { createTodo } from "@/features/todos/actions";
 import { getOpenHandovers } from "@/features/handovers/actions";
 import { SiteStatusControl } from "@/features/sites/site-status-control";
 import { AssignControl } from "@/features/sites/assign-control";
@@ -43,12 +40,6 @@ import {
   type BillingStatus,
   type EventSource,
 } from "@/lib/constants";
-
-// <form action> は void 返却が必要なため createTodo を薄くラップ
-async function addSiteTodo(formData: FormData) {
-  "use server";
-  await createTodo(formData);
-}
 
 export default async function SiteDetailPage({
   params,
@@ -81,13 +72,6 @@ export default async function SiteDetailPage({
         where: { date: { gte: today } },
         orderBy: [{ date: "asc" }, { startTime: "asc" }],
         take: 6,
-      },
-      todos: {
-        include: {
-          assignee: { select: { name: true } },
-          site: { select: { id: true, name: true } },
-        },
-        orderBy: [{ status: "asc" }, { dueDate: "asc" }],
       },
       relationsA: { include: { siteB: { select: { id: true, name: true, address: true, siteStatus: true } } } },
       relationsB: { include: { siteA: { select: { id: true, name: true, address: true, siteStatus: true } } } },
@@ -632,36 +616,6 @@ export default async function SiteDetailPage({
               })}
             </Card>
           )}
-        </section>
-
-        {/* ⑨ TODO */}
-        <section className="space-y-2.5">
-          <SectionTitle>この現場のTODO</SectionTitle>
-          {site.todos.length > 0 && (
-            <div className="space-y-2">
-              {site.todos.map((t) => (
-                <TodoItem key={t.id} todo={t} showSite={false} />
-              ))}
-            </div>
-          )}
-          {/* インライン追加フォーム */}
-          <form action={addSiteTodo} className="flex items-center gap-2">
-            <input type="hidden" name="siteId" value={site.id} />
-            <input type="hidden" name="scope" value="SITE" />
-            <Input
-              name="title"
-              placeholder="TODOを追加…"
-              className="h-11 flex-1"
-              required
-            />
-            <button
-              type="submit"
-              aria-label="TODOを追加"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white active:scale-95"
-            >
-              <Plus className="h-5 w-5" />
-            </button>
-          </form>
         </section>
 
         {/* ⑩ 関連現場 */}
