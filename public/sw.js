@@ -8,7 +8,7 @@
  * - /api/（写真配信・Server Action 等）は一切キャッシュしない
  * - CACHE_VERSION を上げると古いキャッシュは activate 時に破棄される
  */
-const CACHE_VERSION = "mielba-v0.4.0";
+const CACHE_VERSION = "mielba-v0.4.1";
 const OFFLINE_URL = "/offline";
 
 // プリキャッシュ対象（/offline は未ログイン時に取得できないことがあるため個別に best-effort）
