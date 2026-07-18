@@ -131,26 +131,30 @@ export default async function SiteDetailPage({
   let assignCandidates: { id: string; name: string; avatarColor: string }[] = [];
   let relationCandidates: { id: string; name: string; address: string | null }[] = [];
   if (admin) {
-    assignCandidates = await db.user.findMany({
-      where: { active: true },
-      select: { id: true, name: true, avatarColor: true },
-      orderBy: { name: "asc" },
-    });
-
     // 同一 customerId または同一 address の他現場（自身・既存関連は除外）
     const relatedIds = new Set(related.map((r) => r.other.id));
     const orConds: { customerId?: string; address?: string }[] = [
       { customerId: site.customerId },
     ];
     if (site.address) orConds.push({ address: site.address });
-    const candidateSites = await db.site.findMany({
-      where: {
-        AND: [{ id: { not: site.id } }, { OR: orConds }],
-      },
-      select: { id: true, name: true, address: true },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
+
+    // 互いに独立した2クエリを並列取得（本番PostgreSQLの往復回数を削減）
+    const [candidates, candidateSites] = await Promise.all([
+      db.user.findMany({
+        where: { active: true },
+        select: { id: true, name: true, avatarColor: true },
+        orderBy: { name: "asc" },
+      }),
+      db.site.findMany({
+        where: {
+          AND: [{ id: { not: site.id } }, { OR: orConds }],
+        },
+        select: { id: true, name: true, address: true },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+    ]);
+    assignCandidates = candidates;
     relationCandidates = candidateSites.filter((c) => !relatedIds.has(c.id));
   }
   const assignedIds = site.assignments.map((a) => a.user.id);

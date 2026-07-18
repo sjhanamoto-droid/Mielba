@@ -7,15 +7,18 @@
 //     （旧: SQLite。本番 Vercel 向けに PostgreSQL へ移行）
 
 generator client {
-  provider      = "prisma-client-js"
   // native = ローカル / rhel-openssl-3.0.x = Vercel(サーバーレス) ランタイム
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
+  provider      = "prisma-client-js"
 }
 
+// 本番/Preview(Vercel) = PostgreSQL(Neon)。url=プール接続(pgbouncer)、directUrl=直結。
+// ── ローカルで SQLite を使う場合は generator の binaryTargets を外し、datasource を
+//    { provider = "sqlite"  url = env("DATABASE_URL") } に差し替える（.env: DATABASE_URL="file:./dev.db"）。
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")           // プール接続（アプリ実行時）
-  directUrl = env("DATABASE_URL_UNPOOLED")   // 直結（マイグレーション/db push 時）
+  url       = env("POSTGRES_PRISMA_URL")        // プール接続(pgbouncer)・アプリ実行時
+  directUrl = env("POSTGRES_URL_NON_POOLING")   // 直結・マイグレーション/db push 時
 }
 
 // ──────────────────────── AppSetting（アプリ設定・会社情報） ────────────────────────

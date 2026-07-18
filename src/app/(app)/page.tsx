@@ -136,31 +136,112 @@ export default async function HomePage() {
   const tmrwKey = tomorrowKey();
   const tomorrow = dayRangeForKey(tmrwKey);
 
-  // 担当現場（進行中）
-  const activeSites = await db.site.findMany({
-    where: {
-      siteStatus: "ACTIVE",
-      ...(admin ? {} : { assignments: { some: { userId: user.id } } }),
-    },
-    include: {
-      customer: { select: { name: true } },
-      assignments: { select: { userId: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+  // ── 今週のカレンダー範囲（週ストリップ用）。DBアクセス前に確定させる ──
+  // 日曜起点の7日。各日に「予定の出所色ドット」と「自分の現場入り」を集約する。
+  const weekStartKey = addDaysKey(todayKey, -dateFromKey(todayKey).getDay());
+  const weekDayKeys = Array.from({ length: 7 }, (_, i) => addDaysKey(weekStartKey, i));
+  const weekStart = dateFromKey(weekStartKey);
+  const weekEnd = dateFromKey(addDaysKey(weekStartKey, 7));
 
-  // 今日の現場入り（出面）。日報・未提出はこれに連動（配属ではなく「当日行く現場」）。
-  const todayVisits = await db.siteVisit.findMany({
-    where: { userId: user.id, date: today },
-    include: { site: { select: { id: true, name: true } } },
-    orderBy: { createdAt: "asc" },
-  });
+  // ── 互いに独立したクエリはすべて 1 波で並列取得する ──
+  //    本番の PostgreSQL は「1 クエリ = 1 ネットワーク往復」。直列に await すると
+  //    往復回数ぶん待ち時間が積み上がるため、依存の無いものは Promise.all でまとめる。
+  //    （visitSiteIds に依存する引き継ぎ照会だけは後段の第2波で取得）
+  const emptyPairs: { siteId: string; userId: string }[] = [];
+  const [
+    activeSites,
+    todayVisits,
+    myReportsToday,
+    todayEvents,
+    weekEvents,
+    weekVisits,
+    myTomorrowVisits,
+    allVisitsToday,
+    submittedToday,
+    tomorrowGoingCount,
+    surveyCount,
+  ] = await Promise.all([
+    // 担当現場（進行中）
+    db.site.findMany({
+      where: {
+        siteStatus: "ACTIVE",
+        ...(admin ? {} : { assignments: { some: { userId: user.id } } }),
+      },
+      include: {
+        customer: { select: { name: true } },
+        assignments: { select: { userId: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
+    // 今日の現場入り（出面）。日報・未提出はこれに連動（配属ではなく「当日行く現場」）。
+    db.siteVisit.findMany({
+      where: { userId: user.id, date: today },
+      include: { site: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    // 本日分の自分の日報（状態判定用）— ステータス込みで取得
+    db.dailyReport.findMany({
+      where: { userId: user.id, workDate: today },
+      select: { id: true, siteId: true, status: true },
+    }),
+    // 本日の予定
+    db.calendarEvent.findMany({
+      where: {
+        date: today,
+        ...(admin
+          ? {}
+          : { OR: [{ ownerId: user.id }, { site: { assignments: { some: { userId: user.id } } } }] }),
+      },
+      include: { site: { select: { id: true, name: true } } },
+      orderBy: [{ startTime: "asc" }],
+    }),
+    // 今週の予定（週ストリップの出所色ドット用）
+    db.calendarEvent.findMany({
+      where: {
+        date: { gte: weekStart, lt: weekEnd },
+        ...(admin
+          ? {}
+          : {
+              OR: [
+                { ownerId: user.id },
+                { site: { assignments: { some: { userId: user.id } } } },
+                { participants: { some: { userId: user.id } } },
+              ],
+            }),
+      },
+      select: { id: true, date: true, source: true },
+    }),
+    // 今週の自分の現場入り
+    db.siteVisit.findMany({
+      where: { userId: user.id, date: { gte: weekStart, lt: weekEnd } },
+      select: { date: true },
+    }),
+    // 明日の現場入り（自分の分）
+    db.siteVisit.findMany({
+      where: { userId: user.id, date: tomorrow },
+      include: { site: { select: { id: true, name: true, address: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    // 管理者向け：今日の全スタッフの現場入り（配員サマリー用）
+    admin
+      ? db.siteVisit.findMany({
+          where: { date: today },
+          select: { siteId: true, userId: true },
+        })
+      : Promise.resolve(emptyPairs),
+    // 管理者向け：今日の提出済み日報（配員サマリー用）
+    admin
+      ? db.dailyReport.findMany({
+          where: { status: "SUBMITTED", workDate: today },
+          select: { siteId: true, userId: true },
+        })
+      : Promise.resolve(emptyPairs),
+    // 管理者向け：明日の全体現場入り件数
+    admin ? db.siteVisit.count({ where: { date: tomorrow } }) : Promise.resolve(0),
+    // 統計（管理者向け）：調査中の現場数
+    admin ? db.site.count({ where: { siteStatus: "SURVEY" } }) : Promise.resolve(0),
+  ]);
 
-  // 本日分の自分の日報（状態判定用）— ステータス込みで取得
-  const myReportsToday = await db.dailyReport.findMany({
-    where: { userId: user.id, workDate: today },
-    select: { id: true, siteId: true, status: true },
-  });
   const reportBySiteId = new Map(myReportsToday.map((r) => [r.siteId, r]));
 
   // 現場入りした現場を「未打刻(日報なし)」「未提出(下書きあり)」に分離（提出済は除外）
@@ -174,7 +255,35 @@ export default async function HomePage() {
     (s) => reportBySiteId.get(s.id)?.status === "SUBMITTED",
   ).length;
 
-  // 今日行く現場の未解決の引き継ぎ事項（スタッフ向けにホームでも確認できるように）
+  // 本日の配達(DELIVERY)/支給品(SUPPLY)予定は「情報」タスクとして知らせる
+  const deliveryEvents = todayEvents.filter(
+    (e) => e.source === "DELIVERY" || e.source === "SUPPLY",
+  );
+
+  // 週ストリップの集計（取得済みデータから組み立てる）
+  const weekSourcesByDay = new Map<string, string[]>();
+  for (const e of weekEvents) {
+    const k = jstDateKey(e.date);
+    const arr = weekSourcesByDay.get(k);
+    if (arr) arr.push(e.source);
+    else weekSourcesByDay.set(k, [e.source]);
+  }
+  const weekVisitDays = new Set(weekVisits.map((v) => jstDateKey(v.date)));
+  const weekEventCount = weekEvents.length;
+
+  // 管理者向け：今日の配員サマリー（全スタッフの現場入りと提出状況）
+  let dispatchSummary = { going: 0, submitted: 0, pending: 0 };
+  if (admin && allVisitsToday.length > 0) {
+    const subSet = new Set(submittedToday.map((r) => `${r.siteId}_${r.userId}`));
+    const submitted = allVisitsToday.filter((v) => subSet.has(`${v.siteId}_${v.userId}`)).length;
+    dispatchSummary = {
+      going: allVisitsToday.length,
+      submitted,
+      pending: allVisitsToday.length - submitted,
+    };
+  }
+
+  // 今日行く現場の未解決の引き継ぎ事項（visitSiteIds に依存するので第2波で取得）
   const visitSiteIds = visitSites.map((s) => s.id);
   let openHandovers: { id: string; content: string; createdAt: Date; createdByName?: string }[] = [];
   if (visitSiteIds.length > 0) {
@@ -198,97 +307,6 @@ export default async function HomePage() {
       createdByName: h.createdById ? nameById.get(h.createdById) : undefined,
     }));
   }
-
-  // 管理者向け：今日の配員サマリー（全スタッフの現場入りと提出状況）
-  let dispatchSummary = { going: 0, submitted: 0, pending: 0 };
-  if (admin) {
-    const allVisitsToday = await db.siteVisit.findMany({
-      where: { date: today },
-      select: { siteId: true, userId: true },
-    });
-    if (allVisitsToday.length > 0) {
-      const subs = await db.dailyReport.findMany({
-        where: { status: "SUBMITTED", workDate: today },
-        select: { siteId: true, userId: true },
-      });
-      const subSet = new Set(subs.map((r) => `${r.siteId}_${r.userId}`));
-      const submitted = allVisitsToday.filter((v) => subSet.has(`${v.siteId}_${v.userId}`)).length;
-      dispatchSummary = {
-        going: allVisitsToday.length,
-        submitted,
-        pending: allVisitsToday.length - submitted,
-      };
-    }
-  }
-
-  // 本日の予定
-  const todayEvents = await db.calendarEvent.findMany({
-    where: {
-      date: today,
-      ...(admin
-        ? {}
-        : { OR: [{ ownerId: user.id }, { site: { assignments: { some: { userId: user.id } } } }] }),
-    },
-    include: { site: { select: { id: true, name: true } } },
-    orderBy: [{ startTime: "asc" }],
-  });
-
-  // 本日の配達(DELIVERY)/支給品(SUPPLY)予定は「情報」タスクとして知らせる
-  const deliveryEvents = todayEvents.filter(
-    (e) => e.source === "DELIVERY" || e.source === "SUPPLY",
-  );
-
-  // ── 今週のカレンダー状況（週ストリップ）──
-  // 日曜起点の7日。各日に「予定の出所色ドット」と「自分の現場入り」を集約する。
-  const weekStartKey = addDaysKey(todayKey, -dateFromKey(todayKey).getDay());
-  const weekDayKeys = Array.from({ length: 7 }, (_, i) => addDaysKey(weekStartKey, i));
-  const weekStart = dateFromKey(weekStartKey);
-  const weekEnd = dateFromKey(addDaysKey(weekStartKey, 7));
-  const [weekEvents, weekVisits] = await Promise.all([
-    db.calendarEvent.findMany({
-      where: {
-        date: { gte: weekStart, lt: weekEnd },
-        ...(admin
-          ? {}
-          : {
-              OR: [
-                { ownerId: user.id },
-                { site: { assignments: { some: { userId: user.id } } } },
-                { participants: { some: { userId: user.id } } },
-              ],
-            }),
-      },
-      select: { id: true, date: true, source: true },
-    }),
-    db.siteVisit.findMany({
-      where: { userId: user.id, date: { gte: weekStart, lt: weekEnd } },
-      select: { date: true },
-    }),
-  ]);
-  const weekSourcesByDay = new Map<string, string[]>();
-  for (const e of weekEvents) {
-    const k = jstDateKey(e.date);
-    const arr = weekSourcesByDay.get(k);
-    if (arr) arr.push(e.source);
-    else weekSourcesByDay.set(k, [e.source]);
-  }
-  const weekVisitDays = new Set(weekVisits.map((v) => jstDateKey(v.date)));
-  const weekEventCount = weekEvents.length;
-
-  // 明日の現場入り（自分の分）。管理者は全体の配員状況も確認する。
-  const myTomorrowVisits = await db.siteVisit.findMany({
-    where: { userId: user.id, date: tomorrow },
-    include: { site: { select: { id: true, name: true, address: true } } },
-    orderBy: { createdAt: "asc" },
-  });
-  const tomorrowGoingCount = admin
-    ? await db.siteVisit.count({ where: { date: tomorrow } })
-    : 0;
-
-  // 統計（管理者向け）
-  const surveyCount = admin
-    ? await db.site.count({ where: { siteStatus: "SURVEY" } })
-    : 0;
 
   // ── 「次にやること」を優先度順に組み立てる ──
   // 優先順: 未打刻 > 未解決の引き継ぎ確認 > 未提出下書き > 情報（配達等）

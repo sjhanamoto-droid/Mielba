@@ -73,48 +73,48 @@ export default async function CalendarPage({
   }
 
   // 権限: 管理者は全件、スタッフは自分の担当現場＋自分の個人予定
-  const events = await db.calendarEvent.findMany({
-    where: {
-      date: { gte: rangeStart, lt: rangeEnd },
-      ...(admin
-        ? {}
-        : {
-            OR: [
-              { ownerId: user.id },
-              { site: { assignments: { some: { userId: user.id } } } },
-              { participants: { some: { userId: user.id } } },
-            ],
-          }),
-    },
-    include: {
-      site: { select: { id: true, name: true } },
-      owner: { select: { id: true, name: true, avatarColor: true } },
-      createdBy: { select: { id: true, name: true, avatarColor: true } },
-      participants: { include: { user: { select: { id: true, name: true, avatarColor: true } } } },
-    },
-    orderBy: [{ date: "asc" }, { startTime: "asc" }],
-  });
-
-  // 自分の現場入り（出面）。読み取り専用の予定チップとして表示する（管理者も自分の分のみ）。
-  const myVisits = await db.siteVisit.findMany({
-    where: { userId: user.id, date: { gte: rangeStart, lt: rangeEnd } },
-    include: { site: { select: { id: true, name: true } } },
-    orderBy: { date: "asc" },
-  });
-
-  // 予定追加用の現場候補（管理者は全件、スタッフは担当現場のみ）
-  const sites = await db.site.findMany({
-    where: admin ? {} : { assignments: { some: { userId: user.id } } },
-    select: { id: true, name: true, address: true },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  // 担当（現場に行く人）候補：有効なユーザー一覧
-  const users = await db.user.findMany({
-    where: { active: true },
-    select: { id: true, name: true, avatarColor: true },
-    orderBy: { name: "asc" },
-  });
+  // 互いに独立した4クエリを1波で並列取得（本番PostgreSQLの往復回数を削減）
+  const [events, myVisits, sites, users] = await Promise.all([
+    db.calendarEvent.findMany({
+      where: {
+        date: { gte: rangeStart, lt: rangeEnd },
+        ...(admin
+          ? {}
+          : {
+              OR: [
+                { ownerId: user.id },
+                { site: { assignments: { some: { userId: user.id } } } },
+                { participants: { some: { userId: user.id } } },
+              ],
+            }),
+      },
+      include: {
+        site: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, avatarColor: true } },
+        createdBy: { select: { id: true, name: true, avatarColor: true } },
+        participants: { include: { user: { select: { id: true, name: true, avatarColor: true } } } },
+      },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    }),
+    // 自分の現場入り（出面）。読み取り専用の予定チップとして表示する（管理者も自分の分のみ）。
+    db.siteVisit.findMany({
+      where: { userId: user.id, date: { gte: rangeStart, lt: rangeEnd } },
+      include: { site: { select: { id: true, name: true } } },
+      orderBy: { date: "asc" },
+    }),
+    // 予定追加用の現場候補（管理者は全件、スタッフは担当現場のみ）
+    db.site.findMany({
+      where: admin ? {} : { assignments: { some: { userId: user.id } } },
+      select: { id: true, name: true, address: true },
+      orderBy: { updatedAt: "desc" },
+    }),
+    // 担当（現場に行く人）候補：有効なユーザー一覧
+    db.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true, avatarColor: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   const viewEvents = events.map((e) => ({
     id: e.id,

@@ -33,44 +33,46 @@ export default async function ReportsHubPage({
 
   // ─────────────── スタッフ：日報の最短入力ハブ ───────────────
   if (!admin) {
-    // 今日の現場入り（出面）。日報はこれに連動する（配属ではなく当日行く現場）。
-    const todayVisits = await db.siteVisit.findMany({
-      where: { userId: user.id, date: { gte: today, lt: tomorrow } },
-      include: { site: { include: { customer: { select: { name: true } } } } },
-      orderBy: { createdAt: "asc" },
-    });
-    const todayReports = await db.dailyReport.findMany({
-      where: { userId: user.id, workDate: { gte: today, lt: tomorrow } },
-      select: { id: true, siteId: true, status: true },
-    });
+    // 互いに独立した4クエリを1波で並列取得（本番PostgreSQLの往復回数を削減）
+    const [todayVisits, todayReports, activeSites, myRecent] = await Promise.all([
+      // 今日の現場入り（出面）。日報はこれに連動する（配属ではなく当日行く現場）。
+      db.siteVisit.findMany({
+        where: { userId: user.id, date: { gte: today, lt: tomorrow } },
+        include: { site: { include: { customer: { select: { name: true } } } } },
+        orderBy: { createdAt: "asc" },
+      }),
+      db.dailyReport.findMany({
+        where: { userId: user.id, workDate: { gte: today, lt: tomorrow } },
+        select: { id: true, siteId: true, status: true },
+      }),
+      // 「別の現場に行った」候補：配属に限定せず、進行中の全現場から
+      db.site.findMany({
+        where: { siteStatus: "ACTIVE" },
+        select: {
+          id: true,
+          name: true,
+          assignments: { where: { userId: user.id }, select: { id: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+      }),
+      db.dailyReport.findMany({
+        where: { userId: user.id },
+        include: {
+          user: { select: { name: true, avatarColor: true } },
+          site: { select: { id: true, name: true } },
+          _count: { select: { photos: true, comments: true, materials: true } },
+        },
+        orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+        take: 10,
+      }),
+    ]);
     const byId = new Map(todayReports.map((r) => [r.siteId, r]));
 
-    // 「別の現場に行った」候補：配属に限定せず、進行中の全現場から
-    // 今日まだ現場入りしていない現場（配属現場を上にグループ表示）
+    // 今日まだ現場入りしていない進行中の現場（配属現場を上にグループ表示）
     const visitedSiteIds = new Set(todayVisits.map((v) => v.siteId));
-    const activeSites = await db.site.findMany({
-      where: { siteStatus: "ACTIVE" },
-      select: {
-        id: true,
-        name: true,
-        assignments: { where: { userId: user.id }, select: { id: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
     const addableSites = activeSites
       .filter((s) => !visitedSiteIds.has(s.id))
       .map((s) => ({ id: s.id, name: s.name, assigned: s.assignments.length > 0 }));
-
-    const myRecent = await db.dailyReport.findMany({
-      where: { userId: user.id },
-      include: {
-        user: { select: { name: true, avatarColor: true } },
-        site: { select: { id: true, name: true } },
-        _count: { select: { photos: true, comments: true, materials: true } },
-      },
-      orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
-      take: 10,
-    });
 
     return (
       <div>
