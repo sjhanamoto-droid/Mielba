@@ -2,8 +2,8 @@
 
 import { MapPin, ChevronRight } from "lucide-react";
 import { CardLink } from "@/components/ui/card";
-import { SiteStatusBadge, Badge } from "@/components/ui/badge";
-import { PROJECT_TYPE_LABEL, type ProjectType } from "@/lib/constants";
+import { Badge } from "@/components/ui/badge";
+import { PROJECT_TYPE_LABEL, SITE_STAGES, siteStageIndex, type ProjectType } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 // 住所 → Google マップ検索 URL は @/lib/utils に移動（サーバーコンポーネントからも使うため）
@@ -26,13 +26,44 @@ export function ProgressBar({
   );
 }
 
+// 横並びの進捗ステッパー。現在地のセグメントだけをブランドカラーで点灯する。
+export function SiteStageStepper({
+  index,
+  className,
+}: {
+  index: number;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-stretch gap-1", className)} aria-label="進捗ステータス">
+      {SITE_STAGES.map((label, i) => {
+        const active = i === index;
+        return (
+          <span
+            key={label}
+            aria-current={active ? "step" : undefined}
+            className={cn(
+              "flex-1 rounded-md px-1 py-1 text-center text-[10px] font-bold leading-none tracking-tight whitespace-nowrap transition-colors",
+              active
+                ? "bg-brand-500 text-white shadow-sm"
+                : "bg-surface-sunken text-ink-faint",
+            )}
+          >
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export type SiteCardData = {
   id: string;
   name: string;
   address: string | null;
   siteStatus: string;
   projectType: string;
-  progressRate: number;
+  projectStatus: string;
   customer?: { name: string } | null;
 };
 
@@ -45,10 +76,14 @@ export function SiteCard({
 }) {
   return (
     <CardLink href={`/sites/${site.id}`} className="p-4">
+      {/* 進捗ステータス（現調→見積り→受注→施工中→完了。現在地のみ点灯） */}
+      <SiteStageStepper
+        index={siteStageIndex(site.siteStatus, site.projectStatus)}
+        className="mb-2.5"
+      />
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            <SiteStatusBadge status={site.siteStatus} />
+          <div className="mb-1.5">
             <Badge tone="neutral">
               {PROJECT_TYPE_LABEL[site.projectType as ProjectType] ?? site.projectType}
             </Badge>
@@ -91,16 +126,6 @@ export function SiteCard({
         </div>
         <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-ink-faint" />
       </div>
-
-      {site.siteStatus === "ACTIVE" && (
-        <div className="mt-3">
-          <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-ink-muted">
-            <span>進捗</span>
-            <span className="tnum text-ink-soft">{site.progressRate}%</span>
-          </div>
-          <ProgressBar value={site.progressRate} />
-        </div>
-      )}
 
       {meta && <div className="mt-3 border-t border-line pt-2.5">{meta}</div>}
     </CardLink>

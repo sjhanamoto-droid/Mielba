@@ -103,6 +103,30 @@ export const SITE_STATUS_COLOR: Record<SiteStatus, string> = {
   PAST: "past",
 };
 
+// 進捗ステータスの5段階（現調→見積り→受注→施工中→完了）。カード/詳細で現在地のみ点灯表示する。
+export const SITE_STAGES = ["現調", "見積り", "受注", "施工中", "完了"] as const;
+
+// siteStatus(SURVEY|ACTIVE|PAST) と projectStatus から現在地(0-4)を導く純関数。
+// サーバー/クライアント双方から呼ぶため constants に置く。
+export function siteStageIndex(siteStatus: string, projectStatus: string): number {
+  // 完了を最優先（過去 or 完工/完了）
+  if (siteStatus === "PAST" || projectStatus === "COMPLETED" || projectStatus === "CLOSED") return 4;
+  // 現地調査フェーズ
+  if (siteStatus === "SURVEY") return 0;
+  // 進行中は projectStatus で判定
+  switch (projectStatus) {
+    case "ESTIMATING":
+      return 1; // 見積り
+    case "ORDERED":
+      return 2; // 受注
+    case "STARTED":
+    case "IN_PROGRESS":
+      return 3; // 施工中
+    default:
+      return 3; // 進行中で区分不明なら施工中扱い
+  }
+}
+
 export type BillingStatus = "UNBILLED" | "BILLED" | "PARTIAL" | "PAID";
 export const BILLING_STATUS_LABEL: Record<BillingStatus, string> = {
   UNBILLED: "未請求",

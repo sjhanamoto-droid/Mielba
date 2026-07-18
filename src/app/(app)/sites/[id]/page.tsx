@@ -14,7 +14,7 @@ import { Card, CardLink, SectionTitle, DataList, DataRow } from "@/components/ui
 import { Badge, SiteStatusBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { LinkButton, buttonClass } from "@/components/ui/button";
-import { ProgressBar } from "@/components/site-card";
+import { ProgressBar, SiteStageStepper } from "@/components/site-card";
 import { ReportCard } from "@/components/report-card";
 import { EmptyState } from "@/components/ui/misc";
 import { PhotoGrid, type PhotoData } from "@/components/photo-grid";
@@ -35,6 +35,7 @@ import {
   EVENT_SOURCE_LABEL,
   EVENT_SOURCE_COLOR,
   labelOf,
+  siteStageIndex,
   type ProjectType,
   type ProjectStatus,
   type BillingStatus,
@@ -519,11 +520,8 @@ export default async function SiteDetailPage({
               />
             </DataList>
             <div>
-              <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-ink-muted">
-                <span>進捗率</span>
-                <span className="tnum text-ink-soft">{site.progressRate}%</span>
-              </div>
-              <ProgressBar value={site.progressRate} />
+              <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
+              <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
             </div>
           </Card>
         </section>
