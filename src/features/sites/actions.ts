@@ -72,7 +72,6 @@ const siteSchema = z.object({
   plannedEndDate: optionalDate,
   actualStartDate: optionalDate,
   actualEndDate: optionalDate,
-  progressRate: z.coerce.number().int().min(0).max(100).default(0),
   handoverNote: optionalText,
   memo: optionalText,
 });
@@ -110,7 +109,6 @@ function parseSiteForm(formData: FormData) {
     plannedEndDate: formData.get("plannedEndDate"),
     actualStartDate: formData.get("actualStartDate"),
     actualEndDate: formData.get("actualEndDate"),
-    progressRate: formData.get("progressRate") ?? 0,
     handoverNote: formData.get("handoverNote"),
     memo: formData.get("memo"),
   });
@@ -146,7 +144,6 @@ function toData(d: z.infer<typeof siteSchema>) {
     plannedEndDate: toDate(d.plannedEndDate),
     actualStartDate: toDate(d.actualStartDate),
     actualEndDate: toDate(d.actualEndDate),
-    progressRate: d.progressRate,
     handoverNote: d.handoverNote ?? null,
     memo: d.memo ?? null,
   };

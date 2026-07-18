@@ -51,7 +51,6 @@ export type SiteFormData = {
   plannedEndDate: Date | string | null;
   actualStartDate: Date | string | null;
   actualEndDate: Date | string | null;
-  progressRate: number;
   handoverNote: string | null;
   memo: string | null;
 };
@@ -294,9 +293,6 @@ export function SiteForm({
               <Input id="actualEndDate" name="actualEndDate" type="date" defaultValue={toDateInputValue(site?.actualEndDate)} />
             </Field>
           </div>
-          <Field label="進捗率" htmlFor="progressRate" hint="（0〜100%）" className="sm:col-span-2">
-            <Input id="progressRate" name="progressRate" type="number" inputMode="numeric" min={0} max={100} defaultValue={site?.progressRate ?? 0} />
-          </Field>
           <Field label="引き継ぎ事項" htmlFor="handoverNote" hint="（前回状況・注意点・残作業）" className="sm:col-span-2">
             <Textarea id="handoverNote" name="handoverNote" defaultValue={site?.handoverNote ?? ""} />
           </Field>
