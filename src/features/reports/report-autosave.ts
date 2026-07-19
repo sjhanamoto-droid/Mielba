@@ -18,29 +18,17 @@ export type MaterialDraftRow = {
   unit: string;
   custom: boolean;
 };
-export type OrderDraftRow = {
-  name: string;
-  quantity: string;
-  supplier: string;
-  deliveryDate: string;
-};
-export type ProcessDraftRow = {
-  content: string;
-  vendors: string;
-  supplyDeliveryDate: string;
-};
 
+// 第1弾で発注(orders)・次回工程(processes)・注意点メモ(memo)は撤去した。
+// 古い保存済みドラフトにこれらが残っていても、復元時は単に無視する（後方互換）。
 export type ReportDraftData = {
   workDate: string;
   startTime: string;
   endTime: string;
   detail: string;
-  memo: string;
   handover: string;
   parkingFee: string;
   materials: MaterialDraftRow[];
-  orders: OrderDraftRow[];
-  processes: ProcessDraftRow[];
 };
 
 export type StoredReportDraft = {

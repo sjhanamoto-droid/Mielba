@@ -1,8 +1,10 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+// min-w-0 を付けて、type=date/time など内在幅を持つ input が
+// グリッド／フレックス内で縮めず横にはみ出すのを防ぐ（モバイル横崩れ対策）。
 const fieldBase =
-  "w-full rounded-xl border border-line-strong bg-surface px-3.5 text-[16px] text-ink placeholder:text-ink-faint transition-colors focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-surface-sunken disabled:text-ink-muted aria-[invalid=true]:border-status-danger";
+  "w-full min-w-0 rounded-xl border border-line-strong bg-surface px-3.5 text-[16px] text-ink placeholder:text-ink-faint transition-colors focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-surface-sunken disabled:text-ink-muted aria-[invalid=true]:border-status-danger";
 
 export function Label({
   children,
@@ -93,7 +95,7 @@ export const Select = React.forwardRef<
   HTMLSelectElement,
   React.SelectHTMLAttributes<HTMLSelectElement>
 >(({ className, children, ...props }, ref) => (
-  <div className="relative">
+  <div className="relative w-full min-w-0">
     <select
       ref={ref}
       className={cn(

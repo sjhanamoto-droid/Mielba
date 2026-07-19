@@ -29,19 +29,6 @@ const materialSchema = z.object({
   unit: z.string().optional().nullable(),
 });
 
-const orderSchema = z.object({
-  name: z.string().min(1),
-  quantity: z.string().optional().nullable(),
-  supplier: z.string().optional().nullable(),
-  deliveryDate: z.string().optional().nullable(),
-});
-
-const nextProcessSchema = z.object({
-  content: z.string().optional().nullable(),
-  vendors: z.string().optional().nullable(),
-  supplyDeliveryDate: z.string().optional().nullable(),
-});
-
 const reportSchema = z
   .object({
     siteId: z.string().min(1, "現場が指定されていません"),
@@ -52,7 +39,6 @@ const reportSchema = z
     endTime: z.string().min(1, "終了時刻を入力してください"),
     detail: z.string().optional(),
     aiSummary: z.string().optional(),
-    memo: z.string().optional(),
     handover: z.string().optional(),
     parkingFee: z.string().optional(),
     status: z.enum(["DRAFT", "SUBMITTED"]),
@@ -94,12 +80,6 @@ function clean(v: string | null | undefined): string | null {
   return t === "" ? null : t;
 }
 
-/** 'YYYY-MM-DD' のみ Date に変換（不正・空は null） */
-function dateOrNull(v: string | null): Date | null {
-  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
-  return dateFromKey(v);
-}
-
 function revalidateReport(reportId: string | null, siteId: string) {
   revalidatePath("/");
   revalidatePath("/reports");
@@ -120,27 +100,20 @@ export type ReportActionError = {
 const GENERIC_ERROR =
   "保存に失敗しました。電波状況を確認してもう一度お試しください（入力内容は端末に自動保存されています）。";
 
-// ネスト配列（材料・発注・次回工程・写真・カレンダー）の保存を共通化
+// ネスト配列（使用材料・写真）の保存を共通化する。
+// 第1弾で発注(MaterialOrder)・次回工程(NextProcess)・注意点メモ(memo)はフォームから撤去した。
+// 既存DBデータを壊さないため、それらの子レコードやカレンダーイベントは削除・再生成しない（残置）。
 async function writeNested(
   tx: Prisma.TransactionClient,
   reportId: string,
-  siteId: string,
-  status: string,
   formData: FormData,
   photos: ParsedPhotosField,
 ) {
   const materials = parseJson<z.infer<typeof materialSchema>>(formData.get("materials"))
     .filter((m) => m && typeof m.name === "string" && m.name.trim() !== "");
-  const orders = parseJson<z.infer<typeof orderSchema>>(formData.get("orders"))
-    .filter((o) => o && typeof o.name === "string" && o.name.trim() !== "");
-  const nextProcesses = parseJson<z.infer<typeof nextProcessSchema>>(formData.get("nextProcesses"))
-    .filter((p) => p && (clean(p.content) || clean(p.vendors) || clean(p.supplyDeliveryDate)));
 
-  // 既存の子レコード・日報由来イベントを作り直し（重複防止）
+  // 使用材料のみ作り直し（重複防止）。発注・次回工程・カレンダーは残置。
   await tx.materialUse.deleteMany({ where: { reportId } });
-  await tx.materialOrder.deleteMany({ where: { reportId } });
-  await tx.nextProcess.deleteMany({ where: { reportId } });
-  await tx.calendarEvent.deleteMany({ where: { reportId } });
 
   // 写真は全削除→再作成をやめ、kept に無い既存のみ削除・新規のみ作成
   await tx.photo.deleteMany({
@@ -161,29 +134,6 @@ async function writeNested(
     });
   }
 
-  if (orders.length > 0) {
-    await tx.materialOrder.createMany({
-      data: orders.map((o) => ({
-        reportId,
-        name: o.name.trim(),
-        quantity: clean(o.quantity),
-        supplier: clean(o.supplier),
-        deliveryDate: dateOrNull(clean(o.deliveryDate)),
-      })),
-    });
-  }
-
-  if (nextProcesses.length > 0) {
-    await tx.nextProcess.createMany({
-      data: nextProcesses.map((p) => ({
-        reportId,
-        content: clean(p.content),
-        vendors: clean(p.vendors),
-        supplyDeliveryDate: dateOrNull(clean(p.supplyDeliveryDate)),
-      })),
-    });
-  }
-
   if (photos.added.length > 0) {
     await tx.photo.createMany({
       data: photos.added.map((p) => ({
@@ -197,45 +147,6 @@ async function writeNested(
         height: typeof p.height === "number" ? p.height : null,
       })),
     });
-  }
-
-  // ── カレンダー反映（提出時のみ） §4.3 ──
-  if (status === "SUBMITTED") {
-    const events: {
-      siteId: string;
-      title: string;
-      date: Date;
-      source: string;
-      reportId: string;
-    }[] = [];
-
-    for (const o of orders) {
-      const date = dateOrNull(clean(o.deliveryDate));
-      if (date) {
-        events.push({
-          siteId,
-          title: `${o.name.trim()} 配達`,
-          date,
-          source: "DELIVERY",
-          reportId,
-        });
-      }
-    }
-    for (const p of nextProcesses) {
-      const date = dateOrNull(clean(p.supplyDeliveryDate));
-      if (date) {
-        events.push({
-          siteId,
-          title: "支給品納品",
-          date,
-          source: "SUPPLY",
-          reportId,
-        });
-      }
-    }
-    if (events.length > 0) {
-      await tx.calendarEvent.createMany({ data: events });
-    }
   }
 }
 
@@ -280,7 +191,6 @@ async function persist(
     endTime: formData.get("endTime"),
     detail: formData.get("detail") || undefined,
     aiSummary: formData.get("aiSummary") || undefined,
-    memo: formData.get("memo") || undefined,
     handover: formData.get("handover") || undefined,
     parkingFee: formData.get("parkingFee") || undefined,
     status: formData.get("status") || "DRAFT",
@@ -313,7 +223,6 @@ async function persist(
   const data = {
     detail: clean(d.detail),
     aiSummary: clean(d.aiSummary),
-    memo: clean(d.memo),
     handover: clean(d.handover),
     parkingFee,
     startTime: d.startTime,
@@ -350,8 +259,8 @@ async function persist(
         });
       }
 
-      // 確定した rep.id に対して子レコード・カレンダーイベントを再生成する
-      await writeNested(tx, rep.id, d.siteId, d.status, formData, photos);
+      // 確定した rep.id に対して使用材料・写真を再生成する
+      await writeNested(tx, rep.id, formData, photos);
 
       // 提出時に引き継ぎ事項（Handover）を起票・更新する
       if (d.status === "SUBMITTED") {

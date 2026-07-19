@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
-  Clock, Plus, Trash2, Package, Truck, ClipboardList, Save, Send, AlertCircle,
+  Clock, Plus, Trash2, Package, Save, Send, AlertCircle,
   HardHat, CalendarClock, History, X, CircleParking, ArrowRightLeft,
 } from "lucide-react";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
@@ -15,15 +15,13 @@ import { createReport, updateReport } from "./actions";
 import {
   draftKeyFor, loadDraft, clearDraft, markDraftPending, clearDraftPending,
   shouldOfferRestore, useReportAutosave, useLeaveGuard,
-  type ReportDraftData, type MaterialDraftRow, type OrderDraftRow, type ProcessDraftRow,
+  type ReportDraftData, type MaterialDraftRow,
   type StoredReportDraft,
 } from "./report-autosave";
 import { cn, toDateInputValue } from "@/lib/utils";
 import { EVENT_CATEGORY_LABEL, type EventCategory } from "@/lib/constants";
 
 type MaterialRow = MaterialDraftRow; // { name, quantity, unit, custom }
-type OrderRow = OrderDraftRow;
-type ProcessRow = ProcessDraftRow;
 
 /** 材料マスター（ページ側で MaterialMaster を取得して渡す） */
 export type MaterialOption = { id: string; name: string; unit: string | null };
@@ -37,21 +35,9 @@ export type ReportFormData = {
   endTime: string;
   detail: string | null;
   aiSummary: string | null;
-  memo: string | null;
   handover: string | null;
   parkingFee: number | null;
   materials: { name: string; quantity: string | null; unit: string | null }[];
-  orders: {
-    name: string;
-    quantity: string | null;
-    supplier: string | null;
-    deliveryDate: Date | string | null;
-  }[];
-  nextProcesses: {
-    content: string | null;
-    vendors: string | null;
-    supplyDeliveryDate: Date | string | null;
-  }[];
   // 既存写真は {id} 参照（base64 は再送しない）
   photos: UploaderPhoto[];
 };
@@ -132,7 +118,6 @@ export function ReportForm({
   const [endTime, setEndTime] = useState<string>(initial?.endTime ?? defaultEndTime);
   const [detail, setDetail] = useState<string>(initial?.detail ?? "");
   const [aiSummary, setAiSummary] = useState<string>(initial?.aiSummary ?? "");
-  const [memo, setMemo] = useState<string>(initial?.memo ?? "");
   const [handover, setHandover] = useState<string>(initial?.handover ?? "");
   const [parkingFee, setParkingFee] = useState<string>(
     initial?.parkingFee != null ? String(initial.parkingFee) : "",
@@ -147,30 +132,15 @@ export function ReportForm({
       custom: isCustomMaterial(m.name),
     })) ?? [],
   );
-  const [orders, setOrders] = useState<OrderRow[]>(
-    initial?.orders?.map((o) => ({
-      name: o.name,
-      quantity: o.quantity ?? "",
-      supplier: o.supplier ?? "",
-      deliveryDate: toDateInputValue(o.deliveryDate),
-    })) ?? [],
-  );
-  const [processes, setProcesses] = useState<ProcessRow[]>(
-    initial?.nextProcesses?.map((p) => ({
-      content: p.content ?? "",
-      vendors: p.vendors ?? "",
-      supplyDeliveryDate: toDateInputValue(p.supplyDeliveryDate),
-    })) ?? [],
-  );
 
   // ── 自動下書き保存（Top10 #3） ──
   const draftKey = draftKeyFor(mode, siteId, workDate, initial?.id);
   const draftData: ReportDraftData = useMemo(
     () => ({
-      workDate, startTime, endTime, detail, memo, handover, parkingFee,
-      materials, orders, processes,
+      workDate, startTime, endTime, detail, handover, parkingFee,
+      materials,
     }),
-    [workDate, startTime, endTime, detail, memo, handover, parkingFee, materials, orders, processes],
+    [workDate, startTime, endTime, detail, handover, parkingFee, materials],
   );
   const initialJsonRef = useRef<string | null>(null);
   if (initialJsonRef.current === null) {
@@ -200,12 +170,9 @@ export function ReportForm({
     setStartTime(d.startTime || startTime);
     setEndTime(d.endTime || endTime);
     setDetail(d.detail ?? "");
-    setMemo(d.memo ?? "");
     setHandover(d.handover ?? "");
     setParkingFee(d.parkingFee ?? "");
     setMaterials(Array.isArray(d.materials) ? d.materials : []);
-    setOrders(Array.isArray(d.orders) ? d.orders : []);
-    setProcesses(Array.isArray(d.processes) ? d.processes : []);
     setRestoreCandidate(null);
   }
 
@@ -274,8 +241,6 @@ export function ReportForm({
         name="materials"
         value={JSON.stringify(materials.map(({ name, quantity, unit }) => ({ name, quantity, unit })))}
       />
-      <input type="hidden" name="orders" value={JSON.stringify(orders)} />
-      <input type="hidden" name="nextProcesses" value={JSON.stringify(processes)} />
 
       {/* 前回の入力の復元提案（自動下書き保存） */}
       {restoreCandidate && (
@@ -351,7 +316,7 @@ export function ReportForm({
       {/* 作業日・作業時間（勤怠内包） */}
       <div className="card space-y-3 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="作業日" required htmlFor="workDate" error={fieldErrors.workDate}>
+          <Field label="作業日" required htmlFor="workDate" error={fieldErrors.workDate} className="min-w-0">
             <Input
               id="workDate"
               name="workDate"
@@ -361,8 +326,8 @@ export function ReportForm({
               required
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="開始時刻" required htmlFor="startTime" hint="勤怠を兼ねます" error={fieldErrors.startTime}>
+          <div className="grid min-w-0 grid-cols-2 gap-3">
+            <Field label="開始時刻" required htmlFor="startTime" hint="勤怠を兼ねます" error={fieldErrors.startTime} className="min-w-0">
               <Input
                 id="startTime"
                 name="startTime"
@@ -372,7 +337,7 @@ export function ReportForm({
                 required
               />
             </Field>
-            <Field label="終了時刻" required htmlFor="endTime" error={fieldErrors.endTime}>
+            <Field label="終了時刻" required htmlFor="endTime" error={fieldErrors.endTime} className="min-w-0">
               <Input
                 id="endTime"
                 name="endTime"
@@ -414,10 +379,10 @@ export function ReportForm({
         </div>
       </Field>
 
-      {/* 現場詳細 + AIサポート */}
+      {/* 作業内容 + AIサポート */}
       <div className="space-y-2.5">
         <Field
-          label="現場詳細"
+          label="作業内容"
           hint="提出時必須"
           htmlFor="detail"
           description="当日の作業内容・状況を記録します。下書きは空のままでも保存できます。"
@@ -510,18 +475,6 @@ export function ReportForm({
         ))}
       </DynamicSection>
 
-      {/* 注意点メモ */}
-      <Field label="注意点メモ" htmlFor="memo" description="申し送り・現場の注意点など。">
-        <Textarea
-          id="memo"
-          name="memo"
-          rows={3}
-          placeholder="例）キーBOXの暗証番号変更あり。次回入場時は元請に確認。"
-          value={memo}
-          onChange={(e) => setMemo(e.target.value)}
-        />
-      </Field>
-
       {/* 引き継ぎ事項（次に入る人への申し送り） */}
       <Field
         label="引き継ぎ事項"
@@ -542,110 +495,6 @@ export function ReportForm({
           />
         </div>
       </Field>
-
-      {/* 材料発注 → 配達予定日 */}
-      <DynamicSection
-        title="材料発注"
-        icon={<Truck className="h-4 w-4" />}
-        emptyLabel="発注する材料を追加"
-        hint="配達予定日は提出時にカレンダーへ反映されます。"
-        onAdd={() =>
-          setOrders((p) => [...p, { name: "", quantity: "", supplier: "", deliveryDate: "" }])
-        }
-      >
-        {orders.map((o, i) => (
-          <RowCard
-            key={i}
-            onRemove={() => setOrders((p) => p.filter((_, idx) => idx !== i))}
-            className="md:grid md:grid-cols-3 md:items-start md:gap-2 md:space-y-0"
-          >
-            <Input
-              aria-label="発注する材料名"
-              placeholder="材料名"
-              value={o.name}
-              onChange={(e) =>
-                setOrders((p) => p.map((r, idx) => (idx === i ? { ...r, name: e.target.value } : r)))
-              }
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                aria-label="発注数量"
-                placeholder="数量"
-                value={o.quantity}
-                onChange={(e) =>
-                  setOrders((p) => p.map((r, idx) => (idx === i ? { ...r, quantity: e.target.value } : r)))
-                }
-              />
-              <Input
-                aria-label="仕入先"
-                placeholder="仕入先"
-                value={o.supplier}
-                onChange={(e) =>
-                  setOrders((p) => p.map((r, idx) => (idx === i ? { ...r, supplier: e.target.value } : r)))
-                }
-              />
-            </div>
-            <Field label="配達予定日" hint="任意">
-              <Input
-                type="date"
-                value={o.deliveryDate}
-                onChange={(e) =>
-                  setOrders((p) => p.map((r, idx) => (idx === i ? { ...r, deliveryDate: e.target.value } : r)))
-                }
-              />
-            </Field>
-          </RowCard>
-        ))}
-      </DynamicSection>
-
-      {/* 次回工程打合せ → 業者・支給品納品日 */}
-      <DynamicSection
-        title="次回工程打合せ"
-        icon={<ClipboardList className="h-4 w-4" />}
-        emptyLabel="次回工程を追加"
-        hint="支給品納品日は提出時にカレンダーへ反映されます。"
-        onAdd={() =>
-          setProcesses((p) => [...p, { content: "", vendors: "", supplyDeliveryDate: "" }])
-        }
-      >
-        {processes.map((p, i) => (
-          <RowCard
-            key={i}
-            onRemove={() => setProcesses((arr) => arr.filter((_, idx) => idx !== i))}
-            className="md:grid md:grid-cols-2 md:items-start md:gap-2 md:space-y-0"
-          >
-            <Textarea
-              aria-label="打合せ内容・次回作業"
-              rows={2}
-              placeholder="打合せ内容・次回作業"
-              value={p.content}
-              onChange={(e) =>
-                setProcesses((arr) => arr.map((r, idx) => (idx === i ? { ...r, content: e.target.value } : r)))
-              }
-              className="md:col-span-2"
-            />
-            <Input
-              aria-label="絡む業者"
-              placeholder="絡む業者（複数はカンマ区切り）"
-              value={p.vendors}
-              onChange={(e) =>
-                setProcesses((arr) => arr.map((r, idx) => (idx === i ? { ...r, vendors: e.target.value } : r)))
-              }
-            />
-            <Field label="支給品納品日" hint="任意">
-              <Input
-                type="date"
-                value={p.supplyDeliveryDate}
-                onChange={(e) =>
-                  setProcesses((arr) =>
-                    arr.map((r, idx) => (idx === i ? { ...r, supplyDeliveryDate: e.target.value } : r)),
-                  )
-                }
-              />
-            </Field>
-          </RowCard>
-        ))}
-      </DynamicSection>
 
       {/* 写真 */}
       <div className="space-y-2">
