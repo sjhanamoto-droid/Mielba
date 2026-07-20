@@ -5,17 +5,19 @@ import { useFormStatus } from "react-dom";
 import {
   Clock, Plus, Trash2, Package, Save, Send, AlertCircle,
   HardHat, CalendarClock, History, X, CircleParking, ArrowRightLeft,
+  Wallet, Receipt,
 } from "lucide-react";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { SectionTitle } from "@/components/ui/card";
 import { buttonClass } from "@/components/ui/button";
 import { PhotoUploader, type UploaderPhoto } from "@/components/photo-uploader";
 import { AiAssistPanel } from "./ai-assist-panel";
+import type { AiExtractResult } from "./ai-actions";
 import { createReport, updateReport } from "./actions";
 import {
   draftKeyFor, loadDraft, clearDraft, markDraftPending, clearDraftPending,
   shouldOfferRestore, useReportAutosave, useLeaveGuard,
-  type ReportDraftData, type MaterialDraftRow,
+  type ReportDraftData, type MaterialDraftRow, type ExpenseDraftRow,
   type StoredReportDraft,
 } from "./report-autosave";
 import { cn, toDateInputValue } from "@/lib/utils";
@@ -33,11 +35,13 @@ export type ReportFormData = {
   workDate: Date | string;
   startTime: string;
   endTime: string;
+  aiDraft: string | null;
   detail: string | null;
   aiSummary: string | null;
   handover: string | null;
   parkingFee: number | null;
   materials: { name: string; quantity: string | null; unit: string | null }[];
+  expenses: { label: string; amount: number }[];
   // 既存写真は {id} 参照（base64 は再送しない）
   photos: UploaderPhoto[];
 };
@@ -116,8 +120,10 @@ export function ReportForm({
   );
   const [startTime, setStartTime] = useState<string>(initial?.startTime ?? defaultStartTime);
   const [endTime, setEndTime] = useState<string>(initial?.endTime ?? defaultEndTime);
+  const [aiDraft, setAiDraft] = useState<string>(initial?.aiDraft ?? "");
   const [detail, setDetail] = useState<string>(initial?.detail ?? "");
-  const [aiSummary, setAiSummary] = useState<string>(initial?.aiSummary ?? "");
+  // aiSummary は現在 UI から生成しないが、既存日報の値を編集保存時に維持するため保持する
+  const [aiSummary] = useState<string>(initial?.aiSummary ?? "");
   const [handover, setHandover] = useState<string>(initial?.handover ?? "");
   const [parkingFee, setParkingFee] = useState<string>(
     initial?.parkingFee != null ? String(initial.parkingFee) : "",
@@ -133,14 +139,21 @@ export function ReportForm({
     })) ?? [],
   );
 
+  const [expenses, setExpenses] = useState<ExpenseDraftRow[]>(
+    initial?.expenses?.map((e) => ({
+      label: e.label,
+      amount: e.amount != null ? String(e.amount) : "",
+    })) ?? [],
+  );
+
   // ── 自動下書き保存（Top10 #3） ──
   const draftKey = draftKeyFor(mode, siteId, workDate, initial?.id);
   const draftData: ReportDraftData = useMemo(
     () => ({
-      workDate, startTime, endTime, detail, handover, parkingFee,
-      materials,
+      workDate, startTime, endTime, aiDraft, detail, handover, parkingFee,
+      materials, expenses,
     }),
-    [workDate, startTime, endTime, detail, handover, parkingFee, materials],
+    [workDate, startTime, endTime, aiDraft, detail, handover, parkingFee, materials, expenses],
   );
   const initialJsonRef = useRef<string | null>(null);
   if (initialJsonRef.current === null) {
@@ -169,10 +182,13 @@ export function ReportForm({
     setWorkDate(d.workDate || workDate);
     setStartTime(d.startTime || startTime);
     setEndTime(d.endTime || endTime);
+    // aiDraft/expenses は第2弾で追加。古いドラフトに無くても既定値で復元する。
+    setAiDraft(d.aiDraft ?? "");
     setDetail(d.detail ?? "");
     setHandover(d.handover ?? "");
     setParkingFee(d.parkingFee ?? "");
     setMaterials(Array.isArray(d.materials) ? d.materials : []);
+    setExpenses(Array.isArray(d.expenses) ? d.expenses : []);
     setRestoreCandidate(null);
   }
 
@@ -215,6 +231,30 @@ export function ReportForm({
     setMaterials((p) => p.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
+  function updateExpense(i: number, patch: Partial<ExpenseDraftRow>) {
+    setExpenses((p) => p.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  // AI振り分けの結果を各項目へ反映（上書き。ただし下書きに無い＝空の項目は維持）
+  function applyAiExtract(r: AiExtractResult) {
+    if (r.workContent.trim()) setDetail(r.workContent);
+    if (r.materials.length > 0) {
+      setMaterials(
+        r.materials.map((m) => ({
+          name: m.name,
+          quantity: m.quantity ?? "",
+          unit: m.unit ?? "",
+          custom: isCustomMaterial(m.name),
+        })),
+      );
+    }
+    if (r.expenses.length > 0) {
+      setExpenses(r.expenses.map((e) => ({ label: e.label, amount: String(e.amount) })));
+    }
+    if (r.parkingFee != null) setParkingFee(String(r.parkingFee));
+    if (r.handover.trim()) setHandover(r.handover);
+  }
+
   function onMaterialSelect(i: number, value: string) {
     if (value === CUSTOM_MATERIAL) {
       updateMaterial(i, { custom: true, name: "" });
@@ -240,6 +280,11 @@ export function ReportForm({
         type="hidden"
         name="materials"
         value={JSON.stringify(materials.map(({ name, quantity, unit }) => ({ name, quantity, unit })))}
+      />
+      <input
+        type="hidden"
+        name="expenses"
+        value={JSON.stringify(expenses.map(({ label, amount }) => ({ label, amount })))}
       />
 
       {/* 前回の入力の復元提案（自動下書き保存） */}
@@ -313,6 +358,44 @@ export function ReportForm({
         </div>
       )}
 
+      {/* 現場詳細（AI下書き） + AIサポート */}
+      <div className="space-y-2.5">
+        <Field
+          label="現場詳細"
+          hint="AIサポートの読み取り元"
+          htmlFor="aiDraft"
+          description="箇条書きでOK。ここに書いた内容を、AIが作業内容・材料・経費・引き継ぎへ振り分けます。"
+        >
+          <Textarea
+            id="aiDraft"
+            name="aiDraft"
+            rows={5}
+            placeholder="箇条書きでOK。例）1F解体／ベニヤ合板5枚使用／駐車800円／明日は配管"
+            value={aiDraft}
+            onChange={(e) => setAiDraft(e.target.value)}
+          />
+        </Field>
+        <AiAssistPanel draft={aiDraft} onApply={applyAiExtract} aiEnabled={aiEnabled} />
+      </div>
+
+      {/* 作業内容 */}
+      <Field
+        label="作業内容"
+        hint="提出時必須"
+        htmlFor="detail"
+        description="当日の作業内容・状況を記録します。下書きは空のままでも保存できます。"
+        error={fieldErrors.detail}
+      >
+        <Textarea
+          id="detail"
+          name="detail"
+          rows={5}
+          placeholder="例）1階LDKの解体作業を実施。床下に腐食を確認したため写真共有。明日は配管の据付予定。"
+          value={detail}
+          onChange={(e) => setDetail(e.target.value)}
+        />
+      </Field>
+
       {/* 作業日・作業時間（勤怠内包） */}
       <div className="card space-y-3 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -355,56 +438,65 @@ export function ReportForm({
         </p>
       </div>
 
-      {/* 駐車場代（作業時間カードの下） */}
-      <Field
-        label="駐車場代"
-        hint="円・任意"
-        htmlFor="parkingFee"
-        error={fieldErrors.parkingFee}
-      >
-        <div className="relative">
-          <CircleParking className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-faint" />
-          <Input
-            id="parkingFee"
-            name="parkingFee"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            step={1}
-            placeholder="例）800"
-            className="pl-11"
-            value={parkingFee}
-            onChange={(e) => setParkingFee(e.target.value)}
-          />
-        </div>
-      </Field>
-
-      {/* 作業内容 + AIサポート */}
-      <div className="space-y-2.5">
-        <Field
-          label="作業内容"
-          hint="提出時必須"
-          htmlFor="detail"
-          description="当日の作業内容・状況を記録します。下書きは空のままでも保存できます。"
-          error={fieldErrors.detail}
-        >
-          <Textarea
-            id="detail"
-            name="detail"
-            rows={5}
-            placeholder="例）1階LDKの解体作業を実施。床下に腐食を確認したため写真共有。明日は配管の据付予定。"
-            value={detail}
-            onChange={(e) => setDetail(e.target.value)}
-          />
+      {/* 経費（駐車場代＝固定行 ＋ その他の経費を＋追加） */}
+      <div className="space-y-3">
+        <SectionTitle>
+          <span className="flex items-center gap-1.5 text-ink-soft">
+            <Wallet className="h-4 w-4" />
+            経費
+          </span>
+        </SectionTitle>
+        {/* 駐車場代（固定行・常時表示） */}
+        <Field label="駐車場代" hint="円・任意" htmlFor="parkingFee" error={fieldErrors.parkingFee}>
+          <div className="relative">
+            <CircleParking className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-faint" />
+            <Input
+              id="parkingFee"
+              name="parkingFee"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              placeholder="例）800"
+              className="pl-11"
+              value={parkingFee}
+              onChange={(e) => setParkingFee(e.target.value)}
+            />
+          </div>
         </Field>
-        <AiAssistPanel
-          detail={detail}
-          hasMaterials={materials.some((m) => m.name.trim() !== "")}
-          hasPhotos={(initial?.photos?.length ?? 0) > 0}
-          appliedSummary={aiSummary}
-          onApply={setAiSummary}
-          aiEnabled={aiEnabled}
-        />
+        {/* その他の経費（動的リスト） */}
+        <DynamicSection
+          title="その他の経費"
+          icon={<Receipt className="h-4 w-4" />}
+          hint="高速代・材料立替など（駐車場代以外）"
+          emptyLabel="経費を追加"
+          onAdd={() => setExpenses((p) => [...p, { label: "", amount: "" }])}
+        >
+          {expenses.map((e, i) => (
+            <RowCard
+              key={i}
+              onRemove={() => setExpenses((p) => p.filter((_, idx) => idx !== i))}
+              className="grid grid-cols-[1fr_7.5rem] items-start gap-2"
+            >
+              <Input
+                aria-label="名目"
+                placeholder="名目（例: 高速代）"
+                value={e.label}
+                onChange={(ev) => updateExpense(i, { label: ev.target.value })}
+              />
+              <Input
+                aria-label="金額"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                placeholder="金額"
+                value={e.amount}
+                onChange={(ev) => updateExpense(i, { amount: ev.target.value })}
+              />
+            </RowCard>
+          ))}
+        </DynamicSection>
       </div>
 
       {/* 使用材料 */}

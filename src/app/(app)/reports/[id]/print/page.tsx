@@ -31,6 +31,7 @@ export default async function ReportPrintPage({
       },
       user: { select: { name: true } },
       materials: true,
+      expenses: { orderBy: { sortOrder: "asc" } },
       orders: true,
       nextProcesses: true,
       // base64 は載せない（/api/photos/[id] で参照する）
@@ -157,6 +158,41 @@ export default async function ReportPrintPage({
                     <td className={td}>{m.unit ?? ""}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 経費内訳（駐車場代＋その他の経費） */}
+        {report.expenses.length > 0 && (
+          <div style={{ breakInside: "avoid" }}>
+            <h2 className={sectionTitle}>経費内訳</h2>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={th}>名目</th>
+                  <th className={`${th} w-32`}>金額</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.parkingFee != null && (
+                  <tr>
+                    <td className={td}>駐車場代</td>
+                    <td className={`${td} tnum`}>{fmtYen(report.parkingFee)}</td>
+                  </tr>
+                )}
+                {report.expenses.map((e) => (
+                  <tr key={e.id}>
+                    <td className={td}>{e.label}</td>
+                    <td className={`${td} tnum`}>{fmtYen(e.amount)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td className={`${td} bg-slate-100 font-bold`}>合計</td>
+                  <td className={`${td} tnum bg-slate-100 font-bold`}>
+                    {fmtYen((report.parkingFee ?? 0) + report.expenses.reduce((s, e) => s + e.amount, 0))}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>

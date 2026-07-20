@@ -1,48 +1,56 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Sparkles, AlertTriangle, Wand2, Check, Loader2 } from "lucide-react";
+import { Sparkles, Check, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { assistReportAction } from "./actions";
-import { aiAssistLlm } from "./ai-actions";
-import type { AiAssist } from "@/lib/ai";
+import { aiExtractFields, type AiExtractResult } from "./ai-actions";
+import { fmtYen } from "@/lib/utils";
 
-// 現場詳細・材料/写真の有無は props で受け取り、要約反映は onApply コールバックで
-// 親フォームの state を更新する（DOM 直接参照は廃止）。
-// aiEnabled=true（ANTHROPIC_API_KEY あり）のときは「AIで整える」ボタンで
-// 実LLM（ai-actions.ts）を呼び、結果を差し替える。
+// 現場詳細（aiDraft）を AI が読み取り、作業内容・使用材料・経費・駐車場代・
+// 引き継ぎ事項へ「振り分け」る。実行→プレビュー→「この内容を反映」で
+// 親フォームの各 state を更新する（反映は onApply コールバック経由）。
+// aiEnabled=false（ANTHROPIC_API_KEY なし）のときはボタンを無効化する。
 export function AiAssistPanel({
-  detail,
-  hasMaterials,
-  hasPhotos,
-  appliedSummary,
+  draft,
   onApply,
   aiEnabled = false,
 }: {
-  detail: string;
-  hasMaterials: boolean;
-  hasPhotos: boolean;
-  appliedSummary: string;
-  onApply: (summary: string) => void;
+  draft: string;
+  onApply: (result: AiExtractResult) => void;
   aiEnabled?: boolean;
 }) {
-  const [result, setResult] = useState<AiAssist | null>(null);
+  const [result, setResult] = useState<AiExtractResult | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [applied, setApplied] = useState(false);
   const [pending, startTransition] = useTransition();
-  // どちらのボタンが実行中かを表示に使う
-  const [runningLlm, setRunningLlm] = useState(false);
 
-  // 反映済み判定は親 state（appliedSummary）と今回の要約が一致するかで行う
-  const applied = Boolean(result?.summary) && appliedSummary === result?.summary;
+  const canRun = aiEnabled && draft.trim() !== "";
 
-  function runAssist(useLlm: boolean) {
-    setRunningLlm(useLlm);
+  function runExtract() {
+    setMessage(null);
+    setApplied(false);
     startTransition(async () => {
-      const res = useLlm
-        ? await aiAssistLlm({ detail, hasMaterials, hasPhotos })
-        : await assistReportAction(detail, hasMaterials, hasPhotos);
-      setResult(res);
+      const res = await aiExtractFields({ draft });
+      if (res.status === "ok") {
+        setResult(res.result);
+      } else if (res.status === "error") {
+        setResult(null);
+        setMessage(res.message);
+      } else {
+        setResult(null);
+        setMessage("AIキー未設定、または現場詳細が空のため実行できません。");
+      }
     });
   }
+
+  function apply() {
+    if (!result) return;
+    onApply(result);
+    setApplied(true);
+  }
+
+  const hasMaterials = result && result.materials.length > 0;
+  const hasExpenses = result && result.expenses.length > 0;
 
   return (
     <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-3">
@@ -51,130 +59,126 @@ export function AiAssistPanel({
           <Sparkles className="h-4 w-4" />
           AIサポート
         </span>
-        <span className="flex gap-2">
-          {/* ローカル即時プレビュー（従来動作） */}
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => runAssist(false)}
-            disabled={pending}
-          >
-            {pending && !runningLlm ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                解析中...
-              </>
-            ) : (
-              <>
-                <Wand2 className="h-4 w-4" />
-                要約・チェック
-              </>
-            )}
-          </Button>
-          {/* 実LLM（ANTHROPIC_API_KEY があるときのみ表示） */}
-          {aiEnabled && (
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={() => runAssist(true)}
-              disabled={pending}
-            >
-              {pending && runningLlm ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  AI解析中...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  AIで整える
-                </>
-              )}
-            </Button>
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          onClick={runExtract}
+          disabled={pending || !canRun}
+        >
+          {pending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              振り分け中...
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" />
+              AIで振り分け
+            </>
           )}
-        </span>
+        </Button>
       </div>
 
       <p className="mt-1.5 text-[11px] text-ink-faint">
-        作業内容を要約し、書き漏れ・誤記の候補を提案します。最終確定はご自身で行ってください。
+        現場詳細の下書きを読み取り、作業内容・使用材料・経費・駐車場代・引き継ぎ事項へ振り分けます。反映後の内容はご自身で確認してください。
       </p>
+
+      {!aiEnabled && (
+        <p className="mt-1 text-[11px] font-medium text-ink-muted">
+          AIキー設定後に有効になります。
+        </p>
+      )}
+
+      {message && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-status-danger">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {message}
+        </p>
+      )}
 
       {result && (
         <div className="mt-3 space-y-3">
-          {/* 要約 */}
-          {result.summary ? (
+          {/* 作業内容 */}
+          {result.workContent.trim() && (
             <div className="rounded-xl border border-line bg-surface p-3">
-              <p className="text-xs font-semibold text-ink-soft">要約</p>
+              <p className="text-xs font-semibold text-ink-soft">作業内容</p>
               <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                {result.summary}
+                {result.workContent}
               </p>
-              <Button
-                type="button"
-                variant={applied ? "outline" : "primary"}
-                size="sm"
-                onClick={() => result?.summary && onApply(result.summary)}
-                className="mt-2"
-                disabled={applied}
-              >
-                {applied ? (
-                  <>
-                    <Check className="h-4 w-4" />
-                    反映しました
-                  </>
-                ) : (
-                  "要約を反映"
-                )}
-              </Button>
             </div>
-          ) : (
-            <p className="text-xs text-ink-muted">
-              要約できる内容がありません。現場詳細を入力してください。
-            </p>
           )}
 
-          {/* 誤記補正候補 */}
-          {result.corrections.length > 0 && (
+          {/* 使用材料 */}
+          {hasMaterials && (
             <div className="rounded-xl border border-line bg-surface p-3">
-              <p className="text-xs font-semibold text-ink-soft">誤記補正の候補</p>
+              <p className="text-xs font-semibold text-ink-soft">使用材料</p>
               <ul className="mt-1.5 space-y-1">
-                {result.corrections.map((c, i) => (
-                  <li key={i} className="flex items-center gap-1.5 text-sm text-ink">
-                    <span className="text-status-danger line-through">{c.from}</span>
-                    <span className="text-ink-faint">→</span>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{c.to}</span>
+                {result.materials.map((m, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 text-sm text-ink">
+                    <span className="truncate">{m.name}</span>
+                    {(m.quantity || m.unit) && (
+                      <span className="shrink-0 tnum text-ink-soft">
+                        {m.quantity ?? ""}
+                        {m.unit ? ` ${m.unit}` : ""}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
-          {/* 書き漏れ警告 */}
-          {result.warnings.length > 0 && (
-            <div className="alert-warn">
-              <p className="flex items-center gap-1.5 text-xs font-semibold">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                書き漏れチェック
-              </p>
-              <ul className="mt-1.5 space-y-1.5">
-                {result.warnings.map((w, i) => (
-                  <li key={i} className="text-sm leading-relaxed">
-                    {w}
+          {/* 経費・駐車場代 */}
+          {(hasExpenses || result.parkingFee != null) && (
+            <div className="rounded-xl border border-line bg-surface p-3">
+              <p className="text-xs font-semibold text-ink-soft">経費</p>
+              <ul className="mt-1.5 space-y-1">
+                {result.parkingFee != null && (
+                  <li className="flex items-center justify-between gap-2 text-sm text-ink">
+                    <span className="truncate">駐車場代</span>
+                    <span className="shrink-0 tnum text-ink-soft">{fmtYen(result.parkingFee)}</span>
+                  </li>
+                )}
+                {result.expenses.map((e, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 text-sm text-ink">
+                    <span className="truncate">{e.label}</span>
+                    <span className="shrink-0 tnum text-ink-soft">{fmtYen(e.amount)}</span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
-          {result.corrections.length === 0 &&
-            result.warnings.length === 0 &&
-            result.summary && (
-              <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <Check className="h-3.5 w-3.5" />
-                書き漏れ・誤記は見つかりませんでした。
+          {/* 引き継ぎ事項 */}
+          {result.handover.trim() && (
+            <div className="rounded-xl border border-line bg-surface p-3">
+              <p className="text-xs font-semibold text-ink-soft">引き継ぎ事項</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                {result.handover}
               </p>
+            </div>
+          )}
+
+          <Button
+            type="button"
+            variant={applied ? "outline" : "primary"}
+            size="sm"
+            onClick={apply}
+            disabled={applied}
+          >
+            {applied ? (
+              <>
+                <Check className="h-4 w-4" />
+                反映しました
+              </>
+            ) : (
+              "この内容を反映"
             )}
+          </Button>
+          <p className="text-[11px] text-ink-faint">
+            ※ 反映すると各項目を上書きします（下書きに無い項目はそのまま残します）。
+          </p>
         </div>
       )}
     </div>

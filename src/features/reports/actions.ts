@@ -29,6 +29,12 @@ const materialSchema = z.object({
   unit: z.string().optional().nullable(),
 });
 
+// 経費（駐車場代以外の「＋追加」分）。amount は文字列/数値どちらも許容し、保存時に整数化する。
+const expenseSchema = z.object({
+  label: z.string(),
+  amount: z.union([z.string(), z.number()]).optional().nullable(),
+});
+
 const reportSchema = z
   .object({
     siteId: z.string().min(1, "現場が指定されていません"),
@@ -37,6 +43,7 @@ const reportSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, "作業日を入力してください"),
     startTime: z.string().min(1, "開始時刻を入力してください"),
     endTime: z.string().min(1, "終了時刻を入力してください"),
+    aiDraft: z.string().optional(),
     detail: z.string().optional(),
     aiSummary: z.string().optional(),
     handover: z.string().optional(),
@@ -112,8 +119,17 @@ async function writeNested(
   const materials = parseJson<z.infer<typeof materialSchema>>(formData.get("materials"))
     .filter((m) => m && typeof m.name === "string" && m.name.trim() !== "");
 
-  // 使用材料のみ作り直し（重複防止）。発注・次回工程・カレンダーは残置。
+  // 経費（駐車場代以外）。label が非空 かつ amount が有効な整数の行のみ採用する。
+  const expenses = parseJson<z.infer<typeof expenseSchema>>(formData.get("expenses"))
+    .map((e) => ({
+      label: typeof e?.label === "string" ? e.label.trim() : "",
+      amount: Math.trunc(Number(e?.amount)),
+    }))
+    .filter((e) => e.label !== "" && Number.isFinite(e.amount) && e.amount >= 0);
+
+  // 使用材料・経費は作り直し（重複防止）。発注・次回工程・カレンダーは残置。
   await tx.materialUse.deleteMany({ where: { reportId } });
+  await tx.reportExpense.deleteMany({ where: { reportId } });
 
   // 写真は全削除→再作成をやめ、kept に無い既存のみ削除・新規のみ作成
   await tx.photo.deleteMany({
@@ -130,6 +146,17 @@ async function writeNested(
         name: m.name.trim(),
         quantity: clean(m.quantity),
         unit: clean(m.unit),
+      })),
+    });
+  }
+
+  if (expenses.length > 0) {
+    await tx.reportExpense.createMany({
+      data: expenses.map((e, i) => ({
+        reportId,
+        label: e.label,
+        amount: e.amount,
+        sortOrder: i,
       })),
     });
   }
@@ -189,6 +216,7 @@ async function persist(
     workDate: formData.get("workDate"),
     startTime: formData.get("startTime"),
     endTime: formData.get("endTime"),
+    aiDraft: formData.get("aiDraft") || undefined,
     detail: formData.get("detail") || undefined,
     aiSummary: formData.get("aiSummary") || undefined,
     handover: formData.get("handover") || undefined,
@@ -221,6 +249,7 @@ async function persist(
   const parkingFee = clean(d.parkingFee) ? Number(d.parkingFee) : null;
 
   const data = {
+    aiDraft: clean(d.aiDraft),
     detail: clean(d.detail),
     aiSummary: clean(d.aiSummary),
     handover: clean(d.handover),

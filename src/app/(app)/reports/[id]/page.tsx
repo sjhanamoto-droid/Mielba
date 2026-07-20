@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   Clock, Package, Truck, ClipboardList, StickyNote, Sparkles, MessageSquare,
-  Pencil, ChevronRight, CalendarDays, Users, Printer, ArrowRightLeft, CircleParking,
+  Pencil, ChevronRight, CalendarDays, Users, Printer, ArrowRightLeft, CircleParking, Wallet,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -32,6 +32,7 @@ export default async function ReportDetailPage({
       site: { select: { id: true, name: true } },
       user: { select: { id: true, name: true, avatarColor: true } },
       materials: true,
+      expenses: { orderBy: { sortOrder: "asc" } },
       orders: true,
       nextProcesses: true,
       // base64（dataUrl/thumbUrl）はRSCペイロードに載せない（/api/photos/[id] で配信）
@@ -49,6 +50,11 @@ export default async function ReportDetailPage({
 
   const canEdit = report.userId === user.id || isAdmin(user);
   const submitted = report.status === "SUBMITTED";
+
+  // 経費（駐車場代＋その他の経費）。合計は両者の和。
+  const hasExpenses = report.parkingFee != null || report.expenses.length > 0;
+  const expenseTotal =
+    (report.parkingFee ?? 0) + report.expenses.reduce((s, e) => s + e.amount, 0);
 
   return (
     <div>
@@ -101,15 +107,6 @@ export default async function ReportDetailPage({
             </span>
             <span className="text-ink-faint">実働 {workHours(report.startTime, report.endTime)}</span>
           </div>
-
-          {/* 駐車場代 */}
-          {report.parkingFee != null && (
-            <div className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2.5 text-sm">
-              <CircleParking className="h-4 w-4 text-ink-muted" />
-              <span className="text-ink-soft">駐車場代</span>
-              <span className="ml-auto font-bold tnum text-ink">{fmtYen(report.parkingFee)}</span>
-            </div>
-          )}
 
           <Link
             href={`/sites/${report.site.id}`}
@@ -164,6 +161,38 @@ export default async function ReportDetailPage({
                   )}
                 </div>
               ))}
+            </Card>
+          </section>
+        )}
+
+        {/* 経費（駐車場代＋その他） */}
+        {hasExpenses && (
+          <section className="space-y-2">
+            <SectionTitle>
+              <span className="flex items-center gap-1.5"><Wallet className="h-4 w-4" />経費</span>
+            </SectionTitle>
+            <Card className="p-0">
+              <div className="divide-y divide-line">
+                {report.parkingFee != null && (
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                      <CircleParking className="h-4 w-4 text-ink-muted" />
+                      駐車場代
+                    </span>
+                    <span className="shrink-0 text-sm tnum text-ink-soft">{fmtYen(report.parkingFee)}</span>
+                  </div>
+                )}
+                {report.expenses.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="truncate text-sm font-medium text-ink">{e.label}</span>
+                    <span className="shrink-0 text-sm tnum text-ink-soft">{fmtYen(e.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-line bg-surface-subtle px-4 py-3">
+                <span className="text-sm font-semibold text-ink-soft">合計</span>
+                <span className="shrink-0 text-sm font-bold tnum text-ink">{fmtYen(expenseTotal)}</span>
+              </div>
             </Card>
           </section>
         )}

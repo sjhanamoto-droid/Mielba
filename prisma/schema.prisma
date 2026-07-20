@@ -283,9 +283,10 @@ model DailyReport {
   workDate    DateTime // 作業日
   startTime   String   @default("08:00") // 作業開始（勤怠を内包・初期値8:00）
   endTime     String   @default("17:00") // 作業終了（勤怠を内包・初期値17:00）
-  detail      String? // 現場詳細（当日の作業内容・状況）
-  aiSummary   String? // AIサポートによる要約
-  memo        String? // 注意点等のメモ（現場メモ・申し送り）
+  detail      String? // 作業内容（当日の作業内容・状況）
+  aiSummary   String? // （旧）AI要約。現在は未使用
+  aiDraft     String? // 現場詳細（AI下書き・箇条書き）。AIサポートで各項目へ振り分ける入力元
+  memo        String? // （旧）注意点メモ。現在は未使用（引き継ぎ事項へ一本化）
   status      String   @default("DRAFT") // DRAFT(未提出) | SUBMITTED(提出済)
   submittedAt DateTime?
   parkingFee  Int? // 駐車場代（円）
@@ -296,6 +297,7 @@ model DailyReport {
   site          Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   materials     MaterialUse[]
+  expenses      ReportExpense[]
   orders        MaterialOrder[]
   nextProcesses NextProcess[]
   photos        Photo[]
@@ -315,6 +317,18 @@ model MaterialUse {
   quantity String? // 数量（単位込みの自由入力も許容）
   unit     String?
   report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+// 経費（駐車場代は DailyReport.parkingFee の固定行。ここは任意で「＋追加」する経費）
+model ReportExpense {
+  id        String @id @default(cuid())
+  reportId  String
+  label     String // 名目（高速代・材料立替 等）
+  amount    Int // 金額（円）
+  sortOrder Int    @default(0)
+  report    DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
 }

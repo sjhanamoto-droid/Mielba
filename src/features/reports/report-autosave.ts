@@ -19,16 +19,26 @@ export type MaterialDraftRow = {
   custom: boolean;
 };
 
+// 経費（駐車場代以外の「＋追加」分）。amount は入力中の文字列で保持し、保存時に数値化する。
+export type ExpenseDraftRow = {
+  label: string;
+  amount: string;
+};
+
 // 第1弾で発注(orders)・次回工程(processes)・注意点メモ(memo)は撤去した。
 // 古い保存済みドラフトにこれらが残っていても、復元時は単に無視する（後方互換）。
+// 第2弾で aiDraft（現場詳細）と expenses（経費）を追加。古いドラフトに
+// これらが無くても復元時に既定値で補う（後方互換）。
 export type ReportDraftData = {
   workDate: string;
   startTime: string;
   endTime: string;
+  aiDraft: string;
   detail: string;
   handover: string;
   parkingFee: string;
   materials: MaterialDraftRow[];
+  expenses: ExpenseDraftRow[];
 };
 
 export type StoredReportDraft = {

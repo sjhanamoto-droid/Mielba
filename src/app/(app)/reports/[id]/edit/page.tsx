@@ -19,6 +19,7 @@ export default async function EditReportPage({
     include: {
       site: { select: { id: true, name: true } },
       materials: true,
+      expenses: { orderBy: { sortOrder: "asc" } },
       // base64（dataUrl/thumbUrl）はRSCペイロードに載せない（既存写真は {id} 参照で維持）
       photos: {
         select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
@@ -45,6 +46,7 @@ export default async function EditReportPage({
     workDate: report.workDate,
     startTime: report.startTime,
     endTime: report.endTime,
+    aiDraft: report.aiDraft,
     detail: report.detail,
     aiSummary: report.aiSummary,
     handover: report.handover,
@@ -53,6 +55,10 @@ export default async function EditReportPage({
       name: m.name,
       quantity: m.quantity,
       unit: m.unit,
+    })),
+    expenses: report.expenses.map((e) => ({
+      label: e.label,
+      amount: e.amount,
     })),
     // 既存写真は {id} 参照のみ（base64 を再送しない）。プレビューは photoSrc(id, true)。
     photos: report.photos.map((p) => ({
