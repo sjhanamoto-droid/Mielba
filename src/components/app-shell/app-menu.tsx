@@ -14,8 +14,11 @@ import { logoutAction } from "@/features/auth/actions";
 // 「メニュー」ラベル付きのボタンにする。シート内に役割別のショートカットを整理する。
 export function AppMenu({
   user,
+  variant = "header",
 }: {
   user: { name: string; email: string; role: string; avatarColor: string; department: string | null };
+  /** header=ヘッダー右上のピル型 / nav=ボトムナビの1項目（アイコン＋ラベル縦） */
+  variant?: "header" | "nav";
 }) {
   const [open, setOpen] = useState(false);
   const admin = user.role === "ADMIN";
@@ -30,15 +33,26 @@ export function AppMenu({
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        aria-label="メニューを開く"
-        className="flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1.5 pr-3 text-ink-soft shadow-card active:scale-95"
-      >
-        <Avatar name={user.name} color={user.avatarColor} size="sm" />
-        <Menu className="h-4 w-4" aria-hidden />
-        <span className="text-xs font-bold">メニュー</span>
-      </button>
+      {variant === "nav" ? (
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="メニューを開く"
+          className="flex w-full flex-col items-center gap-0.5 py-2 pt-2.5 text-ink-faint transition-colors active:text-ink-soft"
+        >
+          <Menu className="h-6 w-6" strokeWidth={1.9} aria-hidden />
+          <span className="text-[10px] font-medium">メニュー</span>
+        </button>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="メニューを開く"
+          className="flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1.5 pr-3 text-ink-soft shadow-card active:scale-95"
+        >
+          <Avatar name={user.name} color={user.avatarColor} size="sm" />
+          <Menu className="h-4 w-4" aria-hidden />
+          <span className="text-xs font-bold">メニュー</span>
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={() => setOpen(false)}>

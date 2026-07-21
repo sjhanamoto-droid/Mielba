@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navForRole } from "./nav-items";
+import { AppMenu } from "./app-menu";
 import { cn } from "@/lib/utils";
 
+type MenuUser = { name: string; email: string; role: string; avatarColor: string; department: string | null };
+
 // スマホ用のボトムナビ（md 未満のみ表示。md 以上は Sidebar）。
-// navForRole は「ちょうど5件」を返す契約（溢れる項目は sidebarNavForRole / AppMenu 側に置く）。
-export function BottomNav({ role }: { role: string }) {
+// navForRole は「ちょうど5件」を返す契約。末尾に「メニュー」（設定/ログアウト等）を追加する。
+export function BottomNav({ role, user }: { role: string; user: MenuUser }) {
   const pathname = usePathname();
   const items = navForRole(role);
 
@@ -39,6 +42,9 @@ export function BottomNav({ role }: { role: string }) {
             </li>
           );
         })}
+        <li className="flex-1">
+          <AppMenu user={user} variant="nav" />
+        </li>
       </ul>
     </nav>
   );

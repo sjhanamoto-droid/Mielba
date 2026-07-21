@@ -19,8 +19,8 @@ export default async function AppLayout({
         {children}
       </AppFrame>
 
-      {/* スマホ：ボトムナビ（md 未満のみ） */}
-      <BottomNav role={user.role} />
+      {/* スマホ：ボトムナビ（md 未満のみ）。末尾に「メニュー」（設定/ログアウト等） */}
+      <BottomNav role={user.role} user={user} />
     </div>
   );
 }

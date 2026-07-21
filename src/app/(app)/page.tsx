@@ -9,7 +9,6 @@ import {
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { jstDateKey, todayRange, tomorrowKey, dayRangeForKey, dateFromKey, addDaysKey } from "@/lib/date";
-import { AppMenu } from "@/components/app-shell/app-menu";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { SiteCard } from "@/components/site-card";
 import { mapSearchUrl } from "@/lib/utils";
@@ -380,8 +379,10 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* ヘッダー（参考デザイン準拠：白基調＋角丸アイコン＋タイトル） */}
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/90 backdrop-blur-md safe-top">
+      {/* スマホはヘッダー非表示のため、ノッチ回避の上余白のみ確保 */}
+      <div aria-hidden className="safe-top md:hidden" />
+      {/* 上部ヘッダーはスマホでは非表示（メニューはボトムナビへ移設）。PC/タブレットのみ表示 */}
+      <header className="sticky top-0 z-30 hidden border-b border-line bg-surface/90 backdrop-blur-md safe-top md:block">
         <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3 md:px-8 md:py-3.5">
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-card md:h-12 md:w-12">
             <LayoutDashboard className="h-6 w-6" />
@@ -391,9 +392,6 @@ export default async function HomePage() {
             <p className="truncate text-xs text-ink-muted md:text-sm">
               {greeting()}、{user.name} さん ・ {fmtDateWithDay(dateFromKey(todayKey))}
             </p>
-          </div>
-          <div className="shrink-0 md:hidden">
-            <AppMenu user={user} />
           </div>
         </div>
       </header>
