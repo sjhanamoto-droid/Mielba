@@ -165,6 +165,17 @@
   select {
     font-size: 16px;
   }
+
+  /* iOS の date/time input は既定で内在幅（コンテンツ幅）を持ち、狭い画面で
+     グリッド/フレックスからはみ出す。ネイティブ外観を外して width:100% /
+     min-width:0 を確実に効かせ、はみ出しを防ぐ（タップで従来通りピッカーは開く）。 */
+  input[type="date"],
+  input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 
 @layer components {
