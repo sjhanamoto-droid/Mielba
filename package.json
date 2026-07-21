@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "vercel-build": "prisma generate && node scripts/migrate-deploy.mjs && SEED_ONLY_IF_EMPTY=1 tsx prisma/seed.ts && node scripts/provision-staff.mjs && node scripts/reset-data.mjs && next build",
+    "vercel-build": "prisma generate && node scripts/migrate-deploy.mjs && SEED_ONLY_IF_EMPTY=1 tsx prisma/seed.ts && node scripts/provision-staff.mjs && node scripts/reset-data.mjs && node scripts/ensure-default-customer.mjs && next build",
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
