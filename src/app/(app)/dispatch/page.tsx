@@ -26,7 +26,7 @@ export default async function DispatchPage({
   const range = dayRangeForKey(dateStr);
   const todayStr = jstDateKey();
 
-  const [sites, reports] = await Promise.all([
+  const [sites, reports, allUsers] = await Promise.all([
     db.site.findMany({
       where: { siteStatus: "ACTIVE" },
       include: {
@@ -42,6 +42,12 @@ export default async function DispatchPage({
     db.dailyReport.findMany({
       where: { workDate: range },
       select: { siteId: true, userId: true, status: true },
+    }),
+    // 配員編集シートの候補（管理者・スタッフ両方。有効ユーザーのみ）
+    db.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true, avatarColor: true, role: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -79,7 +85,7 @@ export default async function DispatchPage({
           label={fmtDateWithDay(dateFromKey(dateStr))}
         />
 
-        <DispatchBoard key={dateStr} sites={rows} dateStr={dateStr} />
+        <DispatchBoard key={dateStr} sites={rows} dateStr={dateStr} allUsers={allUsers} />
       </PageContainer>
     </div>
   );

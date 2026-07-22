@@ -421,6 +421,7 @@ function revalidateAssignment(siteId: string) {
   revalidatePath("/");
   revalidatePath("/calendar");
   revalidatePath("/todos");
+  revalidatePath("/dispatch");
 }
 
 export async function assignUser(siteId: string, userId: string) {

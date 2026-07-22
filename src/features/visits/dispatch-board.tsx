@@ -3,15 +3,18 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Check, HardHat, Loader2, ChevronLeft, ChevronRight,
+  Check, HardHat, Loader2, ChevronLeft, ChevronRight, Users, X,
 } from "lucide-react";
 import Link from "next/link";
 import { toggleVisit } from "./actions";
+import { assignUser, unassignUser } from "@/features/sites/actions";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/components/ui/toast";
+import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type Staff = { id: string; name: string; avatarColor: string };
+type DispatchUser = { id: string; name: string; avatarColor: string; role: string };
 // 当日の日報状況: none=未打刻 / draft=下書き / submitted=提出済
 export type ReportStatus = "none" | "draft" | "submitted";
 type SiteRow = {
@@ -109,12 +112,16 @@ export function DispatchDateNav({
 export function DispatchBoard({
   sites,
   dateStr,
+  allUsers,
 }: {
   sites: SiteRow[];
   dateStr: string;
+  allUsers: DispatchUser[];
 }) {
   const toast = useToast();
   const [, start] = useTransition();
+  // 配員編集シートを開いている現場ID（null=閉）
+  const [editSiteId, setEditSiteId] = useState<string | null>(null);
   // セル単位の pending（`${siteId}_${userId}`）。1タップで全ボタンをロックしない。
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const [visited, setVisited] = useState<Record<string, Set<string>>>(() => {
@@ -160,6 +167,7 @@ export function DispatchBoard({
   }
 
   const totalGoing = sites.reduce((acc, s) => acc + (visited[s.id]?.size ?? 0), 0);
+  const editSite = editSiteId ? sites.find((s) => s.id === editSiteId) ?? null : null;
 
   return (
     <div className="space-y-4">
@@ -233,6 +241,16 @@ export function DispatchBoard({
                   })}
                 </div>
               )}
+
+              {/* 配員を編集（配属0名の現場でも表示） */}
+              <button
+                type="button"
+                onClick={() => setEditSiteId(s.id)}
+                className="mt-3 flex items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3 py-1.5 text-xs font-bold text-ink-soft active:scale-95"
+              >
+                <Users className="h-4 w-4 text-brand-600" aria-hidden />
+                配員を編集
+              </button>
             </div>
           );
         })}
@@ -251,6 +269,145 @@ export function DispatchBoard({
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />未打刻</span>
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />下書き</span>
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />提出済</span>
+        </p>
+      </div>
+
+      {editSite && (
+        <AssignSheet
+          key={editSite.id}
+          site={editSite}
+          allUsers={allUsers}
+          onClose={() => setEditSiteId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// 配員編集ボトムシート。allUsers（管理者・スタッフ両方）を一覧表示し、
+// タップで assignUser / unassignUser をトグル。楽観更新＋失敗時ロールバック。
+function AssignSheet({
+  site,
+  allUsers,
+  onClose,
+}: {
+  site: SiteRow;
+  allUsers: DispatchUser[];
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const router = useRouter();
+  const [, start] = useTransition();
+  // 配属済み userId 集合（初期値は現場の staff から算出）
+  const [assignedIds, setAssignedIds] = useState<Set<string>>(
+    () => new Set(site.staff.map((u) => u.id)),
+  );
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+
+  function toggleAssign(userId: string) {
+    if (pendingIds.has(userId)) return; // 同一ユーザーの多重タップは無視
+    const was = assignedIds.has(userId);
+    // 楽観的更新
+    setAssignedIds((prev) => {
+      const n = new Set(prev);
+      if (was) n.delete(userId);
+      else n.add(userId);
+      return n;
+    });
+    setPendingIds((prev) => new Set(prev).add(userId));
+    start(async () => {
+      try {
+        if (was) await unassignUser(site.id, userId);
+        else await assignUser(site.id, userId);
+        router.refresh();
+      } catch {
+        toast("配員の変更に失敗しました", { type: "error" });
+        // 失敗時は戻す
+        setAssignedIds((prev) => {
+          const n = new Set(prev);
+          if (was) n.add(userId);
+          else n.delete(userId);
+          return n;
+        });
+      } finally {
+        setPendingIds((prev) => {
+          const n = new Set(prev);
+          n.delete(userId);
+          return n;
+        });
+      }
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-app rounded-t-3xl bg-surface p-5 pb-8 animate-slide-up safe-bottom"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-ink">配員を編集</h2>
+            <p className="truncate text-xs text-ink-muted">{site.name}</p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="閉じる"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-ink-muted"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="max-h-[60vh] space-y-1 overflow-y-auto">
+          {allUsers.map((u) => {
+            const on = assignedIds.has(u.id);
+            const busy = pendingIds.has(u.id);
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => toggleAssign(u.id)}
+                disabled={busy}
+                aria-pressed={on}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.99] disabled:opacity-60",
+                  on
+                    ? "border-brand-600 bg-brand-50 dark:bg-brand-950/30"
+                    : "border-line-strong bg-surface",
+                )}
+              >
+                <Avatar name={u.name} color={u.avatarColor} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-ink">{u.name}</span>
+                  <span className="block text-xs text-ink-muted">
+                    {ROLE_LABEL[u.role as Role] ?? u.role}
+                  </span>
+                </span>
+                {busy ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-brand-600" aria-hidden />
+                ) : (
+                  <span
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+                      on
+                        ? "border-brand-600 bg-brand-600 text-white"
+                        : "border-line-strong text-transparent",
+                    )}
+                  >
+                    <Check className="h-4 w-4" strokeWidth={3} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="mt-3 px-1 text-xs text-ink-faint">
+          タップで現場への配属をON/OFF。管理者・スタッフの両方を配員できます。
         </p>
       </div>
     </div>
