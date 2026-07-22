@@ -45,8 +45,7 @@ export default async function SiteDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireUser();
-  const admin = isAdmin(user);
+  const admin = isAdmin(await requireUser());
   const { id } = await params;
 
   // 「今日以降」の判定は Asia/Tokyo の暦日で行う（UTCサーバーでの前日ズレ防止）
@@ -58,7 +57,6 @@ export default async function SiteDetailPage({
       customer: { select: { id: true, name: true } },
       survey: { select: { id: true, address: true, situationMemo: true, surveyedAt: true } },
       partners: true,
-      assignments: { include: { user: { select: { id: true, name: true, avatarColor: true } } } },
       reports: {
         include: {
           user: { select: { name: true, avatarColor: true } },
@@ -79,10 +77,7 @@ export default async function SiteDetailPage({
 
   if (!site) notFound();
 
-  // 認可: 管理者以外かつ未割当の現場は 404（id 直打ち閲覧の防止）
-  if (!admin && !site.assignments.some((a) => a.user.id === user.id)) {
-    notFound();
-  }
+  // 現場詳細はログイン済みなら全ユーザー閲覧可（配属の概念は廃止し当日制へ移行したため）。
 
   // 日報数・未解決引き継ぎ・現場写真（base64は載せない）・人工実績・駐車場代累計
   const [reportCount, openHandovers, sitePhotos, visitCount, parkingAgg] = await Promise.all([
