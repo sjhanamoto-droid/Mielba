@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
-  Pencil, Building2, MapPin, KeyRound, Users2, HardHat, CalendarClock,
+  Pencil, Building2, MapPin, KeyRound, HardHat, CalendarClock,
   FileText, ClipboardList, Plus, ChevronRight, Truck, PackageCheck,
   ClipboardCheck, Wallet, ScrollText, Phone, ArrowRight, Map, CalendarRange,
   UserRound, CircleParking,
@@ -12,7 +12,6 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { Card, CardLink, SectionTitle, DataList, DataRow } from "@/components/ui/card";
 import { Badge, SiteStatusBadge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import { LinkButton, buttonClass } from "@/components/ui/button";
 import { ProgressBar, SiteStageStepper } from "@/components/site-card";
 import { ReportCard } from "@/components/report-card";
@@ -22,7 +21,6 @@ import { HandoverAlert } from "@/components/handover-alert";
 import { SearchParamToast } from "@/components/ui/toast";
 import { getOpenHandovers } from "@/features/handovers/actions";
 import { SiteStatusControl } from "@/features/sites/site-status-control";
-import { AssignControl } from "@/features/sites/assign-control";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
 import { photoSrc } from "@/lib/photos";
@@ -128,8 +126,7 @@ export default async function SiteDetailPage({
     ...site.relationsB.map((r) => ({ relationId: r.id, note: r.note, other: r.siteA })),
   ];
 
-  // 管理者向けの候補データ（割当スタッフ・関連現場候補）
-  let assignCandidates: { id: string; name: string; avatarColor: string }[] = [];
+  // 管理者向けの候補データ（関連現場候補）
   let relationCandidates: { id: string; name: string; address: string | null }[] = [];
   if (admin) {
     // 同一 customerId または同一 address の他現場（自身・既存関連は除外）
@@ -139,26 +136,16 @@ export default async function SiteDetailPage({
     ];
     if (site.address) orConds.push({ address: site.address });
 
-    // 互いに独立した2クエリを並列取得（本番PostgreSQLの往復回数を削減）
-    const [candidates, candidateSites] = await Promise.all([
-      db.user.findMany({
-        where: { active: true },
-        select: { id: true, name: true, avatarColor: true },
-        orderBy: { name: "asc" },
-      }),
-      db.site.findMany({
-        where: {
-          AND: [{ id: { not: site.id } }, { OR: orConds }],
-        },
-        select: { id: true, name: true, address: true },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      }),
-    ]);
-    assignCandidates = candidates;
+    const candidateSites = await db.site.findMany({
+      where: {
+        AND: [{ id: { not: site.id } }, { OR: orConds }],
+      },
+      select: { id: true, name: true, address: true },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
     relationCandidates = candidateSites.filter((c) => !relatedIds.has(c.id));
   }
-  const assignedIds = site.assignments.map((a) => a.user.id);
 
   const projectType = labelOf(PROJECT_TYPE_LABEL, site.projectType as ProjectType);
   const projectStatus = labelOf(PROJECT_STATUS_LABEL, site.projectStatus as ProjectStatus);
@@ -471,38 +458,6 @@ export default async function SiteDetailPage({
             )
           )}
 
-          {/* 職人割当 */}
-          <Card className="space-y-2.5 p-4">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-              <Users2 className="h-4 w-4" />
-              職人割当
-            </div>
-            {site.assignments.length === 0 ? (
-              <p className="text-sm text-ink-muted">割り当てられた職人はいません</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {site.assignments.map((a) => (
-                  <span
-                    key={a.id}
-                    className="flex items-center gap-1.5 rounded-full bg-surface-sunken py-1 pl-1 pr-3"
-                  >
-                    <Avatar name={a.user.name} color={a.user.avatarColor} size="sm" />
-                    <span className="text-sm font-medium text-ink">{a.user.name}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-            {admin && (
-              <div className="border-t border-line pt-2.5">
-                <p className="mb-2 text-xs font-semibold text-ink-muted">割当の追加・解除</p>
-                <AssignControl
-                  siteId={site.id}
-                  candidates={assignCandidates}
-                  assignedIds={assignedIds}
-                />
-              </div>
-            )}
-          </Card>
         </section>
 
         {/* ⑤ 工程 */}

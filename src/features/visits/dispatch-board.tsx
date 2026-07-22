@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toggleVisit } from "./actions";
-import { assignUser, unassignUser } from "@/features/sites/actions";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/components/ui/toast";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
@@ -166,6 +165,11 @@ export function DispatchBoard({
     });
   }
 
+  // pill 表示用: userId → 表示情報（allUsers を基本に、当日訪問者の情報も補完）
+  const userById = new Map<string, Staff>();
+  for (const u of allUsers) userById.set(u.id, { id: u.id, name: u.name, avatarColor: u.avatarColor });
+  for (const s of sites) for (const u of s.staff) if (!userById.has(u.id)) userById.set(u.id, u);
+
   const totalGoing = sites.reduce((acc, s) => acc + (visited[s.id]?.size ?? 0), 0);
   const editSite = editSiteId ? sites.find((s) => s.id === editSiteId) ?? null : null;
 
@@ -178,7 +182,8 @@ export function DispatchBoard({
 
       <div className="space-y-3">
         {sites.map((s) => {
-          const goingCount = visited[s.id]?.size ?? 0;
+          const visitorIds = [...(visited[s.id] ?? [])];
+          const goingCount = visitorIds.length;
           return (
             <div key={s.id} className="card p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -200,41 +205,36 @@ export function DispatchBoard({
                 </span>
               </div>
 
-              {s.staff.length === 0 ? (
-                <p className="text-sm text-ink-muted">配属スタッフがいません</p>
+              {goingCount === 0 ? (
+                <p className="text-sm text-ink-muted">この日に現場入りする人はいません</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {s.staff.map((u) => {
-                    const on = visited[s.id]?.has(u.id) ?? false;
-                    const cellPending = pendingKeys.has(`${s.id}_${u.id}`);
-                    const reportStatus = s.reportStatusByUserId?.[u.id] ?? "none";
+                  {visitorIds.map((uid) => {
+                    const u = userById.get(uid);
+                    if (!u) return null;
+                    const cellPending = pendingKeys.has(`${s.id}_${uid}`);
+                    const reportStatus = s.reportStatusByUserId?.[uid] ?? "none";
                     return (
                       <button
-                        key={u.id}
+                        key={uid}
                         type="button"
-                        onClick={() => toggle(s.id, u.id)}
+                        onClick={() => toggle(s.id, uid)}
                         disabled={cellPending}
-                        aria-pressed={on}
+                        aria-label={`${u.name} を当日から外す`}
                         className={cn(
-                          "flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-sm font-semibold transition-all active:scale-95 disabled:opacity-60",
-                          on
-                            ? "border-brand-600 bg-brand-600 text-white"
-                            : "border-line-strong bg-surface text-ink-soft",
+                          "flex items-center gap-1.5 rounded-full border border-brand-600 bg-brand-600 py-1 pl-1 pr-3 text-sm font-semibold text-white transition-all active:scale-95 disabled:opacity-60",
                         )}
                       >
                         <span className="relative">
                           <Avatar name={u.name} color={u.avatarColor} size="sm" />
-                          {on && (
-                            <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white">
-                              <Check className="h-2.5 w-2.5 text-brand-600" strokeWidth={4} />
-                            </span>
-                          )}
-                          {/* 現場入りONの人だけ、当日の日報状況をドットで表示 */}
-                          {on && !cellPending && <StatusDot status={reportStatus} />}
+                          {/* 現場入り中の人に、当日の日報状況をドットで表示 */}
+                          {!cellPending && <StatusDot status={reportStatus} />}
                         </span>
                         {u.name}
-                        {cellPending && (
+                        {cellPending ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        ) : (
+                          <X className="h-3.5 w-3.5 opacity-80" aria-hidden />
                         )}
                       </button>
                     );
@@ -264,7 +264,7 @@ export function DispatchBoard({
       )}
 
       <div className="space-y-1 px-1 text-xs text-ink-faint">
-        <p>スタッフをタップで「この日の現場入り」をON/OFF。ONにした人だけ、その日の日報対象になります。</p>
+        <p>「配員を編集」でその日に現場へ行く人を設定。pillタップで外せます。現場入りした人が、その日の日報対象になります。</p>
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />未打刻</span>
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />下書き</span>
@@ -273,10 +273,13 @@ export function DispatchBoard({
       </div>
 
       {editSite && (
-        <AssignSheet
+        <VisitSheet
           key={editSite.id}
           site={editSite}
           allUsers={allUsers}
+          visitedSet={visited[editSite.id] ?? new Set()}
+          pendingKeys={pendingKeys}
+          onToggle={toggle}
           onClose={() => setEditSiteId(null)}
         />
       )}
@@ -284,61 +287,24 @@ export function DispatchBoard({
   );
 }
 
-// 配員編集ボトムシート。allUsers（管理者・スタッフ両方）を一覧表示し、
-// タップで assignUser / unassignUser をトグル。楽観更新＋失敗時ロールバック。
-function AssignSheet({
+// 配員編集ボトムシート（当日制）。allUsers（管理者・スタッフ両方）を一覧表示し、
+// タップで当日の現場入り(SiteVisit)をトグル。訪問集合は親の楽観 state を共有し、
+// シートの変更が即座に pill と「この日の現場入り 合計」に反映される。
+function VisitSheet({
   site,
   allUsers,
+  visitedSet,
+  pendingKeys,
+  onToggle,
   onClose,
 }: {
   site: SiteRow;
   allUsers: DispatchUser[];
+  visitedSet: Set<string>;
+  pendingKeys: Set<string>;
+  onToggle: (siteId: string, userId: string) => void;
   onClose: () => void;
 }) {
-  const toast = useToast();
-  const router = useRouter();
-  const [, start] = useTransition();
-  // 配属済み userId 集合（初期値は現場の staff から算出）
-  const [assignedIds, setAssignedIds] = useState<Set<string>>(
-    () => new Set(site.staff.map((u) => u.id)),
-  );
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-
-  function toggleAssign(userId: string) {
-    if (pendingIds.has(userId)) return; // 同一ユーザーの多重タップは無視
-    const was = assignedIds.has(userId);
-    // 楽観的更新
-    setAssignedIds((prev) => {
-      const n = new Set(prev);
-      if (was) n.delete(userId);
-      else n.add(userId);
-      return n;
-    });
-    setPendingIds((prev) => new Set(prev).add(userId));
-    start(async () => {
-      try {
-        if (was) await unassignUser(site.id, userId);
-        else await assignUser(site.id, userId);
-        router.refresh();
-      } catch {
-        toast("配員の変更に失敗しました", { type: "error" });
-        // 失敗時は戻す
-        setAssignedIds((prev) => {
-          const n = new Set(prev);
-          if (was) n.add(userId);
-          else n.delete(userId);
-          return n;
-        });
-      } finally {
-        setPendingIds((prev) => {
-          const n = new Set(prev);
-          n.delete(userId);
-          return n;
-        });
-      }
-    });
-  }
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in"
@@ -364,13 +330,13 @@ function AssignSheet({
 
         <div className="max-h-[60vh] space-y-1 overflow-y-auto">
           {allUsers.map((u) => {
-            const on = assignedIds.has(u.id);
-            const busy = pendingIds.has(u.id);
+            const on = visitedSet.has(u.id);
+            const busy = pendingKeys.has(`${site.id}_${u.id}`);
             return (
               <button
                 key={u.id}
                 type="button"
-                onClick={() => toggleAssign(u.id)}
+                onClick={() => onToggle(site.id, u.id)}
                 disabled={busy}
                 aria-pressed={on}
                 className={cn(
@@ -407,7 +373,7 @@ function AssignSheet({
         </div>
 
         <p className="mt-3 px-1 text-xs text-ink-faint">
-          タップで現場への配属をON/OFF。管理者・スタッフの両方を配員できます。
+          タップでその日の現場入りをON/OFF。管理者・スタッフの両方を配員できます。
         </p>
       </div>
     </div>

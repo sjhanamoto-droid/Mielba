@@ -31,10 +31,10 @@ export default async function DispatchPage({
       where: { siteStatus: "ACTIVE" },
       include: {
         customer: { select: { name: true } },
-        assignments: {
+        visits: {
+          where: { date: range },
           include: { user: { select: { id: true, name: true, avatarColor: true, active: true } } },
         },
-        visits: { where: { date: range } },
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -58,20 +58,22 @@ export default async function DispatchPage({
     ]),
   );
 
-  const rows = sites.map((s) => ({
-    id: s.id,
-    name: s.name,
-    customerName: s.customer?.name ?? null,
-    staff: s.assignments
-      .filter((a) => a.user.active)
-      .map((a) => ({ id: a.user.id, name: a.user.name, avatarColor: a.user.avatarColor })),
-    visitedIds: s.visits.map((v) => v.userId),
-    reportStatusByUserId: Object.fromEntries(
-      s.assignments
-        .filter((a) => a.user.active)
-        .map((a) => [a.user.id, statusByKey.get(`${s.id}_${a.user.id}`) ?? ("none" as ReportStatus)]),
-    ),
-  }));
+  const rows = sites.map((s) => {
+    // その日の現場入り(visits)からその日の訪問者を構築（有効ユーザーのみ）
+    const visitors = s.visits
+      .filter((v) => v.user.active)
+      .map((v) => ({ id: v.user.id, name: v.user.name, avatarColor: v.user.avatarColor }));
+    return {
+      id: s.id,
+      name: s.name,
+      customerName: s.customer?.name ?? null,
+      staff: visitors,
+      visitedIds: visitors.map((u) => u.id),
+      reportStatusByUserId: Object.fromEntries(
+        visitors.map((u) => [u.id, statusByKey.get(`${s.id}_${u.id}`) ?? ("none" as ReportStatus)]),
+      ),
+    };
+  });
 
   return (
     <div>
