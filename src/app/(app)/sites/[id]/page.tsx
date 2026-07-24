@@ -180,6 +180,35 @@ export default async function SiteDetailPage({
          {/* ===== メイン列 ===== */}
          <div className="space-y-5 lg:col-span-2">
 
+        {/* 工程（進捗・工期）— メイン列の先頭に配置 */}
+        <section className="space-y-2.5">
+          <SectionTitle>工程</SectionTitle>
+          <Card className="space-y-3 p-4">
+            <DataList>
+              <DataRow
+                label="着工"
+                value={`予定 ${fmtDate(site.plannedStartDate)} ／ 実績 ${fmtDate(site.actualStartDate)}`}
+              />
+              <DataRow
+                label="完工"
+                value={`予定 ${fmtDate(site.plannedEndDate)} ／ 実績 ${fmtDate(site.actualEndDate)}`}
+              />
+            </DataList>
+            <div>
+              <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
+              {admin ? (
+                <SiteStageControl
+                  siteId={site.id}
+                  siteStatus={site.siteStatus}
+                  projectStatus={site.projectStatus}
+                />
+              ) : (
+                <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
+              )}
+            </div>
+          </Card>
+        </section>
+
         {/* ⓪-1 現場入り情報（ぱっと見で分かる） */}
         <section className="space-y-2.5">
           <SectionTitle>現場入り情報</SectionTitle>
@@ -438,35 +467,6 @@ export default async function SiteDetailPage({
             )
           )}
 
-        </section>
-
-        {/* ⑤ 工程 */}
-        <section className="space-y-2.5">
-          <SectionTitle>工程</SectionTitle>
-          <Card className="space-y-3 p-4">
-            <DataList>
-              <DataRow
-                label="着工"
-                value={`予定 ${fmtDate(site.plannedStartDate)} ／ 実績 ${fmtDate(site.actualStartDate)}`}
-              />
-              <DataRow
-                label="完工"
-                value={`予定 ${fmtDate(site.plannedEndDate)} ／ 実績 ${fmtDate(site.actualEndDate)}`}
-              />
-            </DataList>
-            <div>
-              <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
-              {admin ? (
-                <SiteStageControl
-                  siteId={site.id}
-                  siteStatus={site.siteStatus}
-                  projectStatus={site.projectStatus}
-                />
-              ) : (
-                <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
-              )}
-            </div>
-          </Card>
         </section>
 
         {/* ⑥ 引き継ぎ事項 */}
