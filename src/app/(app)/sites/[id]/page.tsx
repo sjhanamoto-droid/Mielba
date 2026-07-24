@@ -80,7 +80,7 @@ export default async function SiteDetailPage({
   // 現場詳細はログイン済みなら全ユーザー閲覧可（配属の概念は廃止し当日制へ移行したため）。
 
   // 日報数・未解決引き継ぎ・現場写真（base64は載せない）・人工実績・駐車場代累計
-  const [reportCount, openHandovers, sitePhotos, visitCount, parkingAgg] = await Promise.all([
+  const [reportCount, openHandovers, sitePhotos, parkingAgg] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
     getOpenHandovers(site.id),
     db.photo.findMany({
@@ -88,7 +88,6 @@ export default async function SiteDetailPage({
       select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
       orderBy: { createdAt: "asc" },
     }),
-    db.siteVisit.count({ where: { siteId: site.id } }),
     db.dailyReport.aggregate({
       where: { siteId: site.id },
       _sum: { parkingFee: true },
@@ -110,9 +109,10 @@ export default async function SiteDetailPage({
   const mapsUrl = site.address
     ? `https://maps.google.com/?q=${encodeURIComponent(site.address)}`
     : null;
+  // 最終人工 = 提出日報の累計（reportCount。1日報＝1人工）。目標に対する達成率を出す。
   const manDaysPercent =
     site.targetManDays && site.targetManDays > 0
-      ? Math.min(100, Math.round((visitCount / site.targetManDays) * 100))
+      ? Math.min(100, Math.round((reportCount / site.targetManDays) * 100))
       : null;
 
   // 関連現場を双方向から集約
@@ -255,14 +255,14 @@ export default async function SiteDetailPage({
           </Card>
         </section>
 
-        {/* ⓪-2 人工（実績 / 目標） */}
+        {/* ⓪-2 人工（最終=日報累計 / 目標） */}
         <section className="space-y-2.5">
           <SectionTitle>人工</SectionTitle>
           <Card className="space-y-3 p-4">
             <div className="flex items-end justify-between">
-              <span className="text-xs font-semibold text-ink-muted">実績 / 目標</span>
+              <span className="text-xs font-semibold text-ink-muted">最終 / 目標</span>
               <span className="text-2xl font-bold text-ink tnum">
-                {visitCount}
+                {reportCount}
                 <span className="text-sm font-semibold text-ink-muted">
                   {" "}
                   / {site.targetManDays ?? "—"} 人工
@@ -277,11 +277,10 @@ export default async function SiteDetailPage({
                 </p>
               </div>
             )}
+            <p className="text-[11px] text-ink-faint">
+              最終人工は提出された日報の累計から自動計算されます（1日報＝1人工）。
+            </p>
             <DataList>
-              <DataRow
-                label="最終人工数"
-                value={site.finalManDays != null ? `${site.finalManDays} 人工` : null}
-              />
               <DataRow
                 label="駐車場代 累計"
                 value={

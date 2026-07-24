@@ -194,7 +194,7 @@ export function SiteForm({
       <div className="space-y-3">
         <SectionTitle>管理</SectionTitle>
         <Card className="grid gap-3 p-4 sm:grid-cols-2">
-          <Field label="目標人工" htmlFor="targetManDays" hint="（延べ人数）">
+          <Field label="目標人工" htmlFor="targetManDays" hint="（延べ人数）" className="sm:col-span-2">
             <Input
               id="targetManDays"
               name="targetManDays"
@@ -205,17 +205,7 @@ export function SiteForm({
               placeholder="20"
             />
           </Field>
-          <Field label="最終人工数" htmlFor="finalManDays" hint="（完了時に入力）">
-            <Input
-              id="finalManDays"
-              name="finalManDays"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              defaultValue={site?.finalManDays ?? ""}
-              placeholder="18"
-            />
-          </Field>
+          {/* 最終人工は提出日報の累計から自動計算するため入力欄は廃止 */}
           <Field label="現場ステータス" htmlFor="siteStatus" className="sm:col-span-2">
             <Select id="siteStatus" name="siteStatus" defaultValue={site?.siteStatus ?? "SURVEY"}>
               {SITE_STATUSES.map((s) => (
