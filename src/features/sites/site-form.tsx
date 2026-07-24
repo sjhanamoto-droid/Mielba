@@ -258,15 +258,7 @@ export function SiteForm({
           <Field label="作業場所名" htmlFor="locationName" className="sm:col-span-2">
             <Input id="locationName" name="locationName" defaultValue={site?.locationName ?? ""} placeholder="2F 浴室 など" />
           </Field>
-          <Field label="自社担当部署" htmlFor="departmentInCharge" className="sm:col-span-2">
-            <Input id="departmentInCharge" name="departmentInCharge" defaultValue={site?.departmentInCharge ?? ""} />
-          </Field>
-          <Field label="現場責任者" htmlFor="siteManager">
-            <Input id="siteManager" name="siteManager" defaultValue={site?.siteManager ?? ""} />
-          </Field>
-          <Field label="営業担当" htmlFor="salesRep">
-            <Input id="salesRep" name="salesRep" defaultValue={site?.salesRep ?? ""} />
-          </Field>
+          {/* 体制（自社担当部署/現場責任者/営業担当）は非表示。DBフィールドは将来用に保持 */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="着工予定日" htmlFor="plannedStartDate">
               <Input id="plannedStartDate" name="plannedStartDate" type="date" defaultValue={toDateInputValue(site?.plannedStartDate)} />

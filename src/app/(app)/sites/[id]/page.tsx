@@ -20,7 +20,7 @@ import { PhotoGrid, type PhotoData } from "@/components/photo-grid";
 import { HandoverAlert } from "@/components/handover-alert";
 import { SearchParamToast } from "@/components/ui/toast";
 import { getOpenHandovers } from "@/features/handovers/actions";
-import { SiteStatusControl } from "@/features/sites/site-status-control";
+import { SiteStageControl } from "@/features/sites/site-stage-control";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
 import { photoSrc } from "@/lib/photos";
@@ -173,11 +173,6 @@ export default async function SiteDetailPage({
             <Badge tone="brand">{projectStatus}</Badge>
             <Badge tone="neutral">{projectType}</Badge>
           </div>
-          {admin && (
-            <Card className="p-4">
-              <SiteStatusControl siteId={site.id} status={site.siteStatus} />
-            </Card>
-          )}
         </div>
 
         {/* === PC: 左メイン(2/3) + 右レール(1/3) の2カラム。スマホは縦積み === */}
@@ -412,17 +407,8 @@ export default async function SiteDetailPage({
           </Card>
         </section>
 
-        {/* ④ 体制 */}
+        {/* ④ 協力会社（体制欄は非表示・DBフィールドは将来用に保持） */}
         <section className="space-y-2.5">
-          <SectionTitle>体制</SectionTitle>
-          <Card className="px-4">
-            <DataList>
-              <DataRow label="自社担当部署" value={site.departmentInCharge} />
-              <DataRow label="現場責任者" value={site.siteManager} />
-              <DataRow label="営業担当" value={site.salesRep} />
-            </DataList>
-          </Card>
-
           {/* 協力会社 */}
           {admin ? (
             <PartnerControl siteId={site.id} partners={site.partners} />
@@ -470,7 +456,15 @@ export default async function SiteDetailPage({
             </DataList>
             <div>
               <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
-              <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
+              {admin ? (
+                <SiteStageControl
+                  siteId={site.id}
+                  siteStatus={site.siteStatus}
+                  projectStatus={site.projectStatus}
+                />
+              ) : (
+                <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
+              )}
             </div>
           </Card>
         </section>

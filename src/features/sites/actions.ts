@@ -64,9 +64,6 @@ const siteSchema = z.object({
   targetManDays: optionalNonNegInt,
   receivedDate: optionalDate,
   contractNumber: optionalText,
-  departmentInCharge: optionalText,
-  siteManager: optionalText,
-  salesRep: optionalText,
   plannedStartDate: optionalDate,
   plannedEndDate: optionalDate,
   actualStartDate: optionalDate,
@@ -100,9 +97,6 @@ function parseSiteForm(formData: FormData) {
     targetManDays: formData.get("targetManDays"),
     receivedDate: formData.get("receivedDate"),
     contractNumber: formData.get("contractNumber"),
-    departmentInCharge: formData.get("departmentInCharge"),
-    siteManager: formData.get("siteManager"),
-    salesRep: formData.get("salesRep"),
     plannedStartDate: formData.get("plannedStartDate"),
     plannedEndDate: formData.get("plannedEndDate"),
     actualStartDate: formData.get("actualStartDate"),
@@ -134,9 +128,6 @@ function toData(d: z.infer<typeof siteSchema>) {
     targetManDays: d.targetManDays ?? null,
     receivedDate: toDate(d.receivedDate),
     contractNumber: d.contractNumber ?? null,
-    departmentInCharge: d.departmentInCharge ?? null,
-    siteManager: d.siteManager ?? null,
-    salesRep: d.salesRep ?? null,
     plannedStartDate: toDate(d.plannedStartDate),
     plannedEndDate: toDate(d.plannedEndDate),
     actualStartDate: toDate(d.actualStartDate),
@@ -285,6 +276,34 @@ export async function deleteSite(siteId: string) {
 }
 
 // ── ステータス変更（SURVEY / ACTIVE / PAST） ──
+// 進捗ステージ(0-4: 現調/見積り/受注/施工中/完了)を siteStatus + projectStatus に反映。
+// 管理者が現場詳細でタップして手動変更する。
+const STAGE_TO_STATUS: { siteStatus: string; projectStatus: string }[] = [
+  { siteStatus: "SURVEY", projectStatus: "ESTIMATING" }, // 0 現調
+  { siteStatus: "ACTIVE", projectStatus: "ESTIMATING" }, // 1 見積り
+  { siteStatus: "ACTIVE", projectStatus: "ORDERED" }, // 2 受注
+  { siteStatus: "ACTIVE", projectStatus: "IN_PROGRESS" }, // 3 施工中
+  { siteStatus: "PAST", projectStatus: "COMPLETED" }, // 4 完了
+];
+
+export async function setSiteStage(
+  siteId: string,
+  stageIndex: number,
+): Promise<{ error?: string } | void> {
+  await requireAdmin();
+  const target = STAGE_TO_STATUS[stageIndex];
+  if (!siteId || !target) return { error: "ステータスの指定が不正です" };
+  await db.site.update({
+    where: { id: siteId },
+    data: { siteStatus: target.siteStatus, projectStatus: target.projectStatus },
+  });
+  revalidatePath(`/sites/${siteId}`);
+  revalidatePath("/sites");
+  revalidatePath("/");
+  revalidatePath("/dispatch");
+  revalidatePath("/calendar");
+}
+
 export async function changeSiteStatus(siteId: string, status: string) {
   await requireAdmin();
   if (!SITE_STATUSES.includes(status as (typeof SITE_STATUSES)[number])) return;
