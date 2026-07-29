@@ -12,6 +12,7 @@ import { SectionTitle } from "@/components/ui/card";
 import { buttonClass } from "@/components/ui/button";
 import { PhotoUploader, type UploaderPhoto } from "@/components/photo-uploader";
 import { AiAssistPanel } from "./ai-assist-panel";
+import { VoiceInputButton } from "./voice-input-button";
 import type { AiExtractResult } from "./ai-actions";
 import { createReport, updateReport } from "./actions";
 import {
@@ -375,6 +376,16 @@ export function ReportForm({
             onChange={(e) => setAiDraft(e.target.value)}
           />
         </Field>
+        <div className="flex flex-wrap items-center gap-2">
+          <VoiceInputButton
+            onAppend={(t) =>
+              setAiDraft((prev) => (prev.trim() ? prev.replace(/\s*$/, "") + "\n" : "") + t)
+            }
+          />
+          <span className="text-xs text-ink-faint">
+            音声で箇条書きを入力できます（キーボードのマイクも利用可）。
+          </span>
+        </div>
         <AiAssistPanel draft={aiDraft} onApply={applyAiExtract} aiEnabled={aiEnabled} />
       </div>
 
