@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  LogOut, Settings, X, ChevronRight, Menu,
+  LogOut, Settings, X, ChevronRight, Menu, Bell,
   Building2, UserCog,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
@@ -15,10 +15,12 @@ import { logoutAction } from "@/features/auth/actions";
 export function AppMenu({
   user,
   variant = "header",
+  unreadCount = 0,
 }: {
   user: { name: string; email: string; role: string; avatarColor: string; department: string | null };
   /** header=ヘッダー右上のピル型 / nav=ボトムナビの1項目（アイコン＋ラベル縦） */
   variant?: "header" | "nav";
+  unreadCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const admin = user.role === "ADMIN";
@@ -36,21 +38,31 @@ export function AppMenu({
       {variant === "nav" ? (
         <button
           onClick={() => setOpen(true)}
-          aria-label="メニューを開く"
-          className="flex w-full flex-col items-center gap-0.5 py-2 pt-2.5 text-ink-faint transition-colors active:text-ink-soft"
+          aria-label={unreadCount > 0 ? `メニューを開く（未読 ${unreadCount} 件）` : "メニューを開く"}
+          className="relative flex w-full flex-col items-center gap-0.5 py-2 pt-2.5 text-ink-faint transition-colors active:text-ink-soft"
         >
-          <Menu className="h-6 w-6" strokeWidth={1.9} aria-hidden />
+          <span className="relative">
+            <Menu className="h-6 w-6" strokeWidth={1.9} aria-hidden />
+            {unreadCount > 0 && (
+              <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-status-danger px-1 text-[10px] font-bold text-white">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </span>
           <span className="text-[10px] font-medium">メニュー</span>
         </button>
       ) : (
         <button
           onClick={() => setOpen(true)}
-          aria-label="メニューを開く"
-          className="flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1.5 pr-3 text-ink-soft shadow-card active:scale-95"
+          aria-label={unreadCount > 0 ? `メニューを開く（未読 ${unreadCount} 件）` : "メニューを開く"}
+          className="relative flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1.5 pr-3 text-ink-soft shadow-card active:scale-95"
         >
           <Avatar name={user.name} color={user.avatarColor} size="sm" />
           <Menu className="h-4 w-4" aria-hidden />
           <span className="text-xs font-bold">メニュー</span>
+          {unreadCount > 0 && (
+            <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-status-danger" aria-hidden />
+          )}
         </button>
       )}
 
@@ -80,6 +92,20 @@ export function AppMenu({
             </div>
 
             <div className="mt-4 space-y-1">
+              <Link
+                href="/notifications"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-ink-soft active:bg-surface-sunken"
+              >
+                <Bell className="h-5 w-5" />
+                <span className="flex-1">通知</span>
+                {unreadCount > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-status-danger px-1.5 text-[11px] font-bold text-white">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+                <ChevronRight className="h-4 w-4 text-ink-faint" />
+              </Link>
               {shortcuts.map(({ href, label, icon: Icon }) => (
                 <Link
                   key={href}

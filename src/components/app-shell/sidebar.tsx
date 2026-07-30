@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  HardHat, LogOut, ChevronRight, Settings, PanelLeftClose, PanelLeftOpen,
+  HardHat, LogOut, ChevronRight, Settings, Bell, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { sidebarNavForRole } from "./nav-items";
 import { Avatar } from "@/components/ui/avatar";
@@ -17,10 +17,12 @@ export function Sidebar({
   user,
   collapsed,
   onToggle,
+  unreadCount = 0,
 }: {
   user: { name: string; email: string; role: string; avatarColor: string; department: string | null };
   collapsed: boolean;
   onToggle: () => void;
+  unreadCount?: number;
 }) {
   const pathname = usePathname();
   // PC は幅があるので全項目（管理者は 配員・顧客・TODO も含む）を表示する
@@ -101,6 +103,38 @@ export function Sidebar({
           })}
         </ul>
       </nav>
+
+      {/* 通知 */}
+      <div className={cn("pb-1", collapsed ? "px-2" : "px-3")}>
+        <Link
+          href="/notifications"
+          title={collapsed ? "通知" : undefined}
+          className={cn(
+            "relative flex items-center rounded-xl text-sm font-semibold transition-colors",
+            collapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3 py-2.5",
+            pathname.startsWith("/notifications")
+              ? "bg-brand-50 text-brand-700"
+              : "text-ink-soft hover:bg-surface-subtle",
+          )}
+        >
+          <span className="relative shrink-0">
+            <Bell className="h-5 w-5" strokeWidth={2} />
+            {unreadCount > 0 && (
+              <span
+                className={cn(
+                  "absolute flex items-center justify-center rounded-full bg-status-danger font-bold text-white",
+                  collapsed
+                    ? "-right-1 -top-1 h-4 min-w-4 px-1 text-[10px]"
+                    : "-right-1.5 -top-1.5 h-4 min-w-4 px-1 text-[10px]",
+                )}
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </span>
+          {!collapsed && "通知"}
+        </Link>
+      </div>
 
       {/* 設定 */}
       <div className={cn("pb-2", collapsed ? "px-2" : "px-3")}>

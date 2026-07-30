@@ -57,6 +57,8 @@ model User {
   siteVisits     SiteVisit[]
   eventParticipations EventParticipant[]
   createdSites   Site[]          @relation("SiteCreator")
+  notifications     Notification[]     @relation("UserNotifications")
+  pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
 }
 
 // ─────────────────────── Customer（顧客／元請企業マスター） ───────────────────────
@@ -499,4 +501,40 @@ model Todo {
   @@index([siteId])
   @@index([assigneeId])
   @@index([status])
+}
+
+// ──────────────────────── Notification（アプリ内通知） ────────────────────────
+// Cron やアクションが生成する受信者ごとの通知。既読管理・起動ゲート・ホーム表示に使う。
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String // 受信者
+  type      String // PROVISIONAL | REPORT_MISSING | WEEKLY_MISSING | MANDAYS_OVER 等
+  title     String
+  body      String?
+  href      String? // タップ時の遷移先
+  read      Boolean  @default(false)
+  siteId    String? // 関連現場（任意）
+  reportId  String? // 関連日報（任意）
+  dedupeKey String? // 重複生成防止キー（Cron用。userId と組で一意）
+  createdAt DateTime @default(now())
+
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, read])
+}
+
+// ──────────────────── PushSubscription（Web Push 購読情報） ────────────────────
+// 端末プッシュ通知の送信先。ユーザー操作で購読し保存する。
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation("UserPushSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

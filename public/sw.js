@@ -8,7 +8,7 @@
  * - /api/（写真配信・Server Action 等）は一切キャッシュしない
  * - CACHE_VERSION を上げると古いキャッシュは activate 時に破棄される
  */
-const CACHE_VERSION = "mielba-v0.4.1";
+const CACHE_VERSION = "mielba-v0.5.0";
 const OFFLINE_URL = "/offline";
 
 // プリキャッシュ対象（/offline は未ログイン時に取得できないことがあるため個別に best-effort）
@@ -89,6 +89,61 @@ self.addEventListener("fetch", (event) => {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       }
+    })(),
+  );
+});
+
+// ─────────────────────────── Web Push ───────────────────────────
+// バックエンド（web-push）が {title, body, url} の JSON を送る想定。
+// 受信したら通知を表示し、クリックで対象URLを開く（既存タブがあればフォーカス）。
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    // JSON 以外（プレーンテキスト等）はタイトルとして扱う
+    payload = { title: event.data ? event.data.text() : "" };
+  }
+
+  const title = payload.title || "Mielba";
+  const url = payload.url || "/";
+  const options = {
+    body: payload.body || "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    data: { url },
+    // 同種の通知は最新1件にまとめる（連投で埋もれないように）
+    tag: payload.tag || undefined,
+    renotify: Boolean(payload.tag),
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
+
+  event.waitUntil(
+    (async () => {
+      const allClients = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      // 同一オリジンの既存タブがあればフォーカスして遷移、無ければ新規に開く
+      for (const client of allClients) {
+        try {
+          const clientUrl = new URL(client.url);
+          if (clientUrl.origin === self.location.origin && "focus" in client) {
+            await client.focus();
+            if ("navigate" in client) await client.navigate(targetUrl);
+            return;
+          }
+        } catch {
+          /* URL 解析に失敗したクライアントはスキップ */
+        }
+      }
+      if (self.clients.openWindow) await self.clients.openWindow(targetUrl);
     })(),
   );
 });

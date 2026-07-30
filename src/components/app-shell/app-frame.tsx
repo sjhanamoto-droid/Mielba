@@ -11,6 +11,7 @@ export const SIDEBAR_COOKIE = "mielba_sidebar";
 export function AppFrame({
   user,
   initialCollapsed,
+  unreadCount = 0,
   children,
 }: {
   user: {
@@ -21,6 +22,7 @@ export function AppFrame({
     department: string | null;
   };
   initialCollapsed: boolean;
+  unreadCount?: number;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -35,7 +37,7 @@ export function AppFrame({
 
   return (
     <>
-      <Sidebar user={user} collapsed={collapsed} onToggle={toggle} />
+      <Sidebar user={user} collapsed={collapsed} onToggle={toggle} unreadCount={unreadCount} />
       <div
         className={cn(
           "transition-[padding] duration-200",
