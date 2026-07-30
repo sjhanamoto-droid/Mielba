@@ -23,19 +23,19 @@ const BILLING_STATUSES = ["UNBILLED", "BILLED", "PARTIAL", "PAID"] as const;
 
 // 空文字 → undefined（任意文字列）
 const optionalText = z.preprocess(
-  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  (v) => (v == null || (typeof v === "string" && v.trim() === "") ? undefined : v),
   z.string().optional(),
 );
 
 // 空文字 → undefined（任意日付文字列）
 const optionalDate = z.preprocess(
-  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  (v) => (v == null || (typeof v === "string" && v.trim() === "") ? undefined : v),
   z.string().optional(),
 );
 
 // 空文字 → undefined（任意の0以上整数。人工など）
 const optionalNonNegInt = z.preprocess(
-  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  (v) => (v == null || (typeof v === "string" && v.trim() === "") ? undefined : v),
   z.coerce
     .number({ invalid_type_error: "数値で入力してください" })
     .int("整数で入力してください")
@@ -52,7 +52,7 @@ const siteSchema = z.object({
   projectStatus: z.enum(PROJECT_STATUSES),
   siteStatus: z.enum(SITE_STATUSES),
   billingStatus: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    (v) => (v == null || (typeof v === "string" && v.trim() === "") ? undefined : v),
     z.enum(BILLING_STATUSES).optional(),
   ),
   locationName: optionalText,
@@ -60,7 +60,7 @@ const siteSchema = z.object({
   siteContactName: optionalText,
   siteContactPhone: optionalText,
   keyboxStatus: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    (v) => (v == null || (typeof v === "string" && v.trim() === "") ? undefined : v),
     z.enum(["HAS", "NONE"]).optional(),
   ),
   keyboxNumber: optionalText,

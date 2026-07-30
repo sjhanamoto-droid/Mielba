@@ -146,7 +146,7 @@ export function SiteForm({
           <Field label="案件名" required htmlFor="name" className="sm:col-span-2">
             <Input id="name" name="name" defaultValue={site?.name ?? ""} placeholder="◯◯邸 浴室改修工事" required />
           </Field>
-          <Field label="場所（住所）" htmlFor="address" className="sm:col-span-2">
+          <Field label="場所（住所）" required htmlFor="address" className="sm:col-span-2">
             <Input id="address" name="address" defaultValue={site?.address ?? ""} placeholder="東京都◯◯区…" />
           </Field>
           <Field label="現場担当者（元請側）" htmlFor="siteContactName">
@@ -174,6 +174,7 @@ export function SiteForm({
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
               <KeyRound className="h-4 w-4 text-ink-muted" />
               キーBOX
+              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須</span>
             </p>
             <div className="grid grid-cols-2 gap-2">
               {(["HAS", "NONE"] as const).map((v) => (
@@ -202,7 +203,7 @@ export function SiteForm({
 
           {keyboxStatus === "HAS" ? (
             <>
-              <Field label="キーBOX番号" htmlFor="keyboxNumber">
+              <Field label="キーBOX番号" required htmlFor="keyboxNumber">
                 <Input id="keyboxNumber" name="keyboxNumber" defaultValue={site?.keyboxNumber ?? ""} placeholder="1234" />
               </Field>
               <Field label="キーBOX設置場所" htmlFor="keyboxPlace">
@@ -210,7 +211,7 @@ export function SiteForm({
               </Field>
             </>
           ) : (
-            <Field label="キーBOXが無い理由" htmlFor="keyboxNoneReason" className="sm:col-span-2">
+            <Field label="キーBOXが無い理由" required htmlFor="keyboxNoneReason" className="sm:col-span-2">
               <Textarea
                 id="keyboxNoneReason"
                 name="keyboxNoneReason"
@@ -224,6 +225,7 @@ export function SiteForm({
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
               <KeyRound className="h-4 w-4 text-ink-muted" />
               キーBOXの写真
+              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須</span>
             </p>
             <SitePhotoField name="keyboxPhotos" kind="KEYBOX" initial={keyboxPhotos} />
           </div>
@@ -238,6 +240,7 @@ export function SiteForm({
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
               <FileText className="h-4 w-4 text-ink-muted" />
               図面 <span className="font-normal text-ink-faint">（画像・PDF可）</span>
+              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須（いずれか）</span>
             </p>
             <SitePhotoField name="drawingPhotos" kind="DRAWING" allowPdf initial={drawingPhotos} buttonLabel="図面を追加" />
           </div>
@@ -245,6 +248,7 @@ export function SiteForm({
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
               <CalendarRange className="h-4 w-4 text-ink-muted" />
               工程表 <span className="font-normal text-ink-faint">（画像・PDF可）</span>
+              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須（いずれか）</span>
             </p>
             <SitePhotoField name="schedulePhotos" kind="SCHEDULE" allowPdf initial={schedulePhotos} buttonLabel="工程表を追加" />
           </div>
