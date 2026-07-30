@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, ChevronRight } from "lucide-react";
+import { MapPin, ChevronRight, AlertTriangle } from "lucide-react";
 import { CardLink } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PROJECT_TYPE_LABEL, SITE_STAGES, siteStageIndex, type ProjectType } from "@/lib/constants";
@@ -64,6 +64,7 @@ export type SiteCardData = {
   siteStatus: string;
   projectType: string;
   projectStatus: string;
+  provisional?: boolean;
   customer?: { name: string } | null;
   createdByName?: string;
 };
@@ -84,7 +85,13 @@ export function SiteCard({
       />
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="mb-1.5">
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+            {site.provisional && (
+              <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
+                <AlertTriangle className="h-3 w-3" />
+                仮登録
+              </Badge>
+            )}
             <Badge tone="neutral">
               {PROJECT_TYPE_LABEL[site.projectType as ProjectType] ?? site.projectType}
             </Badge>

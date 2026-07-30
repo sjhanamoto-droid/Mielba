@@ -4,7 +4,7 @@ import {
   Pencil, Building2, MapPin, KeyRound, HardHat, CalendarClock,
   FileText, ClipboardList, Plus, ChevronRight, Truck, PackageCheck,
   ClipboardCheck, Wallet, ScrollText, Phone, ArrowRight, Map, CalendarRange,
-  UserRound, CircleParking,
+  UserRound, CircleParking, AlertTriangle,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -167,10 +167,27 @@ export default async function SiteDetailPage({
         {/* 未解決の引き継ぎ事項（最優先で表示） */}
         {openHandovers.length > 0 && <HandoverAlert handovers={openHandovers} />}
 
+        {/* 仮登録の警告バナー（本登録に必要な項目が未入力） */}
+        {site.provisional && (
+          <div className="alert-warn flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              この現場は<b className="font-bold">仮登録</b>です。本登録には
+              住所・キーBOX・キーBOX写真・図面/工程表 が必要です。
+            </span>
+          </div>
+        )}
+
         {/* ステータス */}
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-1.5">
             <SiteStatusBadge status={site.siteStatus} />
+            {site.provisional && (
+              <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
+                <AlertTriangle className="h-3 w-3" />
+                仮登録
+              </Badge>
+            )}
             <Badge tone="brand">{projectStatus}</Badge>
             <Badge tone="neutral">{projectType}</Badge>
           </div>

@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Save, AlertCircle, ChevronDown, KeyRound, FileText, CalendarRange, Info } from "lucide-react";
 import { createSite, updateSite } from "./actions";
 import { SitePhotoField, type SitePhotoInit } from "./site-photo-field";
 import { DeleteSiteButton } from "./delete-site-button";
 import { Card, SectionTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/modal";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { cn, toDateInputValue } from "@/lib/utils";
@@ -66,6 +67,18 @@ const PROJECT_TYPES: ProjectType[] = ["REFORM", "RENOVATION", "NEWBUILD", "MAINT
 const SITE_STATUSES: SiteStatus[] = ["SURVEY", "ACTIVE", "PAST"];
 const BILLING_STATUSES: BillingStatus[] = ["UNBILLED", "BILLED", "PARTIAL", "PAID"];
 
+// SitePhotoField の hidden JSON（{id} 維持 or {dataUrl,...} 新規の配列）から枚数を数える。
+// 空文字 / "[]" / 不正は 0 枚。サーバー側 computeProvisional（kept+added）と一致させる。
+function countPhotosField(value: FormDataEntryValue | null): number {
+  if (typeof value !== "string" || value.trim() === "") return 0;
+  try {
+    const arr = JSON.parse(value);
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function SubmitButton({ isEdit }: { isEdit: boolean }) {
   const { pending } = useFormStatus();
   return (
@@ -111,13 +124,46 @@ export function SiteForm({
     site?.keyboxStatus === "NONE" ? "NONE" : "HAS",
   );
 
+  // ── 不完全時の確認ダイアログ制御 ──
+  // 本登録の必須が未充足のまま送信しようとしたら確認を挟む。OK なら bypassRef を立てて
+  // requestSubmit で再送信し、2 回目の onSubmit はフラグで素通しする（無限ループ防止）。
+  const formRef = useRef<HTMLFormElement>(null);
+  const bypassRef = useRef(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // クライアント側の本登録判定（サーバー computeProvisional と同一ロジック）
+  function isRegistrationComplete(fd: FormData): boolean {
+    const address = ((fd.get("address") as string | null) ?? "").trim();
+    const keyboxNumber = ((fd.get("keyboxNumber") as string | null) ?? "").trim();
+    const keyboxNoneReason = ((fd.get("keyboxNoneReason") as string | null) ?? "").trim();
+    const hasAddress = address !== "";
+    const keyboxOk = keyboxStatus === "HAS" ? keyboxNumber !== "" : keyboxNoneReason !== "";
+    const hasKeyboxPhoto = countPhotosField(fd.get("keyboxPhotos")) > 0;
+    const hasDocument =
+      countPhotosField(fd.get("drawingPhotos")) + countPhotosField(fd.get("schedulePhotos")) > 0;
+    return hasAddress && keyboxOk && hasKeyboxPhoto && hasDocument;
+  }
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // 確認済み（モーダルで「はい」）なら素通しして本来の送信を行う
+    if (bypassRef.current) {
+      bypassRef.current = false;
+      return;
+    }
+    // 揃っていれば確認なしで本登録。揃っていなければ送信を止めて確認ダイアログを出す。
+    if (!isRegistrationComplete(new FormData(e.currentTarget))) {
+      e.preventDefault();
+      setConfirmOpen(true);
+    }
+  }
+
   const keyboxPhotos = sitePhotos.filter((p) => p.kind === "KEYBOX");
   const drawingPhotos = sitePhotos.filter((p) => p.kind === "DRAWING");
   const schedulePhotos = sitePhotos.filter((p) => p.kind === "SCHEDULE");
 
   return (
     <div className="space-y-4">
-    <form action={formAction} className="space-y-4">
+    <form ref={formRef} action={formAction} onSubmit={handleSubmit} className="space-y-4">
       {/* 仮登録の注記（必須が未入力でも保存できるが仮登録扱いになる） */}
       <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-xs leading-relaxed text-blue-800 dark:border-blue-800/60 dark:bg-blue-950/50 dark:text-blue-300">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -378,6 +424,20 @@ export function SiteForm({
 
     {/* 危険操作ゾーン（編集時のみ・フォーム外） */}
     {isEdit && site && <DeleteSiteButton siteId={site.id} siteName={site.name} />}
+
+    {/* 必須未充足時の確認：OK で仮登録保存、キャンセルで入力に戻る */}
+    <ConfirmDialog
+      open={confirmOpen}
+      onClose={() => setConfirmOpen(false)}
+      title="仮登録として保存しますか？"
+      description="必須項目がすべて埋まっていないため、仮登録として一度情報を保存します。よろしいですか？"
+      confirmLabel="仮登録で保存"
+      cancelLabel="入力に戻る"
+      onConfirm={() => {
+        bypassRef.current = true;
+        formRef.current?.requestSubmit();
+      }}
+    />
     </div>
   );
 }
