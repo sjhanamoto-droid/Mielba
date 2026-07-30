@@ -4,6 +4,13 @@ import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 // 認証ガード。未ログインは /login へ、ログイン済みで /login に来たらホームへ。
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Vercel Cron は Bearer CRON_SECRET で自前認証する（セッション Cookie を持たない）ため、
+  // セッションガードの対象外とする。認可は各 /api/cron ルート側で行う。
+  if (pathname.startsWith("/api/cron/")) {
+    return NextResponse.next();
+  }
+
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySession(token) : null;
 
