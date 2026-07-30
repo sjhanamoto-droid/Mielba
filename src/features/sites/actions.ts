@@ -59,8 +59,13 @@ const siteSchema = z.object({
   address: optionalText,
   siteContactName: optionalText,
   siteContactPhone: optionalText,
+  keyboxStatus: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.enum(["HAS", "NONE"]).optional(),
+  ),
   keyboxNumber: optionalText,
   keyboxPlace: optionalText,
+  keyboxNoneReason: optionalText,
   targetManDays: optionalNonNegInt,
   receivedDate: optionalDate,
   contractNumber: optionalText,
@@ -92,8 +97,10 @@ function parseSiteForm(formData: FormData) {
     address: formData.get("address"),
     siteContactName: formData.get("siteContactName"),
     siteContactPhone: formData.get("siteContactPhone"),
+    keyboxStatus: formData.get("keyboxStatus"),
     keyboxNumber: formData.get("keyboxNumber"),
     keyboxPlace: formData.get("keyboxPlace"),
+    keyboxNoneReason: formData.get("keyboxNoneReason"),
     targetManDays: formData.get("targetManDays"),
     receivedDate: formData.get("receivedDate"),
     contractNumber: formData.get("contractNumber"),
@@ -123,8 +130,10 @@ function toData(d: z.infer<typeof siteSchema>) {
     address: d.address ?? null,
     siteContactName: d.siteContactName ?? null,
     siteContactPhone: d.siteContactPhone ?? null,
+    keyboxStatus: d.keyboxStatus ?? null,
     keyboxNumber: d.keyboxNumber ?? null,
     keyboxPlace: d.keyboxPlace ?? null,
+    keyboxNoneReason: d.keyboxNoneReason ?? null,
     targetManDays: d.targetManDays ?? null,
     receivedDate: toDate(d.receivedDate),
     contractNumber: d.contractNumber ?? null,
@@ -158,6 +167,31 @@ function parseSitePhotoFields(formData: FormData): SitePhotoSet[] | { error: str
   return sets;
 }
 
+// ── 本登録 / 仮登録の判定 ──
+// 本登録に必要な必須項目が揃っていなければ仮登録(provisional=true)。
+// 必須: 住所 / キーBOX（HAS→番号, NONE→理由） / キーBOX写真(1枚以上) / 図面 or 工程表(1枚以上)。
+// 写真枚数は kept(既存維持) + added(新規) で数える。
+function computeProvisional(
+  d: z.infer<typeof siteSchema>,
+  photoSets: SitePhotoSet[],
+): boolean {
+  const countKind = (kind: string) => {
+    const set = photoSets.find((s) => s.kind === kind);
+    return set ? set.kept.length + set.added.length : 0;
+  };
+  const hasAddress = !!d.address;
+  const keyboxOk =
+    d.keyboxStatus === "HAS"
+      ? !!d.keyboxNumber
+      : d.keyboxStatus === "NONE"
+        ? !!d.keyboxNoneReason
+        : false;
+  const hasKeyboxPhoto = countKind("KEYBOX") > 0;
+  const hasDocument = countKind("DRAWING") + countKind("SCHEDULE") > 0;
+  const complete = hasAddress && keyboxOk && hasKeyboxPhoto && hasDocument;
+  return !complete;
+}
+
 // kind ごとに「kept に無い既存写真を削除 → added を作成」する
 async function applySitePhotoSets(
   tx: Prisma.TransactionClient,
@@ -186,7 +220,7 @@ async function applySitePhotoSets(
 }
 
 export async function createSite(formData: FormData) {
-  await requireAdmin();
+  const user = await requireAdmin();
   const parsed = parseSiteForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
@@ -195,12 +229,15 @@ export async function createSite(formData: FormData) {
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
   }
+  const provisional = computeProvisional(parsed.data, photoSets);
 
   let siteId: string;
   let customerId: string;
   try {
     const site = await db.$transaction(async (tx) => {
-      const created = await tx.site.create({ data: toData(parsed.data) });
+      const created = await tx.site.create({
+        data: { ...toData(parsed.data), createdById: user.id, provisional },
+      });
       await applySitePhotoSets(tx, created.id, photoSets);
       return created;
     });
@@ -226,13 +263,15 @@ export async function updateSite(siteId: string, formData: FormData) {
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
   }
+  const provisional = computeProvisional(parsed.data, photoSets);
 
   let customerId: string;
   try {
     const site = await db.$transaction(async (tx) => {
       const updated = await tx.site.update({
         where: { id: siteId },
-        data: toData(parsed.data),
+        // createdById は変更しない（作成者は保持）
+        data: { ...toData(parsed.data), provisional },
       });
       await applySitePhotoSets(tx, siteId, photoSets);
       return updated;

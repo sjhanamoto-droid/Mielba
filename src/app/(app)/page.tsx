@@ -159,6 +159,7 @@ export default async function HomePage() {
     submittedToday,
     tomorrowGoingCount,
     surveyCount,
+    provisionalSites,
   ] = await Promise.all([
     // 担当現場（進行中）
     db.site.findMany({
@@ -169,6 +170,7 @@ export default async function HomePage() {
       include: {
         customer: { select: { name: true } },
         assignments: { select: { userId: true } },
+        createdBy: { select: { name: true } },
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -239,6 +241,18 @@ export default async function HomePage() {
     admin ? db.siteVisit.count({ where: { date: tomorrow } }) : Promise.resolve(0),
     // 統計（管理者向け）：調査中の現場数
     admin ? db.site.count({ where: { siteStatus: "SURVEY" } }) : Promise.resolve(0),
+    // 仮登録（本登録に必要な項目が未入力）の現場。管理者=全件 / 非管理者=自分が作成 or 担当
+    db.site.findMany({
+      where: {
+        provisional: true,
+        ...(admin
+          ? {}
+          : { OR: [{ createdById: user.id }, { assignments: { some: { userId: user.id } } }] }),
+      },
+      select: { id: true, name: true },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+    }),
   ]);
 
   const reportBySiteId = new Map(myReportsToday.map((r) => [r.siteId, r]));
@@ -400,6 +414,33 @@ export default async function HomePage() {
         <div className="space-y-5 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
           {/* ───────────── メイン（左・中央 2/3） ───────────── */}
           <div className="space-y-5 lg:col-span-2">
+            {/* 仮登録アラート（本登録に必要な項目が未入力の現場） */}
+            {provisionalSites.length > 0 && (
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800/60 dark:bg-amber-950/50">
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />
+                  <p className="text-sm font-bold">仮登録の現場が {provisionalSites.length} 件あります</p>
+                </div>
+                <p className="mt-1 text-xs text-amber-700/90 dark:text-amber-300/80">
+                  住所・キーBOX・キーBOX写真・図面/工程表のいずれかが未入力です。編集して本登録にしてください。
+                </p>
+                <ul className="mt-3 space-y-1.5">
+                  {provisionalSites.map((s) => (
+                    <li key={s.id}>
+                      <Link
+                        href={`/sites/${s.id}`}
+                        className="flex items-center gap-2 rounded-xl border border-amber-200/70 bg-white/70 px-3 py-2.5 text-sm font-semibold text-amber-900 active:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100"
+                      >
+                        <HardHat className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-amber-400" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* 次にやること */}
             <section className="space-y-2.5">
               <SectionTitle>次にやること</SectionTitle>
@@ -776,7 +817,7 @@ export default async function HomePage() {
               ) : (
                 <div className="grid gap-2.5 sm:grid-cols-2">
                   {activeSites.slice(0, 6).map((s) => (
-                    <SiteCard key={s.id} site={s} />
+                    <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
                   ))}
                 </div>
               )}

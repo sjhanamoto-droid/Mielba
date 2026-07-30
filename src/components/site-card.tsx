@@ -65,6 +65,7 @@ export type SiteCardData = {
   projectType: string;
   projectStatus: string;
   customer?: { name: string } | null;
+  createdByName?: string;
 };
 
 export function SiteCard({
@@ -122,6 +123,9 @@ export function SiteCard({
                 {site.address}
               </span>
             </p>
+          )}
+          {site.createdByName && (
+            <p className="mt-1 truncate text-[11px] text-ink-faint">作成者: {site.createdByName}</p>
           )}
         </div>
         <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-ink-faint" />

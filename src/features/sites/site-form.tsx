@@ -1,15 +1,15 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { Save, AlertCircle, ChevronDown, KeyRound, FileText, CalendarRange } from "lucide-react";
+import { Save, AlertCircle, ChevronDown, KeyRound, FileText, CalendarRange, Info } from "lucide-react";
 import { createSite, updateSite } from "./actions";
 import { SitePhotoField, type SitePhotoInit } from "./site-photo-field";
 import { DeleteSiteButton } from "./delete-site-button";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
-import { toDateInputValue } from "@/lib/utils";
+import { cn, toDateInputValue } from "@/lib/utils";
 import {
   PROJECT_TYPE_LABEL,
   PROJECT_STATUS_LABEL,
@@ -38,8 +38,10 @@ export type SiteFormData = {
   keybox: string | null;
   siteContactName: string | null;
   siteContactPhone: string | null;
+  keyboxStatus: string | null;
   keyboxNumber: string | null;
   keyboxPlace: string | null;
+  keyboxNoneReason: string | null;
   targetManDays: number | null;
   finalManDays: number | null;
   receivedDate: Date | string | null;
@@ -104,6 +106,11 @@ export function SiteForm({
 
   const [state, formAction] = useActionState<FormState, FormData>(action, {});
 
+  // キーBOX あり(HAS)/なし(NONE) の切替（初期値は既存値、未設定なら「あり」）
+  const [keyboxStatus, setKeyboxStatus] = useState<"HAS" | "NONE">(
+    site?.keyboxStatus === "NONE" ? "NONE" : "HAS",
+  );
+
   const keyboxPhotos = sitePhotos.filter((p) => p.kind === "KEYBOX");
   const drawingPhotos = sitePhotos.filter((p) => p.kind === "DRAWING");
   const schedulePhotos = sitePhotos.filter((p) => p.kind === "SCHEDULE");
@@ -111,6 +118,15 @@ export function SiteForm({
   return (
     <div className="space-y-4">
     <form action={formAction} className="space-y-4">
+      {/* 仮登録の注記（必須が未入力でも保存できるが仮登録扱いになる） */}
+      <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-xs leading-relaxed text-blue-800 dark:border-blue-800/60 dark:bg-blue-950/50 dark:text-blue-300">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          未入力があると<b className="font-bold">仮登録</b>になります。本登録に必要な項目：
+          <b className="font-bold">住所・キーBOX・キーBOX写真・図面/工程表</b>
+        </span>
+      </div>
+
       {/* 基本 */}
       <div className="space-y-3">
         <SectionTitle>基本</SectionTitle>
@@ -153,12 +169,57 @@ export function SiteForm({
       <div className="space-y-3">
         <SectionTitle>現場入り情報</SectionTitle>
         <Card className="grid gap-3 p-4 sm:grid-cols-2">
-          <Field label="キーBOX番号" htmlFor="keyboxNumber">
-            <Input id="keyboxNumber" name="keyboxNumber" defaultValue={site?.keyboxNumber ?? ""} placeholder="1234" />
-          </Field>
-          <Field label="キーBOX場所" htmlFor="keyboxPlace">
-            <Input id="keyboxPlace" name="keyboxPlace" defaultValue={site?.keyboxPlace ?? ""} placeholder="玄関脇のガスメーター横" />
-          </Field>
+          {/* キーBOX あり/なし の切替（あり→番号・場所、なし→理由） */}
+          <div className="sm:col-span-2">
+            <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
+              <KeyRound className="h-4 w-4 text-ink-muted" />
+              キーBOX
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["HAS", "NONE"] as const).map((v) => (
+                <label
+                  key={v}
+                  className={cn(
+                    "flex min-h-[44px] min-w-0 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors",
+                    keyboxStatus === v
+                      ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                      : "border-line-strong bg-surface text-ink-soft",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="keyboxStatus"
+                    value={v}
+                    checked={keyboxStatus === v}
+                    onChange={() => setKeyboxStatus(v)}
+                    className="sr-only"
+                  />
+                  {v === "HAS" ? "あり" : "なし"}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {keyboxStatus === "HAS" ? (
+            <>
+              <Field label="キーBOX番号" htmlFor="keyboxNumber">
+                <Input id="keyboxNumber" name="keyboxNumber" defaultValue={site?.keyboxNumber ?? ""} placeholder="1234" />
+              </Field>
+              <Field label="キーBOX設置場所" htmlFor="keyboxPlace">
+                <Input id="keyboxPlace" name="keyboxPlace" defaultValue={site?.keyboxPlace ?? ""} placeholder="玄関脇のガスメーター横" />
+              </Field>
+            </>
+          ) : (
+            <Field label="キーBOXが無い理由" htmlFor="keyboxNoneReason" className="sm:col-span-2">
+              <Textarea
+                id="keyboxNoneReason"
+                name="keyboxNoneReason"
+                defaultValue={site?.keyboxNoneReason ?? ""}
+                placeholder="例：オートロックのため管理人から都度受け取る"
+              />
+            </Field>
+          )}
+
           <div className="sm:col-span-2">
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
               <KeyRound className="h-4 w-4 text-ink-muted" />

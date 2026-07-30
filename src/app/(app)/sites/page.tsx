@@ -66,7 +66,10 @@ export default async function SitesPage({
   const [sitesRaw, customers] = await Promise.all([
     db.site.findMany({
       where,
-      include: { customer: { select: { id: true, name: true } } },
+      include: {
+        customer: { select: { id: true, name: true } },
+        createdBy: { select: { name: true } },
+      },
       orderBy: { updatedAt: "desc" },
       take: shown + 1, // 「さらに表示」の有無を判定するため1件多く取得
     }),
@@ -142,7 +145,7 @@ export default async function SitesPage({
           <>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
               {sites.map((s) => (
-                <SiteCard key={s.id} site={s} />
+                <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
               ))}
             </div>
             {hasMore && (

@@ -55,6 +55,7 @@ export default async function SiteDetailPage({
     where: { id },
     include: {
       customer: { select: { id: true, name: true } },
+      createdBy: { select: { name: true } },
       survey: { select: { id: true, address: true, situationMemo: true, surveyedAt: true } },
       partners: true,
       reports: {
@@ -213,24 +214,37 @@ export default async function SiteDetailPage({
         <section className="space-y-2.5">
           <SectionTitle>現場入り情報</SectionTitle>
           <Card className="space-y-4 p-4">
-            {/* キーBOX番号を大きく表示 */}
-            <div className="rounded-xl bg-surface-sunken p-3.5">
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                <KeyRound className="h-4 w-4" />
-                キーBOX番号
-              </p>
-              <p className="mt-1 text-3xl font-bold tracking-wider text-ink tnum">
-                {site.keyboxNumber || "—"}
-              </p>
-              {site.keyboxPlace && (
-                <p className="mt-1.5 text-sm font-medium text-ink-soft">
-                  場所: {site.keyboxPlace}
+            {/* キーBOX（なし＝理由を表示 / あり＝番号を大きく表示） */}
+            {site.keyboxStatus === "NONE" ? (
+              <div className="rounded-xl bg-surface-sunken p-3.5">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                  <KeyRound className="h-4 w-4" />
+                  キーBOX
                 </p>
-              )}
-              {!site.keyboxNumber && site.keybox && (
-                <p className="mt-1.5 text-xs text-ink-muted">旧キーBOXメモ: {site.keybox}</p>
-              )}
-            </div>
+                <p className="mt-1 text-lg font-bold text-ink">なし</p>
+                {site.keyboxNoneReason && (
+                  <p className="mt-1 text-sm font-medium text-ink-soft">理由: {site.keyboxNoneReason}</p>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-xl bg-surface-sunken p-3.5">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                  <KeyRound className="h-4 w-4" />
+                  キーBOX番号
+                </p>
+                <p className="mt-1 text-3xl font-bold tracking-wider text-ink tnum">
+                  {site.keyboxNumber || "—"}
+                </p>
+                {site.keyboxPlace && (
+                  <p className="mt-1.5 text-sm font-medium text-ink-soft">
+                    場所: {site.keyboxPlace}
+                  </p>
+                )}
+                {!site.keyboxNumber && site.keybox && (
+                  <p className="mt-1.5 text-xs text-ink-muted">旧キーBOXメモ: {site.keybox}</p>
+                )}
+              </div>
+            )}
 
             {/* キーBOXの写真（タップで拡大） */}
             {keyboxPhotos.length > 0 && <PhotoGrid photos={keyboxPhotos} />}
@@ -384,6 +398,7 @@ export default async function SiteDetailPage({
               <DataRow label="案件ステータス" value={projectStatus} />
               <DataRow label="受注日" value={fmtDate(site.receivedDate)} />
               <DataRow label="契約書番号" value={site.contractNumber} />
+              <DataRow label="作成者" value={site.createdBy?.name} />
             </DataList>
           </Card>
         </section>

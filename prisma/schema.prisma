@@ -56,6 +56,7 @@ model User {
   assignments    SiteAssignment[]
   siteVisits     SiteVisit[]
   eventParticipations EventParticipant[]
+  createdSites   Site[]          @relation("SiteCreator")
 }
 
 // ─────────────────────── Customer（顧客／元請企業マスター） ───────────────────────
@@ -153,6 +154,12 @@ model Site {
   targetManDays    Int? // 目標人工（工数）
   finalManDays     Int? // 最終人工（実績）
 
+  // ── 要望対応：作成者・キーBOXあり/なし・仮登録 ──
+  createdById      String? // 作成者（現場を登録したユーザー）
+  keyboxStatus     String? // "HAS"(あり) | "NONE"(なし)
+  keyboxNoneReason String? // キーBOXなしの理由（NONE時に必須）
+  provisional      Boolean @default(false) // 仮登録（必須項目が未入力）
+
   memo             String?
 
   // ── 将来フェーズ：金額・収支（項目定義のみ。入力UI/集計は将来有効化） ──
@@ -180,6 +187,7 @@ model Site {
   updatedAt        DateTime @updatedAt
 
   customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdBy   User?            @relation("SiteCreator", fields: [createdById], references: [id], onDelete: SetNull)
   survey      Survey?
   reports     DailyReport[]
   events      CalendarEvent[]
@@ -196,6 +204,7 @@ model Site {
 
   @@index([customerId])
   @@index([siteStatus])
+  @@index([provisional])
 }
 
 // 協力会社（下請）情報
