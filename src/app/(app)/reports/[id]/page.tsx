@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {
   Clock, Package, Truck, ClipboardList, StickyNote, Sparkles, MessageSquare,
   Pencil, ChevronRight, CalendarDays, Users, Printer, ArrowRightLeft, CircleParking, Wallet,
+  TrainFront, Boxes,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -51,10 +52,13 @@ export default async function ReportDetailPage({
   const canEdit = report.userId === user.id || isAdmin(user);
   const submitted = report.status === "SUBMITTED";
 
-  // 経費（駐車場代＋その他の経費）。合計は両者の和。
-  const hasExpenses = report.parkingFee != null || report.expenses.length > 0;
+  // 経費（駐車場代＋電車賃＋その他の経費）。合計は全ての和。
+  const hasExpenses =
+    report.parkingFee != null || report.trainFare != null || report.expenses.length > 0;
   const expenseTotal =
-    (report.parkingFee ?? 0) + report.expenses.reduce((s, e) => s + e.amount, 0);
+    (report.parkingFee ?? 0) +
+    (report.trainFare ?? 0) +
+    report.expenses.reduce((s, e) => s + e.amount, 0);
 
   return (
     <div>
@@ -143,6 +147,18 @@ export default async function ReportDetailPage({
           </div>
         )}
 
+        {/* 作業時間の変更理由（8:00-17:00 以外のとき） */}
+        {report.timeChangeReason && (
+          <section className="space-y-2">
+            <SectionTitle>
+              <span className="flex items-center gap-1.5"><Clock className="h-4 w-4" />作業時間の変更理由</span>
+            </SectionTitle>
+            <Card className="p-4">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{report.timeChangeReason}</p>
+            </Card>
+          </section>
+        )}
+
         {/* 使用材料 */}
         {report.materials.length > 0 && (
           <section className="space-y-2">
@@ -165,7 +181,30 @@ export default async function ReportDetailPage({
           </section>
         )}
 
-        {/* 経費（駐車場代＋その他） */}
+        {/* 在庫材料の使用（あり/なし＋内容） */}
+        {report.stockUsed != null && (
+          <section className="space-y-2">
+            <SectionTitle>
+              <span className="flex items-center gap-1.5"><Boxes className="h-4 w-4" />在庫材料の使用</span>
+            </SectionTitle>
+            <Card className="p-4">
+              {report.stockUsed ? (
+                <>
+                  <Badge tone="active">使用あり</Badge>
+                  {report.stockNote && (
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                      {report.stockNote}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <Badge tone="neutral">使用なし</Badge>
+              )}
+            </Card>
+          </section>
+        )}
+
+        {/* 経費（駐車場代＋電車賃＋その他） */}
         {hasExpenses && (
           <section className="space-y-2">
             <SectionTitle>
@@ -178,8 +217,19 @@ export default async function ReportDetailPage({
                     <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
                       <CircleParking className="h-4 w-4 text-ink-muted" />
                       駐車場代
+                      {report.parkingFee === 0 && <span className="text-xs text-ink-faint">（なし）</span>}
                     </span>
                     <span className="shrink-0 text-sm tnum text-ink-soft">{fmtYen(report.parkingFee)}</span>
+                  </div>
+                )}
+                {report.trainFare != null && (
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                      <TrainFront className="h-4 w-4 text-ink-muted" />
+                      電車賃
+                      {report.trainFare === 0 && <span className="text-xs text-ink-faint">（なし）</span>}
+                    </span>
+                    <span className="shrink-0 text-sm tnum text-ink-soft">{fmtYen(report.trainFare)}</span>
                   </div>
                 )}
                 {report.expenses.map((e) => (
@@ -269,8 +319,8 @@ export default async function ReportDetailPage({
           </section>
         )}
 
-        {/* 引き継ぎ事項（次に入る人への申し送り） */}
-        {report.handover && (
+        {/* 引き継ぎ事項（次に入る人への申し送り。handoverNone のとき「なし」表示） */}
+        {report.handover ? (
           <section className="space-y-2">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><ArrowRightLeft className="h-4 w-4" />引き継ぎ事項</span>
@@ -282,7 +332,16 @@ export default async function ReportDetailPage({
               </p>
             </div>
           </section>
-        )}
+        ) : report.handoverNone ? (
+          <section className="space-y-2">
+            <SectionTitle>
+              <span className="flex items-center gap-1.5"><ArrowRightLeft className="h-4 w-4" />引き継ぎ事項</span>
+            </SectionTitle>
+            <Card className="p-4">
+              <p className="text-sm text-ink-muted">引き継ぎなし</p>
+            </Card>
+          </section>
+        ) : null}
 
         {/* 写真 */}
         {report.photos.length > 0 && (

@@ -47,26 +47,81 @@ const reportSchema = z
     detail: z.string().optional(),
     aiSummary: z.string().optional(),
     handover: z.string().optional(),
+    handoverChoice: z.enum(["HAS", "NONE"]).optional(),
     parkingFee: z.string().optional(),
+    parkingFeeChoice: z.enum(["HAS", "NONE"]).optional(),
+    trainFare: z.string().optional(),
+    trainFareChoice: z.enum(["HAS", "NONE"]).optional(),
+    timeChangeReason: z.string().optional(),
+    stockChoice: z.enum(["HAS", "NONE"]).optional(),
+    stockNote: z.string().optional(),
+    // メインの人以外は材料・在庫欄がロックされ "1" が送られる（在庫必須をスキップ）
+    materialsLocked: z.string().optional(),
     status: z.enum(["DRAFT", "SUBMITTED"]),
   })
   .superRefine((v, ctx) => {
+    const submitted = v.status === "SUBMITTED";
+    const err = (path: string, message: string) =>
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
+    // 0以上の整数かどうか（金額の共通チェック）
+    const isNonNegInt = (s: string | undefined) => {
+      if (!s || s.trim() === "") return false;
+      const n = Number(s);
+      return Number.isInteger(n) && n >= 0;
+    };
+
     // 下書きは detail 空でも保存可。提出時のみ必須（Top10 #4）
-    if (v.status === "SUBMITTED" && (!v.detail || v.detail.trim() === "")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["detail"],
-        message: "提出には作業内容の入力が必要です",
-      });
+    if (submitted && (!v.detail || v.detail.trim() === "")) {
+      err("detail", "提出には作業内容の入力が必要です");
     }
-    if (v.parkingFee && v.parkingFee.trim() !== "") {
-      const n = Number(v.parkingFee);
-      if (!Number.isInteger(n) || n < 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["parkingFee"],
-          message: "駐車場代は0以上の整数で入力してください",
-        });
+
+    // 引き継ぎ あり/なし（提出時必須）
+    if (submitted) {
+      if (!v.handoverChoice) {
+        err("handover", "引き継ぎのあり/なしを選択してください");
+      } else if (v.handoverChoice === "HAS" && (!v.handover || v.handover.trim() === "")) {
+        err("handover", "引き継ぎ内容を入力してください（無い場合は「なし」を選択）");
+      }
+    }
+
+    // 駐車場代 あり/なし（提出時必須。あり→0以上整数）
+    if (submitted) {
+      if (!v.parkingFeeChoice) {
+        err("parkingFee", "駐車場代のあり/なしを選択してください");
+      } else if (v.parkingFeeChoice === "HAS" && !isNonNegInt(v.parkingFee)) {
+        err("parkingFee", "駐車場代は0以上の整数で入力してください");
+      }
+    } else if (v.parkingFee && v.parkingFee.trim() !== "" && !isNonNegInt(v.parkingFee)) {
+      // 下書きでも数値が入っていれば整数チェック（従来動作）
+      err("parkingFee", "駐車場代は0以上の整数で入力してください");
+    }
+
+    // 電車賃 あり/なし（提出時必須。あり→0以上整数）
+    if (submitted) {
+      if (!v.trainFareChoice) {
+        err("trainFare", "電車賃のあり/なしを選択してください");
+      } else if (v.trainFareChoice === "HAS" && !isNonNegInt(v.trainFare)) {
+        err("trainFare", "電車賃は0以上の整数で入力してください");
+      }
+    } else if (v.trainFare && v.trainFare.trim() !== "" && !isNonNegInt(v.trainFare)) {
+      err("trainFare", "電車賃は0以上の整数で入力してください");
+    }
+
+    // 時間変更理由（8:00-17:00 以外のとき提出時必須）
+    if (submitted && (v.startTime !== "08:00" || v.endTime !== "17:00")) {
+      if (!v.timeChangeReason || v.timeChangeReason.trim() === "") {
+        err("timeChangeReason", "8:00〜17:00 以外の作業になった理由を入力してください");
+      }
+    }
+
+    // 在庫材料 あり/なし（提出時必須。あり→内容必須）
+    // メインの人以外（materialsLocked）は在庫欄を持たないため必須チェックをスキップ
+    if (submitted && v.materialsLocked !== "1") {
+      if (!v.stockChoice) {
+        err("stockNote", "在庫材料の使用有無を選択してください");
+      } else if (v.stockChoice === "HAS" && (!v.stockNote || v.stockNote.trim() === "")) {
+        err("stockNote", "使用した在庫材料の内容を入力してください");
       }
     }
   });
@@ -115,9 +170,13 @@ async function writeNested(
   reportId: string,
   formData: FormData,
   photos: ParsedPhotosField,
+  skipMaterials = false,
 ) {
-  const materials = parseJson<z.infer<typeof materialSchema>>(formData.get("materials"))
-    .filter((m) => m && typeof m.name === "string" && m.name.trim() !== "");
+  // メインの人以外（materialsLocked）は材料を書き込まない（空扱い）
+  const materials = skipMaterials
+    ? []
+    : parseJson<z.infer<typeof materialSchema>>(formData.get("materials"))
+        .filter((m) => m && typeof m.name === "string" && m.name.trim() !== "");
 
   // 経費（駐車場代以外）。label が非空 かつ amount が有効な整数の行のみ採用する。
   const expenses = parseJson<z.infer<typeof expenseSchema>>(formData.get("expenses"))
@@ -220,7 +279,15 @@ async function persist(
     detail: formData.get("detail") || undefined,
     aiSummary: formData.get("aiSummary") || undefined,
     handover: formData.get("handover") || undefined,
+    handoverChoice: formData.get("handoverChoice") || undefined,
     parkingFee: formData.get("parkingFee") || undefined,
+    parkingFeeChoice: formData.get("parkingFeeChoice") || undefined,
+    trainFare: formData.get("trainFare") || undefined,
+    trainFareChoice: formData.get("trainFareChoice") || undefined,
+    timeChangeReason: formData.get("timeChangeReason") || undefined,
+    stockChoice: formData.get("stockChoice") || undefined,
+    stockNote: formData.get("stockNote") || undefined,
+    materialsLocked: formData.get("materialsLocked") || undefined,
     status: formData.get("status") || "DRAFT",
   });
   if (!parsed.success) {
@@ -246,14 +313,29 @@ async function persist(
     return { error: photos.error };
   }
 
-  const parkingFee = clean(d.parkingFee) ? Number(d.parkingFee) : null;
+  // 「なし」選択は0円で記録。あり/未選択は入力値（無ければ null）。
+  const parkingFee =
+    d.parkingFeeChoice === "NONE" ? 0 : clean(d.parkingFee) ? Number(d.parkingFee) : null;
+  const trainFare =
+    d.trainFareChoice === "NONE" ? 0 : clean(d.trainFare) ? Number(d.trainFare) : null;
+  // 引き継ぎ「なし」は本文を消して handoverNone を立てる
+  const handoverContent = d.handoverChoice === "NONE" ? null : clean(d.handover);
+
+  // メインの人以外は材料・在庫を持たない（在庫は null 固定・材料は書き込まない）
+  const materialsLocked = d.materialsLocked === "1";
 
   const data = {
     aiDraft: clean(d.aiDraft),
     detail: clean(d.detail),
     aiSummary: clean(d.aiSummary),
-    handover: clean(d.handover),
+    handover: handoverContent,
+    handoverNone: d.handoverChoice === "NONE",
     parkingFee,
+    trainFare,
+    timeChangeReason: clean(d.timeChangeReason),
+    // 未選択（下書き）は null、あり=true、なし=false。ロック時は常に null。
+    stockUsed: materialsLocked ? null : d.stockChoice ? d.stockChoice === "HAS" : null,
+    stockNote: materialsLocked ? null : d.stockChoice === "HAS" ? clean(d.stockNote) : null,
     startTime: d.startTime,
     endTime: d.endTime,
     status: d.status,
@@ -289,11 +371,11 @@ async function persist(
       }
 
       // 確定した rep.id に対して使用材料・写真を再生成する
-      await writeNested(tx, rep.id, formData, photos);
+      await writeNested(tx, rep.id, formData, photos, materialsLocked);
 
-      // 提出時に引き継ぎ事項（Handover）を起票・更新する
+      // 提出時に引き継ぎ事項（Handover）を起票・更新する（「なし」は取り下げ）
       if (d.status === "SUBMITTED") {
-        await syncHandover(tx, rep.id, d.siteId, userId, clean(d.handover));
+        await syncHandover(tx, rep.id, d.siteId, userId, handoverContent);
       }
 
       return rep;

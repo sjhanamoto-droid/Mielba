@@ -128,6 +128,16 @@ export default async function ReportPrintPage({
           {report.detail ?? ""}
         </div>
 
+        {/* 作業時間の変更理由（8:00-17:00 以外のとき） */}
+        {report.timeChangeReason && (
+          <div style={{ breakInside: "avoid" }}>
+            <h2 className={sectionTitle}>作業時間の変更理由</h2>
+            <div className="whitespace-pre-wrap border border-slate-400 px-3 py-2 text-[12px] leading-relaxed">
+              {report.timeChangeReason}
+            </div>
+          </div>
+        )}
+
         {/* AI要約 */}
         {report.aiSummary && (
           <>
@@ -163,8 +173,18 @@ export default async function ReportPrintPage({
           </div>
         )}
 
-        {/* 経費内訳（駐車場代＋その他の経費） */}
-        {report.expenses.length > 0 && (
+        {/* 在庫材料の使用（あり/なし＋内容） */}
+        {report.stockUsed != null && (
+          <div style={{ breakInside: "avoid" }}>
+            <h2 className={sectionTitle}>在庫材料の使用</h2>
+            <div className="whitespace-pre-wrap border border-slate-400 px-3 py-2 text-[12px] leading-relaxed">
+              {report.stockUsed ? `使用あり${report.stockNote ? `：${report.stockNote}` : ""}` : "使用なし"}
+            </div>
+          </div>
+        )}
+
+        {/* 経費内訳（駐車場代＋電車賃＋その他の経費） */}
+        {(report.parkingFee != null || report.trainFare != null || report.expenses.length > 0) && (
           <div style={{ breakInside: "avoid" }}>
             <h2 className={sectionTitle}>経費内訳</h2>
             <table className="w-full border-collapse">
@@ -181,6 +201,12 @@ export default async function ReportPrintPage({
                     <td className={`${td} tnum`}>{fmtYen(report.parkingFee)}</td>
                   </tr>
                 )}
+                {report.trainFare != null && (
+                  <tr>
+                    <td className={td}>電車賃</td>
+                    <td className={`${td} tnum`}>{fmtYen(report.trainFare)}</td>
+                  </tr>
+                )}
                 {report.expenses.map((e) => (
                   <tr key={e.id}>
                     <td className={td}>{e.label}</td>
@@ -190,7 +216,11 @@ export default async function ReportPrintPage({
                 <tr>
                   <td className={`${td} bg-slate-100 font-bold`}>合計</td>
                   <td className={`${td} tnum bg-slate-100 font-bold`}>
-                    {fmtYen((report.parkingFee ?? 0) + report.expenses.reduce((s, e) => s + e.amount, 0))}
+                    {fmtYen(
+                      (report.parkingFee ?? 0) +
+                        (report.trainFare ?? 0) +
+                        report.expenses.reduce((s, e) => s + e.amount, 0),
+                    )}
                   </td>
                 </tr>
               </tbody>
@@ -262,12 +292,12 @@ export default async function ReportPrintPage({
           </div>
         )}
 
-        {/* 引き継ぎ事項 */}
-        {report.handover && (
+        {/* 引き継ぎ事項（handoverNone のとき「なし」表示） */}
+        {(report.handover || report.handoverNone) && (
           <div style={{ breakInside: "avoid" }}>
             <h2 className={sectionTitle}>引き継ぎ事項（次の担当者への申し送り）</h2>
             <div className="whitespace-pre-wrap border border-slate-400 px-3 py-2 text-[12px] leading-relaxed">
-              {report.handover}
+              {report.handover ?? "引き継ぎなし"}
             </div>
           </div>
         )}

@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { ReportForm, type ReportFormData } from "@/features/reports/report-form";
 import type { PhotoKind } from "@/lib/constants";
+import { jstDateKey, dayRangeForKey } from "@/lib/date";
 
 export default async function EditReportPage({
   params,
@@ -41,6 +42,23 @@ export default async function EditReportPage({
     select: { id: true, name: true, unit: true },
   });
 
+  // メインの人（全員一致投票）: この日報の作業日・現場で consensus が確定していれば、
+  // 材料・在庫はメイン本人（＝日報の所有者と一致する場合）のみ入力可。未確定なら誰でも可。
+  const { gte, lt } = dayRangeForKey(jstDateKey(report.workDate));
+  const visits = await db.siteVisit.findMany({
+    where: { siteId: report.siteId, date: { gte, lt } },
+    select: { userId: true, mainVote: true },
+  });
+  const firstVote = visits[0]?.mainVote ?? null;
+  const consensus =
+    visits.length > 0 && firstVote && visits.every((v) => v.mainVote === firstVote)
+      ? firstVote
+      : null;
+  // 日報の所有者が配員でなければロックしない（単独・非member はブロックしない）
+  const ownerIsMember = visits.some((v) => v.userId === report.userId);
+  const canInputMaterials =
+    consensus == null ? true : ownerIsMember ? consensus === report.userId : true;
+
   const initial: ReportFormData = {
     id: report.id,
     workDate: report.workDate,
@@ -50,7 +68,12 @@ export default async function EditReportPage({
     detail: report.detail,
     aiSummary: report.aiSummary,
     handover: report.handover,
+    handoverNone: report.handoverNone,
     parkingFee: report.parkingFee,
+    trainFare: report.trainFare,
+    timeChangeReason: report.timeChangeReason,
+    stockUsed: report.stockUsed,
+    stockNote: report.stockNote,
     materials: report.materials.map((m) => ({
       name: m.name,
       quantity: m.quantity,
@@ -85,6 +108,7 @@ export default async function EditReportPage({
           siteName={report.site.name}
           initial={initial}
           materialOptions={materialOptions}
+          canInputMaterials={canInputMaterials}
           aiEnabled={Boolean(process.env.ANTHROPIC_API_KEY)}
         />
       </PageContainer>

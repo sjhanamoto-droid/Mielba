@@ -221,7 +221,6 @@ export function PhotoUploader({
         type="file"
         accept="image/*,video/*"
         multiple
-        capture="environment"
         className="hidden"
         onChange={onFiles}
       />

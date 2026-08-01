@@ -243,6 +243,7 @@ model SiteVisit {
   date        DateTime // 対象日（ローカル午前0時）
   note        String?
   createdById String? // 入力者（管理者の配員 or 本人の自己申告）
+  mainVote    String? // メインの人の投票先 userId（対象日・現場の各配員が投票。全員一致で確定）
   createdAt   DateTime @default(now())
 
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
@@ -300,8 +301,13 @@ model DailyReport {
   memo        String? // （旧）注意点メモ。現在は未使用（引き継ぎ事項へ一本化）
   status      String   @default("DRAFT") // DRAFT(未提出) | SUBMITTED(提出済)
   submittedAt DateTime?
-  parkingFee  Int? // 駐車場代（円）
+  parkingFee  Int? // 駐車場代（円）。なし選択時は0
+  trainFare   Int? // 電車賃（円）。なし選択時は0
   handover    String? // 引き継ぎ事項（次の担当者への申し送り）
+  handoverNone Boolean? // 引き継ぎ「なし」を明示選択（handover 空と未入力を区別）
+  timeChangeReason String? // 作業時間が 8:00-17:00 外のときの変更理由（必須）
+  stockUsed   Boolean? // 在庫材料の使用 あり/なし
+  stockNote   String? // 使用した在庫材料の内容（stockUsed=true 時）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

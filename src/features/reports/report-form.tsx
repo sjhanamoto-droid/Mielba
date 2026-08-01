@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import {
   Clock, Plus, Trash2, Package, Save, Send, AlertCircle,
   HardHat, CalendarClock, History, X, CircleParking, ArrowRightLeft,
-  Wallet, Receipt,
+  Wallet, Receipt, TrainFront, Boxes,
 } from "lucide-react";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { SectionTitle } from "@/components/ui/card";
@@ -40,12 +40,20 @@ export type ReportFormData = {
   detail: string | null;
   aiSummary: string | null;
   handover: string | null;
+  handoverNone: boolean | null;
   parkingFee: number | null;
+  trainFare: number | null;
+  timeChangeReason: string | null;
+  stockUsed: boolean | null;
+  stockNote: string | null;
   materials: { name: string; quantity: string | null; unit: string | null }[];
   expenses: { label: string; amount: number }[];
   // 既存写真は {id} 参照（base64 は再送しない）
   photos: UploaderPhoto[];
 };
+
+/** あり/なし選択。未選択は "" */
+type Choice = "HAS" | "NONE" | "";
 
 function SubmitButtons() {
   const { pending } = useFormStatus();
@@ -86,6 +94,7 @@ export function ReportForm({
   defaultEndTime = "17:00",
   eventContext,
   materialOptions = [],
+  canInputMaterials = true,
   aiEnabled = false,
 }: {
   mode: "new" | "edit";
@@ -104,9 +113,13 @@ export function ReportForm({
   };
   /** 材料マスター（active のみ・sortOrder 順） */
   materialOptions?: MaterialOption[];
+  /** 材料・在庫を入力できるか（メインの人のみ true。既定 true） */
+  canInputMaterials?: boolean;
   /** ANTHROPIC_API_KEY が設定されているか（AIで整えるボタンの表示） */
   aiEnabled?: boolean;
 }) {
+  // メインの人以外は材料・在庫欄をロック（表示せず送信もしない）
+  const materialsLocked = canInputMaterials === false;
   const submit = mode === "edit" ? updateReport : createReport;
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -126,9 +139,31 @@ export function ReportForm({
   // aiSummary は現在 UI から生成しないが、既存日報の値を編集保存時に維持するため保持する
   const [aiSummary] = useState<string>(initial?.aiSummary ?? "");
   const [handover, setHandover] = useState<string>(initial?.handover ?? "");
-  const [parkingFee, setParkingFee] = useState<string>(
-    initial?.parkingFee != null ? String(initial.parkingFee) : "",
+  // 引き継ぎ あり/なし。編集時: handoverNone→なし / handover 非空→あり / それ以外→未選択
+  const [handoverChoice, setHandoverChoice] = useState<Choice>(
+    initial ? (initial.handoverNone ? "NONE" : initial.handover ? "HAS" : "") : "",
   );
+  // 駐車場代 あり/なし。金額>0→あり / 0→なし / null→未選択
+  const [parkingFee, setParkingFee] = useState<string>(
+    initial?.parkingFee != null && initial.parkingFee > 0 ? String(initial.parkingFee) : "",
+  );
+  const [parkingFeeChoice, setParkingFeeChoice] = useState<Choice>(
+    initial?.parkingFee != null ? (initial.parkingFee > 0 ? "HAS" : "NONE") : "",
+  );
+  // 電車賃 あり/なし（駐車場代と同じ扱い）
+  const [trainFare, setTrainFare] = useState<string>(
+    initial?.trainFare != null && initial.trainFare > 0 ? String(initial.trainFare) : "",
+  );
+  const [trainFareChoice, setTrainFareChoice] = useState<Choice>(
+    initial?.trainFare != null ? (initial.trainFare > 0 ? "HAS" : "NONE") : "",
+  );
+  // 時間変更理由（8:00-17:00 以外のとき提出必須）
+  const [timeChangeReason, setTimeChangeReason] = useState<string>(initial?.timeChangeReason ?? "");
+  // 在庫材料の使用 あり/なし＋内容
+  const [stockChoice, setStockChoice] = useState<Choice>(
+    initial ? (initial.stockUsed === true ? "HAS" : initial.stockUsed === false ? "NONE" : "") : "",
+  );
+  const [stockNote, setStockNote] = useState<string>(initial?.stockNote ?? "");
 
   const [materials, setMaterials] = useState<MaterialRow[]>(
     initial?.materials?.map((m) => ({
@@ -151,10 +186,19 @@ export function ReportForm({
   const draftKey = draftKeyFor(mode, siteId, workDate, initial?.id);
   const draftData: ReportDraftData = useMemo(
     () => ({
-      workDate, startTime, endTime, aiDraft, detail, handover, parkingFee,
+      workDate, startTime, endTime, aiDraft, detail,
+      handover, handoverChoice,
+      parkingFee, parkingFeeChoice, trainFare, trainFareChoice,
+      timeChangeReason, stockChoice, stockNote,
       materials, expenses,
     }),
-    [workDate, startTime, endTime, aiDraft, detail, handover, parkingFee, materials, expenses],
+    [
+      workDate, startTime, endTime, aiDraft, detail,
+      handover, handoverChoice,
+      parkingFee, parkingFeeChoice, trainFare, trainFareChoice,
+      timeChangeReason, stockChoice, stockNote,
+      materials, expenses,
+    ],
   );
   const initialJsonRef = useRef<string | null>(null);
   if (initialJsonRef.current === null) {
@@ -183,11 +227,19 @@ export function ReportForm({
     setWorkDate(d.workDate || workDate);
     setStartTime(d.startTime || startTime);
     setEndTime(d.endTime || endTime);
-    // aiDraft/expenses は第2弾で追加。古いドラフトに無くても既定値で復元する。
+    // aiDraft/expenses は第2弾、あり/なし選択・電車賃・在庫材料は第3弾で追加。
+    // 古いドラフトに無くても既定値（""）で復元する。
     setAiDraft(d.aiDraft ?? "");
     setDetail(d.detail ?? "");
     setHandover(d.handover ?? "");
+    setHandoverChoice((d.handoverChoice as Choice) ?? "");
     setParkingFee(d.parkingFee ?? "");
+    setParkingFeeChoice((d.parkingFeeChoice as Choice) ?? "");
+    setTrainFare(d.trainFare ?? "");
+    setTrainFareChoice((d.trainFareChoice as Choice) ?? "");
+    setTimeChangeReason(d.timeChangeReason ?? "");
+    setStockChoice((d.stockChoice as Choice) ?? "");
+    setStockNote(d.stockNote ?? "");
     setMaterials(Array.isArray(d.materials) ? d.materials : []);
     setExpenses(Array.isArray(d.expenses) ? d.expenses : []);
     setRestoreCandidate(null);
@@ -252,8 +304,15 @@ export function ReportForm({
     if (r.expenses.length > 0) {
       setExpenses(r.expenses.map((e) => ({ label: e.label, amount: String(e.amount) })));
     }
-    if (r.parkingFee != null) setParkingFee(String(r.parkingFee));
-    if (r.handover.trim()) setHandover(r.handover);
+    // AI が金額/引き継ぎを検出したら あり/なし選択も合わせて確定する（trainFare は対象外）
+    if (r.parkingFee != null) {
+      setParkingFee(r.parkingFee > 0 ? String(r.parkingFee) : "");
+      setParkingFeeChoice(r.parkingFee > 0 ? "HAS" : "NONE");
+    }
+    if (r.handover.trim()) {
+      setHandover(r.handover);
+      setHandoverChoice("HAS");
+    }
   }
 
   function onMaterialSelect(i: number, value: string) {
@@ -277,10 +336,15 @@ export function ReportForm({
       )}
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="aiSummary" value={aiSummary} readOnly />
+      {materialsLocked && <input type="hidden" name="materialsLocked" value="1" />}
       <input
         type="hidden"
         name="materials"
-        value={JSON.stringify(materials.map(({ name, quantity, unit }) => ({ name, quantity, unit })))}
+        value={
+          materialsLocked
+            ? "[]"
+            : JSON.stringify(materials.map(({ name, quantity, unit }) => ({ name, quantity, unit })))
+        }
       />
       <input
         type="hidden"
@@ -447,6 +511,30 @@ export function ReportForm({
           <Clock className="h-3.5 w-3.5" />
           作業時間がそのままタイムカード（勤怠）になります。
         </p>
+        {/* 8:00-17:00 以外のときは理由を入力（提出時必須） */}
+        {(startTime !== "08:00" || endTime !== "17:00") && (
+          <Field
+            htmlFor="timeChangeReason"
+            error={fieldErrors.timeChangeReason}
+            description="8:00〜17:00 以外の作業になった理由を入力してください。"
+          >
+            <label
+              htmlFor="timeChangeReason"
+              className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft"
+            >
+              時間変更の理由
+              <RequiredBadge />
+            </label>
+            <Textarea
+              id="timeChangeReason"
+              name="timeChangeReason"
+              rows={2}
+              placeholder="例）現場都合で早出。／資材待ちで残業。"
+              value={timeChangeReason}
+              onChange={(e) => setTimeChangeReason(e.target.value)}
+            />
+          </Field>
+        )}
       </div>
 
       {/* 経費（駐車場代＝固定行 ＋ その他の経費を＋追加） */}
@@ -457,8 +545,16 @@ export function ReportForm({
             経費
           </span>
         </SectionTitle>
-        {/* 駐車場代（固定行・常時表示） */}
-        <Field label="駐車場代" hint="円・任意" htmlFor="parkingFee" error={fieldErrors.parkingFee}>
+        {/* 駐車場代（あり/なし＋金額） */}
+        <YesNoField
+          label="駐車場代"
+          icon={<CircleParking className="h-4 w-4 text-ink-muted" />}
+          choiceName="parkingFeeChoice"
+          value={parkingFeeChoice}
+          onChange={setParkingFeeChoice}
+          error={fieldErrors.parkingFee}
+          description="「なし」を選ぶと0円で記録します。"
+        >
           <div className="relative">
             <CircleParking className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-faint" />
             <Input
@@ -474,7 +570,33 @@ export function ReportForm({
               onChange={(e) => setParkingFee(e.target.value)}
             />
           </div>
-        </Field>
+        </YesNoField>
+        {/* 電車賃（あり/なし＋金額） */}
+        <YesNoField
+          label="電車賃"
+          icon={<TrainFront className="h-4 w-4 text-ink-muted" />}
+          choiceName="trainFareChoice"
+          value={trainFareChoice}
+          onChange={setTrainFareChoice}
+          error={fieldErrors.trainFare}
+          description="「なし」を選ぶと0円で記録します。"
+        >
+          <div className="relative">
+            <TrainFront className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-faint" />
+            <Input
+              id="trainFare"
+              name="trainFare"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              placeholder="例）480"
+              className="pl-11"
+              value={trainFare}
+              onChange={(e) => setTrainFare(e.target.value)}
+            />
+          </div>
+        </YesNoField>
         {/* その他の経費（動的リスト） */}
         <DynamicSection
           title="その他の経費"
@@ -510,7 +632,19 @@ export function ReportForm({
         </DynamicSection>
       </div>
 
-      {/* 使用材料 */}
+      {/* 使用材料・在庫材料（メインの人のみ入力可） */}
+      {materialsLocked ? (
+        <div className="rounded-2xl border border-line bg-surface-subtle px-4 py-3.5">
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <Package className="h-4 w-4 text-ink-muted" />
+            材料・在庫について
+          </span>
+          <p className="mt-1 text-sm text-ink-muted">
+            使用材料・在庫材料はメインの人が入力します。
+          </p>
+        </div>
+      ) : (
+      <>
       <DynamicSection
         title="使用材料"
         icon={<Package className="h-4 w-4" />}
@@ -578,12 +712,37 @@ export function ReportForm({
         ))}
       </DynamicSection>
 
-      {/* 引き継ぎ事項（次に入る人への申し送り） */}
-      <Field
+      {/* 在庫材料の使用（あり/なし＋内容） */}
+      <YesNoField
+        label="在庫材料の使用"
+        icon={<Boxes className="h-4 w-4 text-ink-muted" />}
+        choiceName="stockChoice"
+        value={stockChoice}
+        onChange={setStockChoice}
+        error={fieldErrors.stockNote}
+        description="弊社在庫（ストック品）を使った場合は「あり」を選び、内容を記載してください。"
+      >
+        <Textarea
+          id="stockNote"
+          name="stockNote"
+          rows={3}
+          placeholder="例）在庫のVVFケーブル1.6-2C を20mほど使用。"
+          value={stockNote}
+          onChange={(e) => setStockNote(e.target.value)}
+        />
+      </YesNoField>
+      </>
+      )}
+
+      {/* 引き継ぎ事項（あり/なし＋次に入る人への申し送り） */}
+      <YesNoField
         label="引き継ぎ事項"
-        hint="任意"
-        htmlFor="handover"
-        description="次に入る人への申し送り。提出すると現場の引き継ぎとして起票され、次の担当者が「確認して停止」するまで表示されます。"
+        icon={<ArrowRightLeft className="h-4 w-4 text-ink-muted" />}
+        choiceName="handoverChoice"
+        value={handoverChoice}
+        onChange={setHandoverChoice}
+        error={fieldErrors.handover}
+        description="次に入る人への申し送り。「なし」なら未選択のまま提出できません。"
       >
         <div className="relative">
           <ArrowRightLeft className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-ink-faint" />
@@ -597,7 +756,10 @@ export function ReportForm({
             onChange={(e) => setHandover(e.target.value)}
           />
         </div>
-      </Field>
+        <p className="text-xs text-ink-muted">
+          提出すると現場の引き継ぎとして起票され、次の担当者が「確認して停止」するまで表示されます。
+        </p>
+      </YesNoField>
 
       {/* 写真 */}
       <div className="space-y-2">
@@ -656,6 +818,81 @@ function DynamicSection({
         <Plus className="h-4 w-4" />
         {emptyLabel}
       </button>
+    </div>
+  );
+}
+
+// ── 「必須」バッジ（提出時必須の項目に付ける） ──
+function RequiredBadge() {
+  return (
+    <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">
+      必須
+    </span>
+  );
+}
+
+// ── あり/なし（HAS/NONE）ラジオ ＋「あり」時に children を表示する共通フィールド ──
+// 送信は name={choiceName} のラジオ（checked の値をそのまま FormData に載せる）。
+function YesNoField({
+  label,
+  icon,
+  choiceName,
+  value,
+  onChange,
+  error,
+  description,
+  children,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  choiceName: string;
+  value: Choice;
+  onChange: (v: Choice) => void;
+  error?: string;
+  /** 未選択・なし時に表示する補足説明 */
+  description?: string;
+  /** value==="HAS" のとき表示する入力欄 */
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className={cn("space-y-2.5", error && "field-error")}>
+      <span className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
+        {icon}
+        {label}
+        <RequiredBadge />
+      </span>
+      <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-2">
+        {(["HAS", "NONE"] as const).map((v) => (
+          <label
+            key={v}
+            className={cn(
+              "flex min-h-[44px] min-w-0 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors",
+              value === v
+                ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                : "border-line-strong bg-surface text-ink-soft",
+            )}
+          >
+            <input
+              type="radio"
+              name={choiceName}
+              value={v}
+              checked={value === v}
+              onChange={() => onChange(v)}
+              className="sr-only"
+            />
+            {v === "HAS" ? "あり" : "なし"}
+          </label>
+        ))}
+      </div>
+      {value === "HAS" && children}
+      {error && (
+        <p role="alert" className="text-xs font-semibold text-status-danger">
+          {error}
+        </p>
+      )}
+      {description && value !== "HAS" && (
+        <p className="text-xs text-ink-muted">{description}</p>
+      )}
     </div>
   );
 }

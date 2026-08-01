@@ -29,6 +29,9 @@ export type ExpenseDraftRow = {
 // 古い保存済みドラフトにこれらが残っていても、復元時は単に無視する（後方互換）。
 // 第2弾で aiDraft（現場詳細）と expenses（経費）を追加。古いドラフトに
 // これらが無くても復元時に既定値で補う（後方互換）。
+// 第3弾で あり/なし選択（handoverChoice/parkingFeeChoice/trainFareChoice/stockChoice）、
+// 電車賃(trainFare)・時間変更理由(timeChangeReason)・在庫材料(stockNote)を追加。
+// choice は "HAS" | "NONE" | "" を文字列で保持する（古いドラフトは "" で補う）。
 export type ReportDraftData = {
   workDate: string;
   startTime: string;
@@ -36,7 +39,14 @@ export type ReportDraftData = {
   aiDraft: string;
   detail: string;
   handover: string;
+  handoverChoice: string;
   parkingFee: string;
+  parkingFeeChoice: string;
+  trainFare: string;
+  trainFareChoice: string;
+  timeChangeReason: string;
+  stockChoice: string;
+  stockNote: string;
   materials: MaterialDraftRow[];
   expenses: ExpenseDraftRow[];
 };
