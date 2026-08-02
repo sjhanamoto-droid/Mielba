@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  HardHat, MapPin, Sun, ChevronRight, ChevronDown, CheckCircle2,
+  HardHat, MapPin, Sun, ChevronDown, CheckCircle2,
   ShieldAlert, FileText, ArrowRight,
 } from "lucide-react";
 import { IconBadge } from "@/components/ui/icon-badge";
@@ -12,10 +12,11 @@ import { LinkButton, Button } from "@/components/ui/button";
 import { mapSearchUrl, cn } from "@/lib/utils";
 
 /**
- * ホーム最上部の「今日/明日の現場」確認ゲート（クライアント）。
+ * ホーム上部の「今日/明日の現場」確認ゲート（クライアント）。
  *
- * - 今日・明日の現場入りを大きく目立つカードで表示する。
- * - 「確認しました」を押すまで大きく残し、押したら通常サイズ（1行サマリー）に畳む。
+ * - 今日カード・明日カードを横並びの水平スクロール（省スペース）で表示する。
+ *   md+ では 2 カラムグリッドに切り替える。縦積みの大カードはやめコンパクトに。
+ * - 「確認しました」を押すまで残し、押したら 1 行サマリーに畳む。
  * - 確認状態は日付単位で localStorage に保持（キー: home-confirm-<todayKey>）。
  *   日付が変われば todayKey が変わるため再度確認を促す（サーバー状態は増やさない）。
  * - SSR を壊さないため初期は「未確認（展開）」で描画し、マウント後に確認済みを反映する
@@ -53,16 +54,16 @@ function reportCta(s: HeroSite): string {
   return "日報を書く";
 }
 
-// 住所（タップで地図アプリを開く）
+// 住所（タップで地図アプリを開く）。省スペースのためコンパクトに。
 function AddressLink({ address }: { address: string }) {
   return (
     <a
       href={mapSearchUrl(address)}
       target="_blank"
       rel="noopener noreferrer"
-      className="mt-2 flex items-center gap-1 text-sm font-medium text-brand-600"
+      className="mt-1 flex items-center gap-1 text-xs font-medium text-brand-600"
     >
-      <MapPin className="h-4 w-4 shrink-0" />
+      <MapPin className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate underline underline-offset-2">{address}</span>
     </a>
   );
@@ -97,7 +98,7 @@ export function TodayConfirm({ todayKey, todayLabel, tomorrowLabel, today, tomor
     }
   }
 
-  // 確認する対象が無い日は、控えめな空状態のみ（ゲートは出さない）
+  // 今日・明日とも現場入りが無い日は、控えめな最小表示のみ（ゲートは出さない）
   if (!hasVisits) {
     return (
       <section className="space-y-2.5">
@@ -135,100 +136,19 @@ export function TodayConfirm({ todayKey, todayLabel, tomorrowLabel, today, tomor
     );
   }
 
-  // 展開表示（未確認 or 再表示中）：今日/明日を大きく
+  // 展開表示（未確認 or 再表示中）：今日/明日カードを横スクロール（md+ は 2 カラム）
   return (
     <section className="space-y-3">
       <SectionHeader confirmed={confirmed} showBadge />
 
-      {/* 今日の現場 */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 px-1">
-          <span className="rounded-full bg-brand-600 px-2.5 py-0.5 text-[11px] font-bold text-white">今日</span>
-          <span className="text-xs font-semibold text-ink-muted">{todayLabel}</span>
-        </div>
-        {today.length > 0 ? (
-          <div className="space-y-2.5">
-            {today.map((s) => (
-              <div
-                key={s.visitId}
-                className="rounded-2xl border-2 border-brand-500/70 bg-brand-50/70 p-4 dark:border-brand-500/40 dark:bg-brand-950/30"
-              >
-                <div className="flex items-start gap-3">
-                  <IconBadge icon={HardHat} tone="brand" size="lg" />
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      href={`/sites/${s.siteId}`}
-                      className="block truncate text-lg font-bold leading-snug text-ink"
-                    >
-                      {s.name}
-                    </Link>
-                    {s.note && (
-                      <p className="mt-0.5 truncate text-sm font-medium text-ink-soft">{s.note}</p>
-                    )}
-                  </div>
-                </div>
-                {s.address && <AddressLink address={s.address} />}
-                <div className="mt-3 flex gap-2">
-                  <LinkButton href={`/sites/${s.siteId}`} variant="outline" size="md" className="flex-1">
-                    現場詳細
-                    <ChevronRight className="h-4 w-4" />
-                  </LinkButton>
-                  <LinkButton href={reportHref(s)} size="md" className="flex-1">
-                    <FileText className="h-4 w-4" />
-                    {reportCta(s)}
-                  </LinkButton>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyDay label="今日の現場入りはありません" />
-        )}
+      {/* 横スクロール（省スペース）。各カード w-[85%] で次カードがちらっと見える。
+          スマホは端まで届くよう -mx-4 px-4 で余白を相殺。md+ は 2 カラムグリッド。 */}
+      <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 md:pb-0">
+        <DayCard variant="today" label="今日" dateLabel={todayLabel} sites={today} showReport />
+        <DayCard variant="tomorrow" label="明日" dateLabel={tomorrowLabel} sites={tomorrow} showReport={false} />
       </div>
 
-      {/* 明日の現場 */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 px-1">
-          <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-bold text-white">明日</span>
-          <span className="text-xs font-semibold text-ink-muted">{tomorrowLabel}</span>
-        </div>
-        {tomorrow.length > 0 ? (
-          <div className="space-y-2.5">
-            {tomorrow.map((s) => (
-              <div
-                key={s.visitId}
-                className="rounded-2xl border-2 border-amber-400/70 bg-amber-50/70 p-4 dark:border-amber-500/40 dark:bg-amber-950/30"
-              >
-                <div className="flex items-start gap-3">
-                  <IconBadge icon={Sun} tone="amber" size="lg" />
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      href={`/sites/${s.siteId}`}
-                      className="block truncate text-lg font-bold leading-snug text-ink"
-                    >
-                      {s.name}
-                    </Link>
-                    {s.note && (
-                      <p className="mt-0.5 truncate text-sm font-medium text-ink-soft">{s.note}</p>
-                    )}
-                  </div>
-                </div>
-                {s.address && <AddressLink address={s.address} />}
-                <div className="mt-3">
-                  <LinkButton href={`/sites/${s.siteId}`} variant="outline" size="md" className="w-full">
-                    現場詳細
-                    <ChevronRight className="h-4 w-4" />
-                  </LinkButton>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyDay label="明日の現場入りはありません" />
-        )}
-      </div>
-
-      {/* 確認ゲート：押すまで大きく残る */}
+      {/* 確認ゲート：押すまで残る */}
       {!confirmed ? (
         <Button type="button" onClick={confirm} size="lg" className="w-full">
           <CheckCircle2 className="h-5 w-5" />
@@ -245,6 +165,74 @@ export function TodayConfirm({ todayKey, todayLabel, tomorrowLabel, today, tomor
         </button>
       )}
     </section>
+  );
+}
+
+// 今日 or 明日の 1 カード（内部に当日の現場を縦リスト）。横スクロールの 1 要素。
+function DayCard({
+  variant, label, dateLabel, sites, showReport,
+}: {
+  variant: "today" | "tomorrow";
+  label: string;
+  dateLabel: string;
+  sites: HeroSite[];
+  showReport: boolean;
+}) {
+  const isToday = variant === "today";
+  return (
+    <article
+      className={cn(
+        "w-[85%] shrink-0 snap-start rounded-2xl border-2 p-3.5 md:w-auto",
+        isToday
+          ? "border-brand-500/70 bg-brand-50/70 dark:border-brand-500/40 dark:bg-brand-950/30"
+          : "border-amber-400/70 bg-amber-50/70 dark:border-amber-500/40 dark:bg-amber-950/30",
+      )}
+    >
+      <div className="mb-2.5 flex items-center gap-2 px-0.5">
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white",
+            isToday ? "bg-brand-600" : "bg-amber-500",
+          )}
+        >
+          {label}
+        </span>
+        <span className="text-xs font-semibold text-ink-muted">{dateLabel}</span>
+        {sites.length > 0 && (
+          <span className="ml-auto text-xs font-bold tnum text-ink-muted">{sites.length}件</span>
+        )}
+      </div>
+
+      {sites.length > 0 ? (
+        <div className="space-y-2">
+          {sites.map((s) => (
+            <div key={s.visitId} className="rounded-xl bg-surface/70 p-2.5 dark:bg-surface/40">
+              <div className="flex items-start gap-2.5">
+                <IconBadge icon={isToday ? HardHat : Sun} tone={isToday ? "brand" : "amber"} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/sites/${s.siteId}`}
+                    className="block truncate text-sm font-bold leading-snug text-ink"
+                  >
+                    {s.name}
+                  </Link>
+                  {s.note && <p className="truncate text-xs text-ink-soft">{s.note}</p>}
+                  {s.address && <AddressLink address={s.address} />}
+                </div>
+              </div>
+              {showReport && (
+                <LinkButton href={reportHref(s)} size="sm" className="mt-2 w-full">
+                  <FileText className="h-4 w-4" />
+                  {reportCta(s)}
+                </LinkButton>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyDay label={isToday ? "今日の現場入りはありません" : "明日の現場入りはありません"} />
+      )}
+    </article>
   );
 }
 
@@ -270,8 +258,8 @@ function SectionHeader({ confirmed, showBadge }: { confirmed: boolean; showBadge
 
 function EmptyDay({ label }: { label: string }) {
   return (
-    <div className={cn("rounded-2xl border border-dashed border-line-strong bg-surface/50 px-4 py-3.5 text-center")}>
-      <p className="text-sm text-ink-muted">{label}</p>
+    <div className={cn("rounded-xl border border-dashed border-line-strong bg-surface/50 px-3 py-3 text-center")}>
+      <p className="text-xs text-ink-muted">{label}</p>
     </div>
   );
 }

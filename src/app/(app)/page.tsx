@@ -4,7 +4,7 @@ import {
   CheckSquare, Truck, PackageCheck, Plus, ClipboardList,
   AlertTriangle, MapPin, Users, ArrowRight, Sun,
   LayoutDashboard, Megaphone, CalendarDays, Lightbulb,
-  LifeBuoy, PenLine, Building2, type LucideIcon,
+  LifeBuoy, PenLine, Building2, Bell, BellRing, type LucideIcon,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -161,6 +161,7 @@ export default async function HomePage() {
     tomorrowGoingCount,
     surveyCount,
     provisionalSites,
+    unreadNotifications,
   ] = await Promise.all([
     // 担当現場（進行中）
     db.site.findMany({
@@ -254,6 +255,8 @@ export default async function HomePage() {
       orderBy: { updatedAt: "desc" },
       take: 20,
     }),
+    // 通知の未読数（モバイル・ホームヘッダのベルに赤バッジで表示）
+    db.notification.count({ where: { userId: user.id, read: false } }),
   ]);
 
   const reportBySiteId = new Map(myReportsToday.map((r) => [r.siteId, r]));
@@ -437,43 +440,38 @@ export default async function HomePage() {
         <div className="space-y-5 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
           {/* ───────────── メイン（左・中央 2/3） ───────────── */}
           <div className="space-y-5 lg:col-span-2">
-            {/* 今日/明日の現場（最上部・大きく表示 → 「確認しました」で畳む） */}
-            <TodayConfirm
-              todayKey={todayKey}
-              todayLabel={fmtMonthDay(dateFromKey(todayKey))}
-              tomorrowLabel={fmtMonthDay(dateFromKey(tmrwKey))}
-              today={todayHeroSites}
-              tomorrow={tomorrowHeroSites}
-            />
-
-            {/* 仮登録アラート（本登録に必要な項目が未入力の現場） */}
-            {provisionalSites.length > 0 && (
-              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800/60 dark:bg-amber-950/50">
-                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
-                  <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />
-                  <p className="text-sm font-bold">仮登録の現場が {provisionalSites.length} 件あります</p>
-                </div>
-                <p className="mt-1 text-xs text-amber-700/90 dark:text-amber-300/80">
-                  住所・キーBOX・キーBOX写真・図面/工程表のいずれかが未入力です。編集して本登録にしてください。
-                </p>
-                <ul className="mt-3 space-y-1.5">
-                  {provisionalSites.map((s) => (
-                    <li key={s.id}>
-                      <Link
-                        href={`/sites/${s.id}`}
-                        className="flex items-center gap-2 rounded-xl border border-amber-200/70 bg-white/70 px-3 py-2.5 text-sm font-semibold text-amber-900 active:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100"
-                      >
-                        <HardHat className="h-4 w-4 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-amber-400" />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+            {/* モバイル用ホームヘッダ：左に挨拶＋日付、右に通知ベル（未読は赤バッジ）。
+                PC/タブレットはサイドバー等の導線があるため非表示（md:hidden）。 */}
+            <div className="flex items-center justify-between gap-3 md:hidden">
+              <div className="min-w-0">
+                <p className="truncate text-lg font-bold leading-tight text-ink">{user.name} さん</p>
+                {unreadNotifications > 0 ? (
+                  <p className="truncate text-xs font-bold text-red-600 dark:text-red-400">
+                    未読の通知が {unreadNotifications} 件あります
+                  </p>
+                ) : (
+                  <p className="truncate text-xs text-ink-muted">ホーム ・ {fmtMonthDay(dateFromKey(todayKey))}</p>
+                )}
               </div>
-            )}
+              <Link
+                href="/notifications"
+                aria-label={unreadNotifications > 0 ? `通知（未読 ${unreadNotifications} 件）` : "通知"}
+                className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-surface text-ink-soft active:bg-surface-subtle"
+              >
+                {unreadNotifications > 0 ? (
+                  <BellRing className="h-5 w-5 text-brand-600" />
+                ) : (
+                  <Bell className="h-5 w-5" />
+                )}
+                {unreadNotifications > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-status-danger px-1 text-[11px] font-bold text-white">
+                    {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                  </span>
+                )}
+              </Link>
+            </div>
 
-            {/* 次にやること */}
+            {/* 次にやること（優先タスクを最上部へ） */}
             <section className="space-y-2.5">
               <SectionTitle>次にやること</SectionTitle>
 
@@ -550,6 +548,42 @@ export default async function HomePage() {
                 </div>
               )}
             </section>
+
+            {/* 今日/明日の現場（横スクロールで省スペース → 「確認しました」で畳む） */}
+            <TodayConfirm
+              todayKey={todayKey}
+              todayLabel={fmtMonthDay(dateFromKey(todayKey))}
+              tomorrowLabel={fmtMonthDay(dateFromKey(tmrwKey))}
+              today={todayHeroSites}
+              tomorrow={tomorrowHeroSites}
+            />
+
+            {/* 仮登録アラート（本登録に必要な項目が未入力の現場） */}
+            {provisionalSites.length > 0 && (
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800/60 dark:bg-amber-950/50">
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />
+                  <p className="text-sm font-bold">仮登録の現場が {provisionalSites.length} 件あります</p>
+                </div>
+                <p className="mt-1 text-xs text-amber-700/90 dark:text-amber-300/80">
+                  住所・キーBOX・キーBOX写真・図面/工程表のいずれかが未入力です。編集して本登録にしてください。
+                </p>
+                <ul className="mt-3 space-y-1.5">
+                  {provisionalSites.map((s) => (
+                    <li key={s.id}>
+                      <Link
+                        href={`/sites/${s.id}`}
+                        className="flex items-center gap-2 rounded-xl border border-amber-200/70 bg-white/70 px-3 py-2.5 text-sm font-semibold text-amber-900 active:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100"
+                      >
+                        <HardHat className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-amber-400" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* 日報の到着状況（主役①） */}
             <section className="space-y-2.5">
