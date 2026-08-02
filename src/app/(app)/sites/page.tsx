@@ -60,8 +60,15 @@ export default async function SitesPage({
       { projectCode: { contains: q } },
     ];
   }
-  // スタッフは割当現場のみ
-  if (!admin) where.assignments = { some: { userId: user.id } };
+  // スタッフは「割当現場」または「自分が作成した現場」のみ（検索条件の OR と両立させるため AND で括る）
+  if (!admin) {
+    where.AND = {
+      OR: [
+        { assignments: { some: { userId: user.id } } },
+        { createdById: user.id },
+      ],
+    };
+  }
 
   const [sitesRaw, customers] = await Promise.all([
     db.site.findMany({
@@ -164,7 +171,8 @@ export default async function SitesPage({
         )}
       </PageContainer>
 
-      {admin && <Fab href="/sites/new" label="現場を作成" icon={<Plus className="h-5 w-5" />} />}
+      {/* 現場作成は全ユーザー可（スマホはこの FAB が主導線） */}
+      <Fab href="/sites/new" label="現場を作成" icon={<Plus className="h-5 w-5" />} />
     </div>
   );
 }

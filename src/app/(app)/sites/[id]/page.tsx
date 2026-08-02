@@ -45,7 +45,8 @@ export default async function SiteDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const admin = isAdmin(await requireUser());
+  const user = await requireUser();
+  const admin = isAdmin(user);
   const { id } = await params;
 
   // 「今日以降」の判定は Asia/Tokyo の暦日で行う（UTCサーバーでの前日ズレ防止）
@@ -160,7 +161,7 @@ export default async function SiteDetailPage({
         subtitle={site.customer.name}
         backHref="/sites"
         right={
-          admin ? (
+          admin || site.createdById === user.id ? (
             <LinkButton href={`/sites/${site.id}/edit`} variant="ghost" size="icon" aria-label="編集">
               <Pencil className="h-5 w-5" />
             </LinkButton>

@@ -402,6 +402,7 @@ export default async function HomePage() {
       ]
     : [
         { href: "/reports", label: "日報を書く", icon: FileText, tone: "emerald" },
+        { href: "/sites/new", label: "現場を追加する", icon: HardHat, tone: "amber" },
         { href: "/calendar", label: "予定を確認する", icon: CalendarClock, tone: "sky" },
         { href: "/sites", label: "現場一覧", icon: HardHat, tone: "violet" },
       ];
@@ -842,8 +843,8 @@ export default async function HomePage() {
                 <EmptyState
                   icon={<HardHat className="h-6 w-6" />}
                   title="担当の進行中現場はありません"
-                  description={admin ? "現場を作成してください" : "管理者が現場に割り当てると表示されます"}
-                  action={admin ? <LinkButton href="/sites/new" size="sm"><Plus className="h-4 w-4" />現場を作成</LinkButton> : undefined}
+                  description="現場を作成するか、割り当てられると表示されます"
+                  action={<LinkButton href="/sites/new" size="sm"><Plus className="h-4 w-4" />現場を作成</LinkButton>}
                 />
               ) : (
                 <div className="grid gap-2.5 sm:grid-cols-2">

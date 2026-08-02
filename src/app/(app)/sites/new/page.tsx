@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -8,7 +8,7 @@ import { Building2 } from "lucide-react";
 import { SiteForm } from "@/features/sites/site-form";
 
 export default async function NewSitePage() {
-  await requireAdmin();
+  await requireUser();
   const customers = await db.customer.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
