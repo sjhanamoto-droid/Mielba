@@ -60,15 +60,7 @@ export default async function SitesPage({
       { projectCode: { contains: q } },
     ];
   }
-  // スタッフは「割当現場」または「自分が作成した現場」のみ（検索条件の OR と両立させるため AND で括る）
-  if (!admin) {
-    where.AND = {
-      OR: [
-        { assignments: { some: { userId: user.id } } },
-        { createdById: user.id },
-      ],
-    };
-  }
+  // 現場一覧は権限によらず全現場を表示する（誰が作成した現場も全員に見える）。
 
   const [sitesRaw, customers] = await Promise.all([
     db.site.findMany({
@@ -142,11 +134,7 @@ export default async function SitesPage({
           <EmptyState
             icon={<HardHat className="h-6 w-6" />}
             title="該当する現場がありません"
-            description={
-              admin
-                ? "条件を変えるか、新しい現場を作成してください"
-                : "管理者が現場に割り当てると表示されます"
-            }
+            description="条件を変えるか、新しい現場を作成してください"
           />
         ) : (
           <>
