@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
-  HardHat, LogOut, ChevronRight, Settings, Bell, PanelLeftClose, PanelLeftOpen,
+  LogOut, ChevronRight, Settings, Bell, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { sidebarNavForRole } from "./nav-items";
 import { Avatar } from "@/components/ui/avatar";
@@ -44,11 +45,17 @@ export function Sidebar({
       >
         <span
           className={cn(
-            "flex shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white",
+            "flex shrink-0 items-center justify-center overflow-hidden rounded-xl ring-1 ring-line",
             collapsed ? "h-8 w-8" : "h-9 w-9",
           )}
         >
-          <HardHat className={collapsed ? "h-4 w-4" : "h-5 w-5"} />
+          <Image
+            src="/logo.png"
+            alt="シゲ電気 Mielba"
+            width={36}
+            height={36}
+            className="h-full w-full object-cover"
+          />
         </span>
         {!collapsed && (
           <div className="min-w-0 flex-1 leading-tight">

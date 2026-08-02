@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { HardHat } from "lucide-react";
+import Image from "next/image";
 import { LoginForm } from "@/features/auth/login-form";
 
 export const metadata: Metadata = { title: "ログイン | Mielba" };
@@ -10,8 +10,15 @@ export default function LoginPage() {
       <div className="app-container flex min-h-[calc(100dvh-5rem)] flex-col">
         {/* ブランド */}
         <div className="flex flex-1 flex-col items-center justify-center pb-6">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 backdrop-blur">
-            <HardHat className="h-9 w-9 text-white" />
+          <div className="mb-4 h-20 w-20 overflow-hidden rounded-2xl shadow-float ring-1 ring-white/25">
+            <Image
+              src="/logo.png"
+              alt="シゲ電気 Mielba"
+              width={80}
+              height={80}
+              priority
+              className="h-full w-full object-cover"
+            />
           </div>
           <h1 className="text-3xl font-black tracking-tight text-white">Mielba</h1>
           <p className="mt-1 text-sm font-medium text-brand-100">
