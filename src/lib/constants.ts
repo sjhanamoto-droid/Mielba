@@ -179,12 +179,13 @@ export const EVENT_SOURCE_COLOR: Record<EventSource, string> = {
 };
 
 // 予定のカテゴリー（内容の種別）
-export type EventCategory = "WORK" | "MEETING" | "INSPECTION" | "DELIVERY" | "OTHER";
+export type EventCategory = "WORK" | "MEETING" | "INSPECTION" | "DELIVERY" | "HOLIDAY" | "OTHER";
 export const EVENT_CATEGORY_LABEL: Record<EventCategory, string> = {
   WORK: "作業",
   MEETING: "打合せ",
   INSPECTION: "検査",
   DELIVERY: "搬入・納品",
+  HOLIDAY: "休み",
   OTHER: "その他",
 };
 export const EVENT_CATEGORY_OPTIONS: EventCategory[] = [
@@ -192,8 +193,13 @@ export const EVENT_CATEGORY_OPTIONS: EventCategory[] = [
   "MEETING",
   "INSPECTION",
   "DELIVERY",
+  "HOLIDAY",
   "OTHER",
 ];
+// カテゴリー別の識別色（未指定は出所色を使う）。休みは無彩色のスレートで控えめに区別する。
+export const EVENT_CATEGORY_COLOR: Partial<Record<EventCategory, string>> = {
+  HOLIDAY: "#64748b",
+};
 
 // ── TODO ──
 export type TodoStatus = "OPEN" | "IN_PROGRESS" | "DONE";

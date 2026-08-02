@@ -13,6 +13,7 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { SiteCard } from "@/components/site-card";
 import { mapSearchUrl } from "@/lib/utils";
 import { HandoverAlert } from "@/components/handover-alert";
+import { TodayConfirm, type HeroSite } from "@/features/dashboard/today-confirm";
 import { StatTile, EmptyState } from "@/components/ui/misc";
 import { IconBadge, type IconTone } from "@/components/ui/icon-badge";
 import { SectionTitle } from "@/components/ui/card";
@@ -177,7 +178,7 @@ export default async function HomePage() {
     // 今日の現場入り（出面）。日報・未提出はこれに連動（配属ではなく「当日行く現場」）。
     db.siteVisit.findMany({
       where: { userId: user.id, date: today },
-      include: { site: { select: { id: true, name: true } } },
+      include: { site: { select: { id: true, name: true, address: true } } },
       orderBy: { createdAt: "asc" },
     }),
     // 本日分の自分の日報（状態判定用）— ステータス込みで取得
@@ -267,6 +268,27 @@ export default async function HomePage() {
   const mySubmittedCount = visitSites.filter(
     (s) => reportBySiteId.get(s.id)?.status === "SUBMITTED",
   ).length;
+
+  // ── ホーム最上部「今日/明日の現場」確認ゲート用データ（クライアントで確認保持） ──
+  const todayHeroSites: HeroSite[] = todayVisits.map((v) => {
+    const r = reportBySiteId.get(v.siteId);
+    return {
+      visitId: v.id,
+      siteId: v.siteId,
+      name: v.site.name,
+      address: v.site.address,
+      note: v.note,
+      reportStatus: (r?.status as HeroSite["reportStatus"]) ?? "NONE",
+      reportId: r?.id ?? null,
+    };
+  });
+  const tomorrowHeroSites: HeroSite[] = myTomorrowVisits.map((v) => ({
+    visitId: v.id,
+    siteId: v.site.id,
+    name: v.site.name,
+    address: v.site.address,
+    note: v.note,
+  }));
 
   // 本日の配達(DELIVERY)/支給品(SUPPLY)予定は「情報」タスクとして知らせる
   const deliveryEvents = todayEvents.filter(
@@ -414,6 +436,15 @@ export default async function HomePage() {
         <div className="space-y-5 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
           {/* ───────────── メイン（左・中央 2/3） ───────────── */}
           <div className="space-y-5 lg:col-span-2">
+            {/* 今日/明日の現場（最上部・大きく表示 → 「確認しました」で畳む） */}
+            <TodayConfirm
+              todayKey={todayKey}
+              todayLabel={fmtMonthDay(dateFromKey(todayKey))}
+              tomorrowLabel={fmtMonthDay(dateFromKey(tmrwKey))}
+              today={todayHeroSites}
+              tomorrow={tomorrowHeroSites}
+            />
+
             {/* 仮登録アラート（本登録に必要な項目が未入力の現場） */}
             {provisionalSites.length > 0 && (
               <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800/60 dark:bg-amber-950/50">

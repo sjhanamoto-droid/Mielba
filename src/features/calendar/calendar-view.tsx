@@ -29,6 +29,7 @@ import {
   EVENT_SOURCE_LABEL,
   EVENT_SOURCE_COLOR,
   EVENT_CATEGORY_LABEL,
+  EVENT_CATEGORY_COLOR,
   type EventSource,
   type EventCategory,
 } from "@/lib/constants";
@@ -84,14 +85,30 @@ function dayKey(d: Date): string {
   return jstDateKey(d);
 }
 
-// 時刻順（終日は先頭）にソート
+// 各日の並び：現場に紐づく予定（現場入りに続く）を上、現場なし（個人・その他・休み）を下。
+// 同グループ内は従来どおり 終日 → 時刻順。
 function sortEvents(list: CalendarEventData[]): CalendarEventData[] {
   return list.slice().sort((a, b) => {
+    const sa = a.site ? 0 : 1;
+    const sb = b.site ? 0 : 1;
+    if (sa !== sb) return sa - sb;
     if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
     const ta = a.startTime ?? "";
     const tb = b.startTime ?? "";
     return ta.localeCompare(tb);
   });
+}
+
+// チップの識別色：休みなどカテゴリー色があれば優先し、なければ出所色を使う。
+function eventColor(ev: CalendarEventData): string {
+  const cat = ev.category as EventCategory | null;
+  if (cat && EVENT_CATEGORY_COLOR[cat]) return EVENT_CATEGORY_COLOR[cat]!;
+  return EVENT_SOURCE_COLOR[ev.source as EventSource] ?? EVENT_SOURCE_COLOR.MANUAL;
+}
+
+// カテゴリーバッジの色調（休みはスレート、それ以外は無地）。
+function categoryTone(category: string | null): "neutral" | "past" {
+  return category === "HOLIDAY" ? "past" : "neutral";
 }
 
 // ─────────────────── 自分の現場入り（読み取り専用チップ） ───────────────────
@@ -136,7 +153,7 @@ function EventRow({
   onSelect: (ev: CalendarEventData) => void;
 }) {
   const src = ev.source as EventSource;
-  const color = EVENT_SOURCE_COLOR[src] ?? EVENT_SOURCE_COLOR.MANUAL;
+  const color = eventColor(ev);
   const people = ev.participants.length > 0 ? ev.participants : ev.owner ? [ev.owner] : [];
   return (
     <button
@@ -154,7 +171,7 @@ function EventRow({
             {EVENT_SOURCE_LABEL[src] ?? ev.source}
           </Badge>
           {ev.category && (
-            <Badge tone="neutral">
+            <Badge tone={categoryTone(ev.category)}>
               {EVENT_CATEGORY_LABEL[ev.category as EventCategory] ?? ev.category}
             </Badge>
           )}
@@ -206,7 +223,7 @@ function EventDetailModal({
   if (!event) return null;
   const ev = event;
   const src = ev.source as EventSource;
-  const color = EVENT_SOURCE_COLOR[src] ?? EVENT_SOURCE_COLOR.MANUAL;
+  const color = eventColor(ev);
   const people = ev.participants.length > 0 ? ev.participants : ev.owner ? [ev.owner] : [];
 
   return (
@@ -237,7 +254,7 @@ function EventDetailModal({
             {EVENT_SOURCE_LABEL[src] ?? ev.source}
           </Badge>
           {ev.category && (
-            <Badge tone="neutral">
+            <Badge tone={categoryTone(ev.category)}>
               {EVENT_CATEGORY_LABEL[ev.category as EventCategory] ?? ev.category}
             </Badge>
           )}
@@ -331,8 +348,7 @@ function MonthEventChip({
   ev: CalendarEventData;
   onSelect: (ev: CalendarEventData) => void;
 }) {
-  const color =
-    EVENT_SOURCE_COLOR[ev.source as EventSource] ?? EVENT_SOURCE_COLOR.MANUAL;
+  const color = eventColor(ev);
   return (
     <button
       type="button"
@@ -684,6 +700,13 @@ function MonthView({
   const selectedDate = dateFromKey(selectedKey);
   const selectedEvents = sortEvents(byDay.get(selectedKey) ?? []);
   const selectedVisits = visitsByDay.get(selectedKey) ?? [];
+  // 現場に紐づく予定（現場入りに続けて上）／現場なし（その他・休み・個人）を下に分ける
+  const selectedSiteEvents = selectedEvents.filter((e) => e.site);
+  const selectedPersonalEvents = selectedEvents.filter((e) => !e.site);
+  // 上段（現場入り＋現場予定）と下段（現場なし）が両方あるときだけ区切り見出しを出す
+  const showPersonalDivider =
+    selectedPersonalEvents.length > 0 &&
+    (selectedSiteEvents.length > 0 || selectedVisits.length > 0);
 
   return (
     <>
@@ -771,11 +794,7 @@ function MonthView({
                       <span
                         key={ev.id}
                         className="h-1.5 w-1.5 rounded-full"
-                        style={{
-                          backgroundColor:
-                            EVENT_SOURCE_COLOR[ev.source as EventSource] ??
-                            EVENT_SOURCE_COLOR.MANUAL,
-                        }}
+                        style={{ backgroundColor: eventColor(ev) }}
                       />
                     ))}
                   </span>
@@ -822,7 +841,15 @@ function MonthView({
               {selectedVisits.map((v) => (
                 <VisitRow key={v.id} visit={v} />
               ))}
-              {selectedEvents.map((ev) => (
+              {selectedSiteEvents.map((ev) => (
+                <EventRow key={ev.id} ev={ev} onSelect={onSelect} />
+              ))}
+              {showPersonalDivider && (
+                <p className="bg-surface-subtle px-4 py-1.5 text-[11px] font-bold text-ink-muted">
+                  その他・休み
+                </p>
+              )}
+              {selectedPersonalEvents.map((ev) => (
                 <EventRow key={ev.id} ev={ev} onSelect={onSelect} />
               ))}
             </div>
@@ -842,7 +869,7 @@ function WeekEventChip({
   ev: CalendarEventData;
   onSelect: (ev: CalendarEventData) => void;
 }) {
-  const color = EVENT_SOURCE_COLOR[ev.source as EventSource] ?? EVENT_SOURCE_COLOR.MANUAL;
+  const color = eventColor(ev);
   const people = ev.participants.length > 0 ? ev.participants : ev.owner ? [ev.owner] : [];
   return (
     <button
@@ -1083,7 +1110,7 @@ function DayTimeline({
               <VisitChip key={v.id} visit={v} />
             ))}
             {allDay.map((ev) => {
-              const color = EVENT_SOURCE_COLOR[ev.source as EventSource] ?? EVENT_SOURCE_COLOR.MANUAL;
+              const color = eventColor(ev);
               return (
                 <button
                   key={ev.id}
@@ -1125,7 +1152,7 @@ function DayTimeline({
             const top = ((s - rangeStart) / 60) * HOUR_H;
             const height = Math.max(26, ((e - s) / 60) * HOUR_H - 3);
             const widthPct = 100 / cols;
-            const color = EVENT_SOURCE_COLOR[ev.source as EventSource] ?? EVENT_SOURCE_COLOR.MANUAL;
+            const color = eventColor(ev);
             const people = ev.participants.length > 0 ? ev.participants : ev.owner ? [ev.owner] : [];
             return (
               <div
