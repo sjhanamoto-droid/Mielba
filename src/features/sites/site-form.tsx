@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { Save, AlertCircle, ChevronDown, KeyRound, FileText, CalendarRange, Info } from "lucide-react";
+import { Save, AlertCircle, AlertTriangle, ChevronDown, KeyRound, FileText, CalendarRange, Info } from "lucide-react";
 import { createSite, updateSite } from "./actions";
 import { SitePhotoField, type SitePhotoInit } from "./site-photo-field";
 import { DeleteSiteButton } from "./delete-site-button";
@@ -429,8 +429,23 @@ export function SiteForm({
     <ConfirmDialog
       open={confirmOpen}
       onClose={() => setConfirmOpen(false)}
-      title="仮登録として保存しますか？"
-      description="必須項目がすべて埋まっていないため、仮登録として一度情報を保存します。よろしいですか？"
+      danger
+      title="⚠ 仮登録として保存します"
+      description={
+        <div className="space-y-3">
+          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-700/60 dark:bg-amber-950/40">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <p className="text-sm leading-relaxed text-amber-900 dark:text-amber-100">
+              <b className="font-bold">必須項目が未入力です。</b>
+              このまま保存すると<b className="font-bold">仮登録</b>になり、
+              あとで本登録（必須項目の入力）が必要です。
+            </p>
+          </div>
+          <p className="text-sm text-ink-soft">
+            入力を続ける場合は「入力に戻る」を選んでください。
+          </p>
+        </div>
+      }
       confirmLabel="仮登録で保存"
       cancelLabel="入力に戻る"
       onConfirm={() => {
