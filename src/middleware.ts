@@ -40,6 +40,6 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // _next, 静的アセット, favicon, PWA アセット（manifest / sw.js / icons）等を除外
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icons/|apple-touch-icon.png|icon.svg|apple-icon.png|robots.txt).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icons/|apple-touch-icon.png|logo.png|icon.svg|apple-icon.png|robots.txt).*)",
   ],
 };

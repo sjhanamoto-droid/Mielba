@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { LoginForm } from "@/features/auth/login-form";
 
 export const metadata: Metadata = { title: "ログイン | Mielba" };
@@ -11,12 +10,13 @@ export default function LoginPage() {
         {/* ブランド */}
         <div className="flex flex-1 flex-col items-center justify-center pb-6">
           <div className="mb-4 h-20 w-20 overflow-hidden rounded-2xl shadow-float ring-1 ring-white/25">
-            <Image
+            {/* 未ログインで表示されるページのため、最適化(_next/image)を介さず素の img で確実に表示 */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src="/logo.png"
               alt="シゲ電気 Mielba"
               width={80}
               height={80}
-              priority
               className="h-full w-full object-cover"
             />
           </div>
