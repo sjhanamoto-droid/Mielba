@@ -1,5 +1,5 @@
 import {
-  Home, HardHat, CalendarDays, Building2, FileText, Users,
+  Home, HardHat, CalendarDays, Building2, FileText, Users, Clock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,6 +16,7 @@ const SITES: NavItem = { href: "/sites", label: "現場", icon: HardHat, match: 
 const CALENDAR: NavItem = { href: "/calendar", label: "カレンダー", icon: CalendarDays, match: (p) => p.startsWith("/calendar") };
 const CUSTOMERS: NavItem = { href: "/customers", label: "顧客", icon: Building2, match: (p) => p.startsWith("/customers") };
 const DISPATCH: NavItem = { href: "/dispatch", label: "配員", icon: Users, match: (p) => p.startsWith("/dispatch") };
+const ATTENDANCE: NavItem = { href: "/attendance", label: "稼働時間", icon: Clock, match: (p) => p.startsWith("/attendance") };
 
 // 役割でナビの並びを変える。ボトムナビは5件以内に収める前提。
 // 現場管理・顧客管理・日報を中心に据える（TODO 機能は非表示）。
@@ -32,7 +33,7 @@ export function navForRole(role: string): NavItem[] {
 // PC サイドバー用（幅があるので全項目を出す）
 export function sidebarNavForRole(role: string): NavItem[] {
   if (role === "ADMIN") {
-    return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS];
+    return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS, ATTENDANCE];
   }
   return [HOME, REPORTS, SITES, CALENDAR];
 }

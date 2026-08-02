@@ -51,3 +51,25 @@ export function addDaysKey(key: string, n: number): string {
 export function tomorrowKey(): string {
   return addDaysKey(jstDateKey(), 1);
 }
+
+/** Asia/Tokyo の暦月キー 'YYYY-MM' を返す */
+export function jstMonthKey(d: Date = new Date()): string {
+  return jstDateKey(d).slice(0, 7);
+}
+
+/** 'YYYY-MM' が指す1か月分の範囲（Prisma の where: { gte, lt } 用） */
+export function monthRangeForKey(ym: string): { gte: Date; lt: Date } {
+  const [y, m] = ym.split("-").map(Number);
+  const gte = new Date(y, m - 1, 1);
+  const lt = new Date(y, m, 1); // 翌月1日（月末日跨ぎは Date が正規化）
+  return { gte, lt };
+}
+
+/** 月キーに月数を加算したキーを返す */
+export function addMonthsKey(ym: string, n: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${yy}-${mm}`;
+}

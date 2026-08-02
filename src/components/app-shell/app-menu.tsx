@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   LogOut, Settings, X, ChevronRight, Menu, Bell,
-  Building2, UserCog,
+  Building2, UserCog, Clock,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
@@ -28,6 +28,7 @@ export function AppMenu({
   const shortcuts = admin
     ? [
         { href: "/customers", label: "顧客（元請企業）", icon: Building2 },
+        { href: "/attendance", label: "稼働時間", icon: Clock },
         { href: "/settings/staff", label: "スタッフ管理", icon: UserCog },
         { href: "/settings", label: "設定", icon: Settings },
       ]

@@ -85,6 +85,24 @@ export function workHours(start: string, end: string): string {
   return m === 0 ? `${h}時間` : `${h}時間${m}分`;
 }
 
+// "HH:MM"×2 の作業時間を「分」で返す。日跨ぎは想定せず、負・異常値（>24h）は 0 に丸める。
+export function workMinutes(start: string | null | undefined, end: string | null | undefined): number {
+  const [sh, sm] = (start ?? "").split(":").map(Number);
+  const [eh, em] = (end ?? "").split(":").map(Number);
+  if ([sh, sm, eh, em].some((v) => Number.isNaN(v))) return 0;
+  const mins = eh * 60 + em - (sh * 60 + sm);
+  if (mins <= 0 || mins > 24 * 60) return 0;
+  return mins;
+}
+
+// 合計「分」を「H時間M分」表記に整形（0分は "0時間"）
+export function fmtWorkMinutes(mins: number): string {
+  if (!mins || mins <= 0) return "0時間";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}時間` : `${h}時間${m}分`;
+}
+
 // 名前からアバター用イニシャル（日本語は先頭1文字）
 export function initials(name: string): string {
   if (!name) return "?";

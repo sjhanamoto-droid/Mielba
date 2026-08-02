@@ -80,9 +80,15 @@ export default async function SiteDetailPage({
 
   // 現場詳細はログイン済みなら全ユーザー閲覧可（配属の概念は廃止し当日制へ移行したため）。
 
-  // 日報数・未解決引き継ぎ・現場写真（base64は載せない）・人工実績・駐車場代累計
-  const [reportCount, openHandovers, sitePhotos, parkingAgg] = await Promise.all([
+  // 日報数（全件）・人工カウント（着工実績日以降のみ）・未解決引き継ぎ・現場写真・駐車場代累計
+  // 人工は「着工実績日以降の日報」で数える（着工前＝現調段階はカウントしない）。actualStartDate 未設定なら 0。
+  const [reportCount, manDaysCount, openHandovers, sitePhotos, parkingAgg] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
+    site.actualStartDate
+      ? db.dailyReport.count({
+          where: { siteId: site.id, workDate: { gte: site.actualStartDate } },
+        })
+      : Promise.resolve(0),
     getOpenHandovers(site.id),
     db.photo.findMany({
       where: { siteId: site.id },
@@ -110,10 +116,11 @@ export default async function SiteDetailPage({
   const mapsUrl = site.address
     ? `https://maps.google.com/?q=${encodeURIComponent(site.address)}`
     : null;
-  // 最終人工 = 提出日報の累計（reportCount。1日報＝1人工）。目標に対する達成率を出す。
+  // 最終人工 = 着工実績日以降の日報累計（manDaysCount。1日報＝1人工）。着工前は達成率を出さない。
+  const hasStarted = site.actualStartDate != null;
   const manDaysPercent =
-    site.targetManDays && site.targetManDays > 0
-      ? Math.min(100, Math.round((reportCount / site.targetManDays) * 100))
+    hasStarted && site.targetManDays && site.targetManDays > 0
+      ? Math.min(100, Math.round((manDaysCount / site.targetManDays) * 100))
       : null;
 
   // 関連現場を双方向から集約
@@ -310,19 +317,23 @@ export default async function SiteDetailPage({
           </Card>
         </section>
 
-        {/* ⓪-2 人工（最終=日報累計 / 目標） */}
+        {/* ⓪-2 人工（最終=着工実績日以降の日報累計 / 目標） */}
         <section className="space-y-2.5">
           <SectionTitle>人工</SectionTitle>
           <Card className="space-y-3 p-4">
             <div className="flex items-end justify-between">
               <span className="text-xs font-semibold text-ink-muted">最終 / 目標</span>
-              <span className="text-2xl font-bold text-ink tnum">
-                {reportCount}
-                <span className="text-sm font-semibold text-ink-muted">
-                  {" "}
-                  / {site.targetManDays ?? "—"} 人工
+              {hasStarted ? (
+                <span className="text-2xl font-bold text-ink tnum">
+                  {manDaysCount}
+                  <span className="text-sm font-semibold text-ink-muted">
+                    {" "}
+                    / {site.targetManDays ?? "—"} 人工
+                  </span>
                 </span>
-              </span>
+              ) : (
+                <span className="text-sm font-semibold text-ink-muted">着工前（0）</span>
+              )}
             </div>
             {manDaysPercent !== null && (
               <div>
@@ -333,7 +344,9 @@ export default async function SiteDetailPage({
               </div>
             )}
             <p className="text-[11px] text-ink-faint">
-              最終人工は提出された日報の累計から自動計算されます（1日報＝1人工）。
+              {hasStarted
+                ? "最終人工は着工実績日以降に提出された日報の累計です（1日報＝1人工）。"
+                : "着工実績日が未設定のため、まだ人工はカウントされません（着工実績日以降でカウント）。"}
             </p>
             <DataList>
               <DataRow
