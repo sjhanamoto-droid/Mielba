@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { sendPushToUser } from "@/lib/push";
 
 // アプリ内通知 & Web Push 購読のサーバーアクション（フロント側）。
 // 通知の生成（Cron / バックエンド）は別担当。ここは本人の閲覧・既読・購読管理のみ。
@@ -127,4 +128,31 @@ export async function unsubscribePush(
     return { error: "通知の解除に失敗しました。時間をおいて再度お試しください" };
   }
   return { ok: true };
+}
+
+/**
+ * 自分の端末へテストのプッシュ通知を即時送信する（動作確認用）。
+ * アプリ内通知は作らず、Web Push の経路だけを検証する。購読が無ければその旨を返す。
+ */
+export async function sendTestNotification(): Promise<
+  { ok: true; sent: number } | { error: string }
+> {
+  const me = await requireUser();
+  const subs = await db.pushSubscription.count({ where: { userId: me.id } });
+  if (subs === 0) {
+    return {
+      error:
+        "この端末で通知が有効になっていません。先に「プッシュ通知」をオンにして許可してください。",
+    };
+  }
+  try {
+    await sendPushToUser(me.id, {
+      title: "テスト通知",
+      body: "この通知が届いていれば設定は正常です 🎉",
+      url: "/",
+    });
+  } catch {
+    return { error: "テスト通知の送信に失敗しました。時間をおいて再度お試しください" };
+  }
+  return { ok: true, sent: subs };
 }

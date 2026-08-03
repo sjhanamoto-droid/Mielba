@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BellRing, BellOff, Loader2, Info } from "lucide-react";
-import { subscribePush, unsubscribePush } from "./actions";
+import { BellRing, BellOff, Loader2, Info, Send } from "lucide-react";
+import { subscribePush, unsubscribePush, sendTestNotification } from "./actions";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,23 @@ export function PushSubscribe() {
   const toast = useToast();
   const [status, setStatus] = useState<Status>("loading");
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  async function sendTest() {
+    setTesting(true);
+    try {
+      const res = await sendTestNotification();
+      if ("error" in res) {
+        toast(res.error, { type: "error" });
+        return;
+      }
+      toast("テスト通知を送信しました。数秒で端末に届きます", { type: "success" });
+    } catch {
+      toast("テスト通知の送信に失敗しました", { type: "error" });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -157,6 +174,7 @@ export function PushSubscribe() {
   const loading = status === "loading";
 
   return (
+    <div className="space-y-2.5">
     <div className="card flex items-center gap-3.5 p-4">
       <span
         className={cn(
@@ -193,6 +211,19 @@ export function PushSubscribe() {
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-ink-muted" />}
         </span>
       </button>
+    </div>
+      {/* 購読中のみ：自分の端末へテスト通知を送って確認できる */}
+      {on && (
+        <button
+          type="button"
+          onClick={sendTest}
+          disabled={testing}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-line-strong bg-surface py-3 text-sm font-bold text-ink-soft active:scale-[0.99] disabled:opacity-50"
+        >
+          {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          テスト通知を送る
+        </button>
+      )}
     </div>
   );
 }
