@@ -238,3 +238,10 @@ export function labelOf<T extends string>(
   if (!key) return "—";
   return map[key] ?? key;
 }
+
+// ── 使い方のヒント（ホームの右レール＝PC のみ／メニューの「使い方・ヒント」で共有） ──
+export const USAGE_TIPS = [
+  "日報は「現場入り（出面）」から書き始められます",
+  "カレンダーの予定は現場に紐づけて共有できます",
+  "写真は作業・図面・工程などの種別で整理できます",
+];

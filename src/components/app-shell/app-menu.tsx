@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   LogOut, Settings, X, ChevronRight, Menu, Bell,
-  Building2, UserCog, Clock,
+  Building2, UserCog, Clock, Lightbulb,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
@@ -30,9 +30,13 @@ export function AppMenu({
         { href: "/customers", label: "顧客（元請企業）", icon: Building2 },
         { href: "/attendance", label: "稼働時間", icon: Clock },
         { href: "/settings/staff", label: "スタッフ管理", icon: UserCog },
+        { href: "/help", label: "使い方・ヒント", icon: Lightbulb },
         { href: "/settings", label: "設定", icon: Settings },
       ]
-    : [{ href: "/settings", label: "設定", icon: Settings }];
+    : [
+        { href: "/help", label: "使い方・ヒント", icon: Lightbulb },
+        { href: "/settings", label: "設定", icon: Settings },
+      ];
 
   return (
     <>

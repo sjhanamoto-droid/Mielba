@@ -20,7 +20,7 @@ import { SectionTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
 import { cn, fmtDateWithDay, fmtMonthDay } from "@/lib/utils";
-import { EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, type EventSource } from "@/lib/constants";
+import { EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, USAGE_TIPS, type EventSource } from "@/lib/constants";
 
 function greeting(): string {
   // 日本時間の時刻で挨拶を切り替える（サーバーが UTC でもずれないように）
@@ -411,11 +411,7 @@ export default async function HomePage() {
       ];
 
   // ヒント（現場管理を使いこなすための実用的な案内。架空のお知らせは載せない）
-  const tips = [
-    "日報は「現場入り（出面）」から書き始められます",
-    "カレンダーの予定は現場に紐づけて共有できます",
-    "写真は作業・図面・工程などの種別で整理できます",
-  ];
+  const tips = USAGE_TIPS;
 
   return (
     <div>
@@ -910,8 +906,8 @@ export default async function HomePage() {
               </div>
             </section>
 
-            {/* ヒント（グラデカード＋装飾モチーフ） */}
-            <section className="space-y-2.5">
+            {/* ヒント（PC の右レールのみ表示。スマホ/iPad はメニューの「使い方・ヒント」へ） */}
+            <section className="hidden space-y-2.5 xl:block">
               <div className="flex items-center gap-2 px-1">
                 <Lightbulb className="h-4 w-4 text-accent-500" aria-hidden />
                 <h2 className="text-sm font-bold text-ink-soft">使い方のヒント</h2>
@@ -933,8 +929,8 @@ export default async function HomePage() {
               </div>
             </section>
 
-            {/* サポート（グラデカード＋装飾モチーフ） */}
-            <section className="space-y-2.5">
+            {/* サポート（PC の右レールのみ表示。設定/アカウントはメニューからも辿れる） */}
+            <section className="hidden space-y-2.5 xl:block">
               <div className="flex items-center gap-2 px-1">
                 <Megaphone className="h-4 w-4 text-emerald-500" aria-hidden />
                 <h2 className="text-sm font-bold text-ink-soft">サポート</h2>
