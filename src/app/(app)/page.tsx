@@ -3,8 +3,8 @@ import {
   FileText, CalendarClock, ChevronRight, HardHat,
   CheckSquare, Truck, PackageCheck, Plus, ClipboardList,
   AlertTriangle, MapPin, Users, ArrowRight, Sun,
-  LayoutDashboard, Megaphone, CalendarDays, Lightbulb,
-  LifeBuoy, PenLine, Building2, Bell, BellRing, type LucideIcon,
+  LayoutDashboard, CalendarDays,
+  Building2, Bell, BellRing,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -15,12 +15,12 @@ import { mapSearchUrl } from "@/lib/utils";
 import { HandoverAlert } from "@/components/handover-alert";
 import { TodayConfirm, type HeroSite } from "@/features/dashboard/today-confirm";
 import { StatTile, EmptyState } from "@/components/ui/misc";
-import { IconBadge, type IconTone } from "@/components/ui/icon-badge";
+import { IconBadge } from "@/components/ui/icon-badge";
 import { SectionTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
 import { cn, fmtDateWithDay, fmtMonthDay } from "@/lib/utils";
-import { EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, USAGE_TIPS, type EventSource } from "@/lib/constants";
+import { EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, type EventSource } from "@/lib/constants";
 
 function greeting(): string {
   // 日本時間の時刻で挨拶を切り替える（サーバーが UTC でもずれないように）
@@ -60,48 +60,6 @@ const TONE_TEXT: Record<TaskTone, string> = {
   warn: "text-amber-700 dark:text-amber-300",
   info: "text-blue-700 dark:text-blue-300",
 };
-
-// 参考デザインのグラデカードに入れる控えめな装飾（ドット・ネットワーク＝現場のつながりを表す抽象モチーフ）
-function CardMotif() {
-  return (
-    <svg
-      className="pointer-events-none absolute -right-3 -top-3 h-24 w-24 opacity-25"
-      viewBox="0 0 100 100"
-      fill="none"
-      aria-hidden
-    >
-      <path d="M68 26 L90 50 M68 26 L54 58 M90 50 L54 58 M90 50 L84 78" stroke="white" strokeWidth="1.6" />
-      <circle cx="68" cy="26" r="4.5" fill="white" />
-      <circle cx="90" cy="50" r="3.5" fill="white" />
-      <circle cx="54" cy="58" r="3.5" fill="white" />
-      <circle cx="84" cy="78" r="3" fill="white" />
-    </svg>
-  );
-}
-
-// 右レールのクイック操作 1 行
-function QuickAction({
-  href,
-  label,
-  icon,
-  tone,
-}: {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  tone: IconTone;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-surface-subtle active:bg-surface-subtle"
-    >
-      <IconBadge icon={icon} tone={tone} size="sm" />
-      <span className="flex-1 text-sm font-semibold text-ink">{label}</span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
-    </Link>
-  );
-}
 
 // 日報の到着状況（管理者）の小さな集計チップ
 function MiniStat({
@@ -395,24 +353,6 @@ export default async function HomePage() {
     return `/reports/new?siteId=${siteId}`;
   }
 
-  // 右レールのクイック操作（役割別）
-  const quickActions: { href: string; label: string; icon: LucideIcon; tone: IconTone }[] = admin
-    ? [
-        { href: "/reports", label: "日報を確認する", icon: FileText, tone: "emerald" },
-        { href: "/dispatch", label: "配員を組む", icon: Users, tone: "violet" },
-        { href: "/sites/new", label: "現場を追加する", icon: HardHat, tone: "amber" },
-        { href: "/calendar", label: "予定を追加する", icon: CalendarClock, tone: "sky" },
-      ]
-    : [
-        { href: "/reports", label: "日報を書く", icon: FileText, tone: "emerald" },
-        { href: "/sites/new", label: "現場を追加する", icon: HardHat, tone: "amber" },
-        { href: "/calendar", label: "予定を確認する", icon: CalendarClock, tone: "sky" },
-        { href: "/sites", label: "現場一覧", icon: HardHat, tone: "violet" },
-      ];
-
-  // ヒント（現場管理を使いこなすための実用的な案内。架空のお知らせは載せない）
-  const tips = USAGE_TIPS;
-
   return (
     <div>
       {/* スマホはヘッダー非表示のため、ノッチ回避の上余白のみ確保 */}
@@ -433,9 +373,8 @@ export default async function HomePage() {
       </header>
 
       <PageContainer>
-        <div className="space-y-5 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
-          {/* ───────────── メイン（左・中央 2/3） ───────────── */}
-          <div className="space-y-5 lg:col-span-2">
+        <div className="space-y-5">
+          <div className="space-y-5">
             {/* モバイル用ホームヘッダ：左に挨拶＋日付、右に通知ベル（未読は赤バッジ）。
                 PC/タブレットはサイドバー等の導線があるため非表示（md:hidden）。 */}
             <div className="flex items-center justify-between gap-3 md:hidden">
@@ -894,60 +833,6 @@ export default async function HomePage() {
             )}
           </div>
 
-          {/* ───────────── 右レール（1/3・参考デザインのカラフルなカード） ───────────── */}
-          <aside className="space-y-5 lg:sticky lg:top-24">
-            {/* クイック操作 */}
-            <section className="space-y-2.5">
-              <SectionTitle>クイック操作</SectionTitle>
-              <div className="card p-2">
-                {quickActions.map((a) => (
-                  <QuickAction key={a.href} {...a} />
-                ))}
-              </div>
-            </section>
-
-            {/* ヒント（PC の右レールのみ表示。スマホ/iPad はメニューの「使い方・ヒント」へ） */}
-            <section className="hidden space-y-2.5 xl:block">
-              <div className="flex items-center gap-2 px-1">
-                <Lightbulb className="h-4 w-4 text-accent-500" aria-hidden />
-                <h2 className="text-sm font-bold text-ink-soft">使い方のヒント</h2>
-              </div>
-              <div className="card overflow-hidden">
-                <div className="relative overflow-hidden bg-gradient-to-br from-brand-600 to-brand-500 px-4 py-4 text-white">
-                  <CardMotif />
-                  <p className="relative text-sm font-bold">Mielba を使いこなそう</p>
-                  <p className="relative mt-0.5 text-xs text-brand-100">現場管理をもっとスムーズに</p>
-                </div>
-                <ul className="divide-y divide-line">
-                  {tips.map((t, i) => (
-                    <li key={i} className="flex items-start gap-2.5 px-4 py-3">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400" />
-                      <p className="text-sm font-medium leading-relaxed text-ink-soft">{t}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-
-            {/* サポート（PC の右レールのみ表示。設定/アカウントはメニューからも辿れる） */}
-            <section className="hidden space-y-2.5 xl:block">
-              <div className="flex items-center gap-2 px-1">
-                <Megaphone className="h-4 w-4 text-emerald-500" aria-hidden />
-                <h2 className="text-sm font-bold text-ink-soft">サポート</h2>
-              </div>
-              <div className="card overflow-hidden">
-                <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-500 px-4 py-4 text-white">
-                  <CardMotif />
-                  <p className="relative text-sm font-bold">お困りですか？</p>
-                  <p className="relative mt-0.5 text-xs text-emerald-50">設定やアカウントを確認できます</p>
-                </div>
-                <div className="p-2">
-                  <QuickAction href="/settings" label="アプリの設定" icon={LifeBuoy} tone="emerald" />
-                  <QuickAction href="/settings/account" label="アカウント・表示" icon={PenLine} tone="teal" />
-                </div>
-              </div>
-            </section>
-          </aside>
         </div>
       </PageContainer>
     </div>
