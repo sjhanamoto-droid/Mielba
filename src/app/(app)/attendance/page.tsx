@@ -136,14 +136,19 @@ export default async function AttendancePage({
             ) : (
               <Card className="divide-y divide-line">
                 {rows.map((r) => (
-                  <div key={r.userId} className="flex items-center gap-3 px-4 py-3">
+                  <Link
+                    key={r.userId}
+                    href={`/attendance/${r.userId}?ym=${ym}`}
+                    className="flex items-center gap-3 px-4 py-3 tap-row"
+                  >
                     <Avatar name={r.name} color={r.avatarColor} size="md" />
                     <p className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{r.name}</p>
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-bold text-ink tnum">{fmtWorkMinutes(r.minutes)}</p>
                       <p className="text-[11px] text-ink-muted tnum">{r.days} 日</p>
                     </div>
-                  </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+                  </Link>
                 ))}
               </Card>
             )}
