@@ -1,6 +1,5 @@
-import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HeaderBack } from "./header-back";
 
 // レスポンシブなページ上部バー。
 // スマホ：コンパクト。PC/タブレット：高さ・文字を大きく、コンテンツ幅に整列。
@@ -31,13 +30,7 @@ export function PageHeader({
     >
       <div className={cn("mx-auto flex h-14 w-full items-center gap-2 px-3 md:h-[68px] md:px-8", maxW)}>
         {backHref ? (
-          <Link
-            href={backHref}
-            aria-label="戻る"
-            className="-ml-1 flex h-10 w-10 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-sunken active:bg-surface-sunken"
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </Link>
+          <HeaderBack fallbackHref={backHref} />
         ) : (
           <div className="hidden w-1 md:block" />
         )}
