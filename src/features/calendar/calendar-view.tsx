@@ -517,11 +517,15 @@ export function CalendarView({
   }
 
   // ── ビュー切替のリンク先 ──
-  // 月：?ym=YYYY-MM を維持。週/日：?d=基準日 を使う。
-  const ymStr = `${year}-${pad(month)}`;
-  const monthHref = `/calendar?view=month&ym=${ymStr}`;
-  const weekHref = `/calendar?view=week&d=${baseDay}`;
-  const dayHref = `/calendar?view=day&d=${baseDay}`;
+  // 「今見ている日付」を切替後も保持する。月ビューでは選択中の日、
+  // 週/日ビューでは基準日 baseDay を基準にする。
+  // これで例：月ビューで8/5を選択→「日」を押すと8/5の日ビューが開く。
+  const activeDayKey =
+    view === "month" ? `${year}-${pad(month)}-${pad(selectedDay)}` : baseDay;
+  const activeYm = activeDayKey.slice(0, 7); // "YYYY-MM"
+  const monthHref = `/calendar?view=month&ym=${activeYm}`;
+  const weekHref = `/calendar?view=week&d=${activeDayKey}`;
+  const dayHref = `/calendar?view=day&d=${activeDayKey}`;
 
   return (
     <div className="space-y-4">

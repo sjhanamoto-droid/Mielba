@@ -162,8 +162,14 @@ export default async function SiteDetailPage({
         backHref="/sites"
         right={
           admin || site.createdById === user.id ? (
-            <LinkButton href={`/sites/${site.id}/edit`} variant="ghost" size="icon" aria-label="編集">
-              <Pencil className="h-5 w-5" />
+            <LinkButton
+              href={`/sites/${site.id}/edit`}
+              variant="outline"
+              size="sm"
+              aria-label="現場を修正"
+            >
+              <Pencil className="h-4 w-4" />
+              <span>現場を修正</span>
             </LinkButton>
           ) : undefined
         }
