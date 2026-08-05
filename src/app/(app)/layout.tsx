@@ -41,7 +41,7 @@ export default async function AppLayout({
       </AppFrame>
 
       {/* スマホ：ボトムナビ（md 未満のみ）。末尾に「メニュー」（設定/ログアウト等） */}
-      <BottomNav role={user.role} user={user} unreadCount={unreadCount} />
+      <BottomNav role={user.role} unreadCount={unreadCount} />
 
       {/* 起動ゲート：未読があれば全画面で最前面に表示し、既読化までブロック */}
       <StartupGate items={unread} />
