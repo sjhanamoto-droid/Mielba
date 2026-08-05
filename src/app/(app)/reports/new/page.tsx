@@ -8,16 +8,16 @@ import { MainVoteGate } from "@/features/reports/main-vote-gate";
 import { getMainVoteState } from "@/features/reports/main-vote-actions";
 import { getAppSettings } from "@/lib/settings";
 import { fmtDateWithDay } from "@/lib/utils";
-import { todayRange, jstDateKey } from "@/lib/date";
+import { jstDateKey, dateFromKey, dayRangeForKey } from "@/lib/date";
 import { Crown } from "lucide-react";
 
 export default async function NewReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ siteId?: string }>;
+  searchParams: Promise<{ siteId?: string; date?: string }>;
 }) {
   const user = await requireUser();
-  const { siteId } = await searchParams;
+  const { siteId, date } = await searchParams;
   if (!siteId) redirect("/sites");
 
   const site = await db.site.findUnique({
@@ -28,9 +28,14 @@ export default async function NewReportPage({
 
   const settings = await getAppSettings();
 
-  // メインの人（全員一致投票）: 当日その現場の配員が2人以上で、自分も配員なら、
+  // 対象日：後追い入力のため過去日を許可する。未来日・不正な値は今日にフォールバック。
+  const todayKey = jstDateKey();
+  const dateKey =
+    date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= todayKey ? date : todayKey;
+  const workDateLabel = fmtDateWithDay(dateFromKey(dateKey));
+
+  // メインの人（全員一致投票）: 対象日その現場の配員が2人以上で、自分も配員なら、
   // 全員一致（consensus）が確定するまで日報フォームではなく投票ゲートを表示する。
-  const dateKey = jstDateKey();
   const voteState = await getMainVoteState(site.id, dateKey);
   const showGate =
     voteState.members.length >= 2 &&
@@ -56,7 +61,7 @@ export default async function NewReportPage({
       <div>
         <PageHeader
           title="日報・勤怠を作成"
-          subtitle={fmtDateWithDay(todayRange().gte)}
+          subtitle={workDateLabel}
           backHref={`/sites/${site.id}/reports`}
         />
         <PageContainer size="narrow">
@@ -71,13 +76,12 @@ export default async function NewReportPage({
     );
   }
 
-  // この現場・本日の予定（自分が参加者 or 担当）を日報の基盤として取得
-  // 「今日」は Asia/Tokyo の暦日で判定する（Vercel=UTC対策）
-  const { gte: today, lt: tomorrow } = todayRange();
+  // この現場・対象日の予定（自分が参加者 or 担当）を日報の基盤として取得
+  const { gte: dayStart, lt: dayEnd } = dayRangeForKey(dateKey);
   const event = await db.calendarEvent.findFirst({
     where: {
       siteId: site.id,
-      date: { gte: today, lt: tomorrow },
+      date: { gte: dayStart, lt: dayEnd },
       OR: [
         { participants: { some: { userId: user.id } } },
         { ownerId: user.id },
@@ -109,7 +113,7 @@ export default async function NewReportPage({
     <div>
       <PageHeader
         title="日報・勤怠を作成"
-        subtitle={fmtDateWithDay(today)}
+        subtitle={workDateLabel}
         backHref={`/sites/${site.id}/reports`}
       />
       <PageContainer size="narrow">
@@ -126,6 +130,7 @@ export default async function NewReportPage({
           mode="new"
           siteId={site.id}
           siteName={site.name}
+          defaultDate={dateKey}
           defaultStartTime={defaultStartTime}
           defaultEndTime={defaultEndTime}
           materialOptions={materialOptions}

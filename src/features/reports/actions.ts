@@ -144,6 +144,8 @@ function clean(v: string | null | undefined): string | null {
 
 function revalidateReport(reportId: string | null, siteId: string) {
   revalidatePath("/");
+  // (app) レイアウトの未入力日報ゲートを再計算させる（提出後に残り件数を減らす）
+  revalidatePath("/", "layout");
   revalidatePath("/reports");
   revalidatePath("/calendar");
   revalidatePath(`/sites/${siteId}`);

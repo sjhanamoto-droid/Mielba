@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { BottomNav } from "@/components/app-shell/bottom-nav";
 import { AppFrame, SIDEBAR_COOKIE } from "@/components/app-shell/app-frame";
 import { StartupGate } from "@/features/notifications/startup-gate";
+import { MissingReportsGate } from "@/features/reports/missing-reports-gate";
+import { getMissingPastReports } from "@/lib/missing-reports";
 
 export default async function AppLayout({
   children,
@@ -14,8 +16,8 @@ export default async function AppLayout({
   const store = await cookies();
   const collapsed = store.get(SIDEBAR_COOKIE)?.value === "1";
 
-  // 起動ゲート＆通知バッジ用の未読データ（本人のみ）。
-  const [unreadCount, unread] = await Promise.all([
+  // 起動ゲート＆通知バッジ用の未読データ＋前日以前の未入力日報（本人のみ）。
+  const [unreadCount, unread, missingReports] = await Promise.all([
     db.notification.count({ where: { userId: user.id, read: false } }),
     db.notification.findMany({
       where: { userId: user.id, read: false },
@@ -31,6 +33,7 @@ export default async function AppLayout({
         createdAt: true,
       },
     }),
+    getMissingPastReports(user.id),
   ]);
 
   return (
@@ -45,6 +48,10 @@ export default async function AppLayout({
 
       {/* 起動ゲート：未読があれば全画面で最前面に表示し、既読化までブロック */}
       <StartupGate items={unread} />
+
+      {/* 未入力日報の強制ゲート：前日以前の未入力があれば、書き終えるまで先に進めない
+          （z-[90] で未読ゲートより前面。日報の入力・編集画面では自動退避する） */}
+      <MissingReportsGate items={missingReports} />
     </div>
   );
 }

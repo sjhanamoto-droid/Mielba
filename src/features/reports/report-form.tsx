@@ -90,6 +90,7 @@ export function ReportForm({
   siteId,
   siteName,
   initial,
+  defaultDate,
   defaultStartTime = "08:00",
   defaultEndTime = "17:00",
   eventContext,
@@ -101,6 +102,8 @@ export function ReportForm({
   siteId: string;
   siteName: string;
   initial?: ReportFormData;
+  /** new モードの作業日初期値 "YYYY-MM-DD"（未指定は今日）。後追い入力で過去日を渡す */
+  defaultDate?: string;
   defaultStartTime?: string;
   defaultEndTime?: string;
   eventContext?: {
@@ -130,7 +133,9 @@ export function ReportForm({
 
   // ── フォーム state（自動保存の対象。写真は容量のため対象外） ──
   const [workDate, setWorkDate] = useState<string>(
-    initial ? toDateInputValue(initial.workDate) : toDateInputValue(new Date()),
+    initial
+      ? toDateInputValue(initial.workDate)
+      : toDateInputValue(defaultDate ?? new Date()),
   );
   const [startTime, setStartTime] = useState<string>(initial?.startTime ?? defaultStartTime);
   const [endTime, setEndTime] = useState<string>(initial?.endTime ?? defaultEndTime);
