@@ -479,36 +479,6 @@ async function backfillSiteFromSurvey(
   }
 }
 
-// ── 職人割当 ──
-function revalidateAssignment(siteId: string) {
-  revalidatePath(`/sites/${siteId}`);
-  revalidatePath("/sites");
-  revalidatePath("/");
-  revalidatePath("/calendar");
-  revalidatePath("/todos");
-  revalidatePath("/dispatch");
-}
-
-export async function assignUser(siteId: string, userId: string) {
-  await requireAdmin();
-  if (!siteId || !userId) return;
-  await db.siteAssignment.upsert({
-    where: { siteId_userId: { siteId, userId } },
-    create: { siteId, userId },
-    update: {},
-  });
-  revalidateAssignment(siteId);
-}
-
-export async function unassignUser(siteId: string, userId: string) {
-  await requireAdmin();
-  if (!siteId || !userId) return;
-  await db.siteAssignment
-    .delete({ where: { siteId_userId: { siteId, userId } } })
-    .catch(() => undefined);
-  revalidateAssignment(siteId);
-}
-
 // ── 関連現場（同一住所）リンク ──
 export async function addRelatedSite(siteId: string, otherSiteId: string, note?: string) {
   await requireAdmin();

@@ -45,13 +45,12 @@ export default async function ReportsHubPage({
         where: { userId: user.id, workDate: { gte: today, lt: tomorrow } },
         select: { id: true, siteId: true, status: true },
       }),
-      // 「別の現場に行った」候補：配属に限定せず、進行中の全現場から
+      // 「別の現場に行った」候補：進行中の全現場から（担当の区別は廃止）
       db.site.findMany({
         where: { siteStatus: "ACTIVE" },
         select: {
           id: true,
           name: true,
-          assignments: { where: { userId: user.id }, select: { id: true } },
         },
         orderBy: { updatedAt: "desc" },
       }),
@@ -72,7 +71,7 @@ export default async function ReportsHubPage({
     const visitedSiteIds = new Set(todayVisits.map((v) => v.siteId));
     const addableSites = activeSites
       .filter((s) => !visitedSiteIds.has(s.id))
-      .map((s) => ({ id: s.id, name: s.name, assigned: s.assignments.length > 0 }));
+      .map((s) => ({ id: s.id, name: s.name }));
 
     return (
       <div>

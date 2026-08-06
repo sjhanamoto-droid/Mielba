@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { CalendarView, type CalendarViewMode } from "@/features/calendar/calendar-view";
-import { requireUser, isAdmin } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { db } from "@/lib/db";
 import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
 
@@ -42,7 +42,6 @@ export default async function CalendarPage({
   searchParams: Promise<{ ym?: string; view?: string; d?: string }>;
 }) {
   const user = await requireUser();
-  const admin = isAdmin(user);
   const sp = await searchParams;
   const view = parseView(sp.view);
 
@@ -76,18 +75,8 @@ export default async function CalendarPage({
   // 互いに独立した4クエリを1波で並列取得（本番PostgreSQLの往復回数を削減）
   const [events, myVisits, sites, users] = await Promise.all([
     db.calendarEvent.findMany({
-      where: {
-        date: { gte: rangeStart, lt: rangeEnd },
-        ...(admin
-          ? {}
-          : {
-              OR: [
-                { ownerId: user.id },
-                { site: { assignments: { some: { userId: user.id } } } },
-                { participants: { some: { userId: user.id } } },
-              ],
-            }),
-      },
+      // 担当という区別は廃止。全員が全現場の予定を見られる。
+      where: { date: { gte: rangeStart, lt: rangeEnd } },
       include: {
         site: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true, avatarColor: true } },
@@ -102,9 +91,8 @@ export default async function CalendarPage({
       include: { site: { select: { id: true, name: true } } },
       orderBy: { date: "asc" },
     }),
-    // 予定追加用の現場候補（管理者は全件、スタッフは担当現場のみ）
+    // 予定追加用の現場候補：全員に全現場を表示（担当でなくても、登録済みの現場は誰でも選べる）
     db.site.findMany({
-      where: admin ? {} : { assignments: { some: { userId: user.id } } },
       select: { id: true, name: true, address: true },
       orderBy: { updatedAt: "desc" },
     }),

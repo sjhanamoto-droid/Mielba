@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { FileText, Plus } from "lucide-react";
-import { requireUser, isAdmin } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -14,7 +14,7 @@ export default async function SiteReportsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireUser();
+  await requireUser();
   const { id } = await params;
 
   const site = await db.site.findUnique({
@@ -22,15 +22,9 @@ export default async function SiteReportsPage({
     select: {
       id: true,
       name: true,
-      assignments: { select: { userId: true } },
     },
   });
   if (!site) notFound();
-
-  // 認可: 管理者以外かつ未割当の現場は 404（id 直打ち閲覧の防止）
-  if (!isAdmin(user) && !site.assignments.some((a) => a.userId === user.id)) {
-    notFound();
-  }
 
   const reports = await db.dailyReport.findMany({
     where: { siteId: id },

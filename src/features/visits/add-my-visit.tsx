@@ -5,10 +5,10 @@ import { Plus, X, AlertCircle, MapPin, Info } from "lucide-react";
 import { addMyVisit } from "./actions";
 import { cn } from "@/lib/utils";
 
-type SiteOpt = { id: string; name: string; assigned?: boolean };
+type SiteOpt = { id: string; name: string };
 
 // スタッフが「今日は別の現場にも行った」と自己申告して現場入りを追加する。
-// 候補は配属済みに限定せず、進行中（ACTIVE）の全現場（担当現場を上にグループ表示）。
+// 候補は進行中（ACTIVE）の全現場（担当の区別は廃止・フラット表示）。
 export function AddMyVisit({
   sites,
   dateStr,
@@ -19,9 +19,6 @@ export function AddMyVisit({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
-
-  const assigned = sites.filter((s) => s.assigned);
-  const others = sites.filter((s) => !s.assigned);
 
   // 候補ゼロでも導線は消さず、状況を案内する
   if (sites.length === 0) {
@@ -78,18 +75,7 @@ export function AddMyVisit({
         </button>
       </div>
 
-      {assigned.length > 0 && (
-        <>
-          <p className="px-1 pt-1 text-xs font-semibold text-ink-muted">担当現場</p>
-          {assigned.map(renderSite)}
-        </>
-      )}
-      {others.length > 0 && (
-        <>
-          <p className="px-1 pt-1 text-xs font-semibold text-ink-muted">その他の現場</p>
-          {others.map(renderSite)}
-        </>
-      )}
+      {sites.map(renderSite)}
 
       {err && (
         <div className="alert-danger flex items-center gap-2 px-3 py-2 text-xs font-medium">

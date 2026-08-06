@@ -121,15 +121,11 @@ export default async function HomePage() {
     provisionalSites,
     unreadNotifications,
   ] = await Promise.all([
-    // 担当現場（進行中）
+    // 進行中の現場（担当という区別は廃止。全員が全現場を見られる）
     db.site.findMany({
-      where: {
-        siteStatus: "ACTIVE",
-        ...(admin ? {} : { assignments: { some: { userId: user.id } } }),
-      },
+      where: { siteStatus: "ACTIVE" },
       include: {
         customer: { select: { name: true } },
-        assignments: { select: { userId: true } },
         createdBy: { select: { name: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -145,31 +141,15 @@ export default async function HomePage() {
       where: { userId: user.id, workDate: today },
       select: { id: true, siteId: true, status: true },
     }),
-    // 本日の予定
+    // 本日の予定（全員が全現場の予定を見られる）
     db.calendarEvent.findMany({
-      where: {
-        date: today,
-        ...(admin
-          ? {}
-          : { OR: [{ ownerId: user.id }, { site: { assignments: { some: { userId: user.id } } } }] }),
-      },
+      where: { date: today },
       include: { site: { select: { id: true, name: true } } },
       orderBy: [{ startTime: "asc" }],
     }),
-    // 今週の予定（週ストリップの出所色ドット用）
+    // 今週の予定（週ストリップの出所色ドット用・全員が全現場分）
     db.calendarEvent.findMany({
-      where: {
-        date: { gte: weekStart, lt: weekEnd },
-        ...(admin
-          ? {}
-          : {
-              OR: [
-                { ownerId: user.id },
-                { site: { assignments: { some: { userId: user.id } } } },
-                { participants: { some: { userId: user.id } } },
-              ],
-            }),
-      },
+      where: { date: { gte: weekStart, lt: weekEnd } },
       select: { id: true, date: true, source: true },
     }),
     // 今週の自分の現場入り
@@ -201,14 +181,9 @@ export default async function HomePage() {
     admin ? db.siteVisit.count({ where: { date: tomorrow } }) : Promise.resolve(0),
     // 統計（管理者向け）：調査中の現場数
     admin ? db.site.count({ where: { siteStatus: "SURVEY" } }) : Promise.resolve(0),
-    // 仮登録（本登録に必要な項目が未入力）の現場。管理者=全件 / 非管理者=自分が作成 or 担当
+    // 仮登録（本登録に必要な項目が未入力）の現場（全員に表示）
     db.site.findMany({
-      where: {
-        provisional: true,
-        ...(admin
-          ? {}
-          : { OR: [{ createdById: user.id }, { assignments: { some: { userId: user.id } } }] }),
-      },
+      where: { provisional: true },
       select: { id: true, name: true },
       orderBy: { updatedAt: "desc" },
       take: 20,
@@ -735,7 +710,7 @@ export default async function HomePage() {
 
             {/* 統計タイル（現場・カレンダー中心） */}
             <section className="grid grid-cols-3 gap-2.5 lg:gap-4">
-              <StatTile label="担当の進行中" value={activeSites.length} tone="brand" icon={HardHat} href="/sites?status=ACTIVE" />
+              <StatTile label="進行中の現場" value={activeSites.length} tone="brand" icon={HardHat} href="/sites?status=ACTIVE" />
               {admin ? (
                 <StatTile label="現調中" value={surveyCount} tone="neutral" icon={ClipboardList} href="/sites?status=SURVEY" />
               ) : (
@@ -803,16 +778,16 @@ export default async function HomePage() {
               </section>
             )}
 
-            {/* 担当現場 */}
+            {/* 進行中の現場 */}
             <section className="space-y-2.5">
               <SectionTitle action={<Link href="/sites" className="text-xs font-semibold text-brand-600">すべて</Link>}>
-                {admin ? "進行中の現場" : "担当現場"}
+                進行中の現場
               </SectionTitle>
               {activeSites.length === 0 ? (
                 <EmptyState
                   icon={<HardHat className="h-6 w-6" />}
-                  title="担当の進行中現場はありません"
-                  description="現場を作成するか、割り当てられると表示されます"
+                  title="進行中の現場はありません"
+                  description="現場を作成すると表示されます"
                   action={<LinkButton href="/sites/new" size="sm"><Plus className="h-4 w-4" />現場を作成</LinkButton>}
                 />
               ) : (
