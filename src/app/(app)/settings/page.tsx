@@ -7,7 +7,6 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { SectionTitle } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MaterialsManager } from "@/features/settings/materials-manager";
-import { PushSubscribe } from "@/features/notifications/push-subscribe";
 
 function SettingRow({
   href, icon, title, desc,
@@ -89,18 +88,16 @@ export default async function SettingsPage() {
             />
           </section>
 
-          {/* 通知（アプリ内通知センター＋端末プッシュ通知） */}
+          {/* 通知（アプリ内通知センターのみ。端末プッシュのオン/オフは
+              アカウント設定の最下部に配置し、気軽にオフにされないようにする） */}
           <section className="space-y-2.5">
             <SectionTitle>通知</SectionTitle>
-            <div className="space-y-2.5">
-              <SettingRow
-                href="/notifications"
-                icon={<Bell className="h-5 w-5" />}
-                title="通知センター"
-                desc="現場・日報のお知らせを確認"
-              />
-              <PushSubscribe />
-            </div>
+            <SettingRow
+              href="/notifications"
+              icon={<Bell className="h-5 w-5" />}
+              title="通知センター"
+              desc="現場・日報のお知らせを確認"
+            />
           </section>
 
           {/* 画面の明るさ（テーマ切替） */}
