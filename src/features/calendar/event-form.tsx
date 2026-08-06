@@ -7,7 +7,11 @@ import { createEvent, updateEvent } from "./actions";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
-import { EVENT_CATEGORY_OPTIONS, EVENT_CATEGORY_LABEL } from "@/lib/constants";
+import {
+  EVENT_CATEGORY_OPTIONS,
+  EVENT_CATEGORY_LABEL,
+  isNonWorkEventCategory,
+} from "@/lib/constants";
 import { cn, toDateInputValue } from "@/lib/utils";
 
 type SiteOption = { id: string; name: string; address?: string | null };
@@ -62,6 +66,7 @@ export function EventForm({
   const [allDay, setAllDay] = useState(event?.allDay ?? false);
   const [error, setError] = useState<string | null>(null);
   const [siteId, setSiteId] = useState(event?.site?.id ?? "");
+  const [category, setCategory] = useState(event?.category ?? "");
   const [location, setLocation] = useState(event?.location ?? "");
   const [locationTouched, setLocationTouched] = useState(isEdit);
   const [participants, setParticipants] = useState<Set<string>>(
@@ -167,12 +172,22 @@ export function EventForm({
 
           {/* カテゴリー */}
           <Field label="カテゴリー" htmlFor="category" hint="任意">
-            <Select id="category" name="category" defaultValue={event?.category ?? ""}>
+            <Select
+              id="category"
+              name="category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
               <option value="">未分類</option>
               {EVENT_CATEGORY_OPTIONS.map((c) => (
                 <option key={c} value={c}>{EVENT_CATEGORY_LABEL[c]}</option>
               ))}
             </Select>
+            {siteId && isNonWorkEventCategory(category) && (
+              <p className="mt-1.5 text-xs text-ink-muted">
+                「休み」「その他」は現場作業ではないため、現場を選んでも日報には連動しません。
+              </p>
+            )}
           </Field>
 
           {/* 件名（任意） */}

@@ -201,6 +201,12 @@ export const EVENT_CATEGORY_COLOR: Partial<Record<EventCategory, string>> = {
   HOLIDAY: "#64748b",
 };
 
+// 「休み」「その他」は現場作業ではないため、現場を選んでも現場入り(=日報義務)を作らない。
+export const NON_WORK_EVENT_CATEGORIES: EventCategory[] = ["HOLIDAY", "OTHER"];
+export function isNonWorkEventCategory(category: string | null | undefined): boolean {
+  return !!category && NON_WORK_EVENT_CATEGORIES.includes(category as EventCategory);
+}
+
 // ── TODO ──
 export type TodoStatus = "OPEN" | "IN_PROGRESS" | "DONE";
 export const TODO_STATUS_LABEL: Record<TodoStatus, string> = {

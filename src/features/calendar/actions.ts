@@ -5,7 +5,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { dateFromKey } from "@/lib/date";
-import { EVENT_CATEGORY_LABEL, type EventCategory } from "@/lib/constants";
+import {
+  EVENT_CATEGORY_LABEL,
+  isNonWorkEventCategory,
+  type EventCategory,
+} from "@/lib/constants";
 
 // "YYYY-MM-DD" → ローカル午前0時（SiteVisit/日報の日付と揃える）。
 // 日付ユーティリティは src/lib/date.ts に統一（dateFromKey が旧 parseLocalDate と同一挙動）。
@@ -118,8 +122,9 @@ export async function createEvent(
         data: participantIds.map((uid) => ({ eventId: event.id, userId: uid })),
       });
 
-      // 現場予定なら、参加者ごとに「現場入り(SiteVisit)」を作成 → その日の日報に連動
-      if (siteId) {
+      // 現場予定なら、参加者ごとに「現場入り(SiteVisit)」を作成 → その日の日報に連動。
+      // ただし「休み」「その他」は現場作業ではないため、現場を選んでも現場入りは作らない。
+      if (siteId && !isNonWorkEventCategory(d.category)) {
         await ensureVisits(siteId, participantIds, date, user.id);
       }
     }
@@ -202,17 +207,21 @@ export async function updateEvent(
       });
     }
 
-    // 現場入り(SiteVisit)の同期
-    if (siteId) {
+    // 現場入り(SiteVisit)の同期。「休み」「その他」は現場作業ではないため作らない。
+    const nonWork = isNonWorkEventCategory(d.category);
+    if (siteId && !nonWork) {
       await ensureVisits(siteId, participantIds, date, user.id);
     }
-    // 同一現場・同一日で外れた参加者は現場入りも解除（日報が無い場合のみ）
+    // 同一現場・同一日で現場入りを解除すべき人（日報が無い場合のみ）:
+    //  - 通常: 参加者から外れた人
+    //  - 休み/その他になった予定: （新旧）参加者全員（現場作業ではないので実績以外は解除）
     const oldSiteId = existing.siteId;
     const sameContext = oldSiteId === siteId && existing.date.getTime() === date.getTime();
     if (sameContext && oldSiteId) {
-      const removed = existing.participants
-        .map((p) => p.userId)
-        .filter((uid) => !participantIds.includes(uid));
+      const prevParticipantIds = existing.participants.map((p) => p.userId);
+      const removed = nonWork
+        ? [...new Set([...prevParticipantIds, ...participantIds])]
+        : prevParticipantIds.filter((uid) => !participantIds.includes(uid));
       if (removed.length > 0) {
         // 日報がある人は「行った実績」なので現場入りを残す
         const reports = await db.dailyReport.findMany({
