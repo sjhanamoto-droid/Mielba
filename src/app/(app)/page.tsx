@@ -181,9 +181,9 @@ export default async function HomePage() {
     admin ? db.siteVisit.count({ where: { date: tomorrow } }) : Promise.resolve(0),
     // 統計（管理者向け）：調査中の現場数
     admin ? db.site.count({ where: { siteStatus: "SURVEY" } }) : Promise.resolve(0),
-    // 仮登録（本登録に必要な項目が未入力）の現場（全員に表示）
+    // 仮登録（本登録に必要な項目が未入力）の現場。作成した本人にだけ通知する
     db.site.findMany({
-      where: { provisional: true },
+      where: { provisional: true, createdById: user.id },
       select: { id: true, name: true },
       orderBy: { updatedAt: "desc" },
       take: 20,
