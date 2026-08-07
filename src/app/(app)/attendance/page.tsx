@@ -41,16 +41,29 @@ export default async function AttendancePage({
   const monthLabel = `${y}年${m}月`;
   const isCurrent = ym === jstMonthKey();
 
-  // 対象月の全日報を取得し、ユーザー×月で稼働時間（Σ end-start）と日数を集計する。
-  const reports = await db.dailyReport.findMany({
-    where: { workDate: range },
-    select: {
-      userId: true,
-      startTime: true,
-      endTime: true,
-      user: { select: { name: true, avatarColor: true } },
-    },
-  });
+  // 対象月の全日報＋「事務所作業」の予定を取得し、ユーザー×月で稼働時間（Σ end-start）と日数を集計する。
+  // 事務所作業（個人予定・日報なし）も稼働時間に計上する（予定の開始〜終了、終日は 8:00-17:00）。
+  const [reports, officeEvents] = await Promise.all([
+    db.dailyReport.findMany({
+      where: { workDate: range },
+      select: {
+        userId: true,
+        startTime: true,
+        endTime: true,
+        user: { select: { name: true, avatarColor: true } },
+      },
+    }),
+    db.calendarEvent.findMany({
+      where: { category: "OFFICE", date: range, ownerId: { not: null } },
+      select: {
+        ownerId: true,
+        startTime: true,
+        endTime: true,
+        allDay: true,
+        owner: { select: { name: true, avatarColor: true } },
+      },
+    }),
+  ]);
 
   const byUser = new Map<string, Row>();
   for (const r of reports) {
@@ -66,6 +79,23 @@ export default async function AttendancePage({
       byUser.set(r.userId, row);
     }
     row.minutes += workMinutes(r.startTime, r.endTime);
+    row.days += 1;
+  }
+  // 事務所作業（日報なし）の稼働を加算。所有者（本人）に計上する。
+  for (const e of officeEvents) {
+    const uid = e.ownerId!;
+    let row = byUser.get(uid);
+    if (!row) {
+      row = {
+        userId: uid,
+        name: e.owner?.name ?? "—",
+        avatarColor: e.owner?.avatarColor ?? "#64748b",
+        minutes: 0,
+        days: 0,
+      };
+      byUser.set(uid, row);
+    }
+    row.minutes += e.allDay ? workMinutes("08:00", "17:00") : workMinutes(e.startTime, e.endTime);
     row.days += 1;
   }
 
@@ -130,8 +160,8 @@ export default async function AttendancePage({
             {rows.length === 0 ? (
               <EmptyState
                 icon={<Clock className="h-6 w-6" />}
-                title="この月の日報はまだありません"
-                description="日報が提出されると、ここに稼働時間が集計されます。"
+                title="この月の稼働はまだありません"
+                description="日報の提出、または「事務所作業」の予定を入れると、ここに稼働時間が集計されます。"
               />
             ) : (
               <Card className="divide-y divide-line">
@@ -155,8 +185,8 @@ export default async function AttendancePage({
           </section>
 
           <p className="px-1 text-[11px] leading-relaxed text-ink-faint">
-            稼働時間は各日報の作業開始〜終了（Σ 終了−開始）から算出します。日跨ぎは想定せず、
-            時刻が未設定・異常な場合は 0 として扱います。
+            稼働時間は各日報の作業開始〜終了（Σ 終了−開始）に、「事務所作業」の予定（終日は 8:00〜17:00）を
+            加えて算出します。日跨ぎは想定せず、時刻が未設定・異常な場合は 0 として扱います。
           </p>
         </div>
       </PageContainer>

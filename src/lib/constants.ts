@@ -103,27 +103,29 @@ export const SITE_STATUS_COLOR: Record<SiteStatus, string> = {
   PAST: "past",
 };
 
-// 進捗ステータスの5段階（現調→見積り→受注→施工中→完了）。カード/詳細で現在地のみ点灯表示する。
-export const SITE_STAGES = ["現調", "見積り", "受注", "施工中", "完了"] as const;
+// 進捗ステータスの6工程（配線→撤去→調査→器具付→段取り→完了）。カード/詳細で現在地のみ点灯表示する。
+// ※内部保存は projectStatus(6値) を各工程のマーカーに流用し、完了のみ siteStatus=PAST（過去）にする。
+export const SITE_STAGES = ["配線", "撤去", "調査", "器具付", "段取り", "完了"] as const;
 
-// siteStatus(SURVEY|ACTIVE|PAST) と projectStatus から現在地(0-4)を導く純関数。
+// siteStatus(ACTIVE|PAST) と projectStatus から現在地(0-5)を導く純関数。
 // サーバー/クライアント双方から呼ぶため constants に置く。
 export function siteStageIndex(siteStatus: string, projectStatus: string): number {
-  // 完了を最優先（過去 or 完工/完了）
-  if (siteStatus === "PAST" || projectStatus === "COMPLETED" || projectStatus === "CLOSED") return 4;
-  // 現地調査フェーズ
-  if (siteStatus === "SURVEY") return 0;
-  // 進行中は projectStatus で判定
+  if (siteStatus === "PAST") return 5; // 完了（過去）
   switch (projectStatus) {
     case "ESTIMATING":
-      return 1; // 見積り
+      return 0; // 配線
     case "ORDERED":
-      return 2; // 受注
+      return 1; // 撤去
     case "STARTED":
+      return 2; // 調査
     case "IN_PROGRESS":
-      return 3; // 施工中
+      return 3; // 器具付
+    case "COMPLETED":
+      return 4; // 段取り
+    case "CLOSED":
+      return 5; // 完了
     default:
-      return 3; // 進行中で区分不明なら施工中扱い
+      return 0; // 区分不明は配線（先頭）
   }
 }
 
@@ -179,7 +181,7 @@ export const EVENT_SOURCE_COLOR: Record<EventSource, string> = {
 };
 
 // 予定のカテゴリー（内容の種別）
-export type EventCategory = "WORK" | "MEETING" | "INSPECTION" | "DELIVERY" | "HOLIDAY" | "OTHER";
+export type EventCategory = "WORK" | "MEETING" | "INSPECTION" | "DELIVERY" | "HOLIDAY" | "OTHER" | "OFFICE";
 export const EVENT_CATEGORY_LABEL: Record<EventCategory, string> = {
   WORK: "作業",
   MEETING: "打合せ",
@@ -187,6 +189,7 @@ export const EVENT_CATEGORY_LABEL: Record<EventCategory, string> = {
   DELIVERY: "搬入・納品",
   HOLIDAY: "休み",
   OTHER: "その他",
+  OFFICE: "事務所作業",
 };
 export const EVENT_CATEGORY_OPTIONS: EventCategory[] = [
   "WORK",
@@ -199,10 +202,12 @@ export const EVENT_CATEGORY_OPTIONS: EventCategory[] = [
 // カテゴリー別の識別色（未指定は出所色を使う）。休みは無彩色のスレートで控えめに区別する。
 export const EVENT_CATEGORY_COLOR: Partial<Record<EventCategory, string>> = {
   HOLIDAY: "#64748b",
+  OFFICE: "#6366f1",
 };
 
-// 「休み」「その他」は現場作業ではないため、現場を選んでも現場入り(=日報義務)を作らない。
-export const NON_WORK_EVENT_CATEGORIES: EventCategory[] = ["HOLIDAY", "OTHER"];
+// 「休み」「その他」「事務所作業」は現場作業ではないため、現場を選んでも現場入り(=日報義務)を作らない。
+// ※事務所作業は個人予定用。日報は不要だが稼働時間には計上する（稼働集計側で別途加算）。
+export const NON_WORK_EVENT_CATEGORIES: EventCategory[] = ["HOLIDAY", "OTHER", "OFFICE"];
 export function isNonWorkEventCategory(category: string | null | undefined): boolean {
   return !!category && NON_WORK_EVENT_CATEGORIES.includes(category as EventCategory);
 }

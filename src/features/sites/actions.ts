@@ -10,14 +10,6 @@ import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
 
 // ── 区分の許容値（@/lib/constants の型に対応） ──
 const PROJECT_TYPES = ["REFORM", "RENOVATION", "NEWBUILD", "MAINTENANCE"] as const;
-const PROJECT_STATUSES = [
-  "ESTIMATING",
-  "ORDERED",
-  "STARTED",
-  "IN_PROGRESS",
-  "COMPLETED",
-  "CLOSED",
-] as const;
 const SITE_STATUSES = ["SURVEY", "ACTIVE", "PAST"] as const;
 const BILLING_STATUSES = ["UNBILLED", "BILLED", "PARTIAL", "PAID"] as const;
 
@@ -49,8 +41,6 @@ const siteSchema = z.object({
   projectCode: optionalText,
   constructionCode: optionalText,
   projectType: z.enum(PROJECT_TYPES),
-  projectStatus: z.enum(PROJECT_STATUSES),
-  siteStatus: z.enum(SITE_STATUSES),
   billingStatus: z.preprocess(
     (v) => (v == null || (typeof v === "string" && v.trim() === "") ? undefined : v),
     z.enum(BILLING_STATUSES).optional(),
@@ -67,6 +57,8 @@ const siteSchema = z.object({
   keyboxPlace: optionalText,
   keyboxNoneReason: optionalText,
   keyboxPhotoNoneReason: optionalText,
+  drawingNoneReason: optionalText,
+  scheduleNoneReason: optionalText,
   targetManDays: optionalNonNegInt,
   receivedDate: optionalDate,
   contractNumber: optionalText,
@@ -91,8 +83,6 @@ function parseSiteForm(formData: FormData) {
     projectCode: formData.get("projectCode"),
     constructionCode: formData.get("constructionCode"),
     projectType: formData.get("projectType"),
-    projectStatus: formData.get("projectStatus"),
-    siteStatus: formData.get("siteStatus"),
     billingStatus: formData.get("billingStatus"),
     locationName: formData.get("locationName"),
     address: formData.get("address"),
@@ -103,6 +93,8 @@ function parseSiteForm(formData: FormData) {
     keyboxPlace: formData.get("keyboxPlace"),
     keyboxNoneReason: formData.get("keyboxNoneReason"),
     keyboxPhotoNoneReason: formData.get("keyboxPhotoNoneReason"),
+    drawingNoneReason: formData.get("drawingNoneReason"),
+    scheduleNoneReason: formData.get("scheduleNoneReason"),
     targetManDays: formData.get("targetManDays"),
     receivedDate: formData.get("receivedDate"),
     contractNumber: formData.get("contractNumber"),
@@ -125,8 +117,6 @@ function toData(d: z.infer<typeof siteSchema>) {
     projectCode: d.projectCode ?? null,
     constructionCode: d.constructionCode ?? null,
     projectType: d.projectType,
-    projectStatus: d.projectStatus,
-    siteStatus: d.siteStatus,
     billingStatus: d.billingStatus ?? null,
     locationName: d.locationName ?? null,
     address: d.address ?? null,
@@ -137,6 +127,8 @@ function toData(d: z.infer<typeof siteSchema>) {
     keyboxPlace: d.keyboxPlace ?? null,
     keyboxNoneReason: d.keyboxNoneReason ?? null,
     keyboxPhotoNoneReason: d.keyboxPhotoNoneReason ?? null,
+    drawingNoneReason: d.drawingNoneReason ?? null,
+    scheduleNoneReason: d.scheduleNoneReason ?? null,
     targetManDays: d.targetManDays ?? null,
     receivedDate: toDate(d.receivedDate),
     contractNumber: d.contractNumber ?? null,
@@ -191,12 +183,15 @@ function computeProvisional(
         : false;
   // 写真は1枚以上、または「撮れない理由」があれば本登録OK
   const hasKeyboxPhoto = countKind("KEYBOX") > 0 || !!d.keyboxPhotoNoneReason;
-  const hasDocument = countKind("DRAWING") + countKind("SCHEDULE") > 0;
+  // 図面・工程表は各々「写真1枚以上、または無い理由」で満たす。両方が必要。
+  const hasDrawing = countKind("DRAWING") > 0 || !!d.drawingNoneReason;
+  const hasSchedule = countKind("SCHEDULE") > 0 || !!d.scheduleNoneReason;
+  const hasDocument = hasDrawing && hasSchedule;
   const complete = hasAddress && keyboxOk && hasKeyboxPhoto && hasDocument;
   return !complete;
 }
 
-// キーBOX「無し」/写真「撮れない」を選んだのに理由が空なら保存させない（ハード必須）。
+// キーBOX「無し」/写真「なし」/図面「なし」を選んだのに理由が空なら保存させない（ハード必須）。
 function keyboxReasonError(
   d: z.infer<typeof siteSchema>,
   formData: FormData,
@@ -206,6 +201,12 @@ function keyboxReasonError(
   }
   if (formData.get("keyboxPhotoStatus") === "NONE" && !d.keyboxPhotoNoneReason) {
     return "キーBOX写真が無い理由を入力してください";
+  }
+  if (formData.get("drawingStatus") === "NONE" && !d.drawingNoneReason) {
+    return "図面が無い理由を入力してください";
+  }
+  if (formData.get("scheduleStatus") === "NONE" && !d.scheduleNoneReason) {
+    return "工程表が無い理由を入力してください";
   }
   return null;
 }
@@ -257,7 +258,14 @@ export async function createSite(formData: FormData) {
   try {
     const site = await db.$transaction(async (tx) => {
       const created = await tx.site.create({
-        data: { ...toData(parsed.data), createdById: user.id, provisional },
+        // 新規は進捗「配線」＝進行中(ACTIVE)＋projectStatus=ESTIMATING で開始する
+        data: {
+          ...toData(parsed.data),
+          createdById: user.id,
+          provisional,
+          siteStatus: "ACTIVE",
+          projectStatus: "ESTIMATING",
+        },
       });
       await applySitePhotoSets(tx, created.id, photoSets);
       return created;
@@ -346,15 +354,17 @@ export async function deleteSite(siteId: string) {
   redirect(`/sites?toast=${encodeURIComponent("現場を削除しました")}`);
 }
 
-// ── ステータス変更（SURVEY / ACTIVE / PAST） ──
-// 進捗ステージ(0-4: 現調/見積り/受注/施工中/完了)を siteStatus + projectStatus に反映。
+// ── 進捗ステージ変更 ──
+// 進捗6工程(0-5: 配線/撤去/調査/器具付/段取り/完了)を siteStatus + projectStatus に反映。
+// projectStatus(6値) を各工程のマーカーに流用し、完了のみ siteStatus=PAST（過去）にする。
 // 管理者が現場詳細でタップして手動変更する。
 const STAGE_TO_STATUS: { siteStatus: string; projectStatus: string }[] = [
-  { siteStatus: "SURVEY", projectStatus: "ESTIMATING" }, // 0 現調
-  { siteStatus: "ACTIVE", projectStatus: "ESTIMATING" }, // 1 見積り
-  { siteStatus: "ACTIVE", projectStatus: "ORDERED" }, // 2 受注
-  { siteStatus: "ACTIVE", projectStatus: "IN_PROGRESS" }, // 3 施工中
-  { siteStatus: "PAST", projectStatus: "COMPLETED" }, // 4 完了
+  { siteStatus: "ACTIVE", projectStatus: "ESTIMATING" }, // 0 配線
+  { siteStatus: "ACTIVE", projectStatus: "ORDERED" }, // 1 撤去
+  { siteStatus: "ACTIVE", projectStatus: "STARTED" }, // 2 調査
+  { siteStatus: "ACTIVE", projectStatus: "IN_PROGRESS" }, // 3 器具付
+  { siteStatus: "ACTIVE", projectStatus: "COMPLETED" }, // 4 段取り
+  { siteStatus: "PAST", projectStatus: "CLOSED" }, // 5 完了
 ];
 
 export async function setSiteStage(

@@ -28,14 +28,12 @@ import { todayRange } from "@/lib/date";
 import { fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
 import {
   PROJECT_TYPE_LABEL,
-  PROJECT_STATUS_LABEL,
   BILLING_STATUS_LABEL,
   EVENT_SOURCE_LABEL,
   EVENT_SOURCE_COLOR,
   labelOf,
   siteStageIndex,
   type ProjectType,
-  type ProjectStatus,
   type BillingStatus,
   type EventSource,
 } from "@/lib/constants";
@@ -152,7 +150,6 @@ export default async function SiteDetailPage({
   }
 
   const projectType = labelOf(PROJECT_TYPE_LABEL, site.projectType as ProjectType);
-  const projectStatus = labelOf(PROJECT_STATUS_LABEL, site.projectStatus as ProjectStatus);
 
   return (
     <div>
@@ -202,7 +199,6 @@ export default async function SiteDetailPage({
                 仮登録
               </Badge>
             )}
-            <Badge tone="brand">{projectStatus}</Badge>
             <Badge tone="neutral">{projectType}</Badge>
           </div>
         </div>
@@ -379,10 +375,19 @@ export default async function SiteDetailPage({
         </section>
 
         {/* ⓪-3 図面・工程表 */}
-        {hasDocuments && (
+        {(hasDocuments || !!site.drawingNoneReason || !!site.scheduleNoneReason) && (
           <section className="space-y-2.5">
             <SectionTitle>図面・工程表</SectionTitle>
             <Card className="space-y-4 p-4">
+              {drawingImages.length === 0 && drawingPdfs.length === 0 && site.drawingNoneReason && (
+                <div className="rounded-xl bg-surface-sunken p-3.5">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                    <FileText className="h-4 w-4" />
+                    図面が無い理由
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-ink-soft">{site.drawingNoneReason}</p>
+                </div>
+              )}
               {(drawingImages.length > 0 || drawingPdfs.length > 0) && (
                 <div className="space-y-2">
                   <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
@@ -427,6 +432,15 @@ export default async function SiteDetailPage({
                   ))}
                 </div>
               )}
+              {scheduleImages.length === 0 && schedulePdfs.length === 0 && site.scheduleNoneReason && (
+                <div className="rounded-xl bg-surface-sunken p-3.5">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                    <CalendarRange className="h-4 w-4" />
+                    工程表が無い理由
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-ink-soft">{site.scheduleNoneReason}</p>
+                </div>
+              )}
             </Card>
           </section>
         )}
@@ -439,7 +453,6 @@ export default async function SiteDetailPage({
               <DataRow label="案件コード" value={site.projectCode} />
               <DataRow label="工事コード" value={site.constructionCode} />
               <DataRow label="種別" value={projectType} />
-              <DataRow label="案件ステータス" value={projectStatus} />
               <DataRow label="受注日" value={fmtDate(site.receivedDate)} />
               <DataRow label="契約書番号" value={site.contractNumber} />
               <DataRow label="作成者" value={site.createdBy?.name} />

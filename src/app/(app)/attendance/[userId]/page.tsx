@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ChevronRight, Clock, HardHat } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, HardHat, Briefcase } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { jstMonthKey, jstDateKey, dateFromKey, monthRangeForKey, addMonthsKey } from "@/lib/date";
@@ -22,12 +22,13 @@ function parseMonthKey(s: string | undefined): string {
 }
 
 type DayRow = {
-  reportId: string;
-  siteId: string | null;
+  key: string;
+  reportId: string | null; // 日報 → id / 事務所作業 → null（リンクなし）
   siteName: string;
   start: string;
   end: string;
   minutes: number;
+  office: boolean;
 };
 
 // 月別・人別 稼働時間の「日別内訳」。どの現場で何時間働いたかを1日ずつ表示する。
@@ -46,7 +47,7 @@ export default async function AttendanceUserPage({
   const monthLabel = `${y}年${m}月`;
   const isCurrent = ym === jstMonthKey();
 
-  const [target, reports] = await Promise.all([
+  const [target, reports, officeEvents] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { name: true, avatarColor: true } }),
     db.dailyReport.findMany({
       where: { userId, workDate: range },
@@ -59,6 +60,12 @@ export default async function AttendanceUserPage({
       },
       orderBy: [{ workDate: "asc" }, { startTime: "asc" }],
     }),
+    // 事務所作業（本人所有の個人予定・日報なし）。稼働時間に計上する。
+    db.calendarEvent.findMany({
+      where: { ownerId: userId, category: "OFFICE", date: range },
+      select: { id: true, date: true, startTime: true, endTime: true, allDay: true },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    }),
   ]);
   if (!target) notFound();
 
@@ -70,17 +77,37 @@ export default async function AttendanceUserPage({
     const entry = dayMap.get(key) ?? { minutes: 0, rows: [] };
     entry.minutes += minutes;
     entry.rows.push({
+      key: r.id,
       reportId: r.id,
-      siteId: r.site?.id ?? null,
       siteName: r.site?.name ?? "（現場なし）",
       start: r.startTime,
       end: r.endTime,
       minutes,
+      office: false,
+    });
+    dayMap.set(key, entry);
+  }
+  // 事務所作業（日報なし）を日別内訳に加える。終日は 8:00-17:00 で計上。
+  for (const e of officeEvents) {
+    const key = jstDateKey(e.date);
+    const start = e.allDay ? "08:00" : e.startTime ?? "";
+    const end = e.allDay ? "17:00" : e.endTime ?? "";
+    const minutes = e.allDay ? workMinutes("08:00", "17:00") : workMinutes(e.startTime, e.endTime);
+    const entry = dayMap.get(key) ?? { minutes: 0, rows: [] };
+    entry.minutes += minutes;
+    entry.rows.push({
+      key: e.id,
+      reportId: null,
+      siteName: "事務所作業",
+      start,
+      end,
+      minutes,
+      office: true,
     });
     dayMap.set(key, entry);
   }
   const days = [...dayMap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
-  const totalMinutes = reports.reduce((s, r) => s + workMinutes(r.startTime, r.endTime), 0);
+  const totalMinutes = [...dayMap.values()].reduce((s, d) => s + d.minutes, 0);
 
   const monthHref = (targetYm: string) => `/attendance/${userId}?ym=${targetYm}`;
 
@@ -128,8 +155,8 @@ export default async function AttendanceUserPage({
           {days.length === 0 ? (
             <EmptyState
               icon={<Clock className="h-6 w-6" />}
-              title="この月の日報はまだありません"
-              description="日報が提出されると、日ごとの稼働がここに表示されます。"
+              title="この月の稼働はまだありません"
+              description="日報の提出、または「事務所作業」の予定を入れると、日ごとの稼働がここに表示されます。"
             />
           ) : (
             <div className="space-y-3">
@@ -140,27 +167,44 @@ export default async function AttendanceUserPage({
                     <p className="text-sm font-bold text-brand-600 tnum">{fmtWorkMinutes(d.minutes)}</p>
                   </div>
                   <Card className="divide-y divide-line">
-                    {d.rows.map((row) => (
-                      <Link
-                        key={row.reportId}
-                        href={`/reports/${row.reportId}`}
-                        className="flex items-center gap-3 px-4 py-3 tap-row"
-                      >
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                          <HardHat className="h-5 w-5" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold text-ink">{row.siteName}</p>
-                          <p className="text-[11px] text-ink-muted tnum">
-                            {row.start}〜{row.end}
+                    {d.rows.map((row) =>
+                      row.office ? (
+                        <div key={row.key} className="flex items-center gap-3 px-4 py-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
+                            <Briefcase className="h-5 w-5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-ink">{row.siteName}</p>
+                            <p className="text-[11px] text-ink-muted tnum">
+                              {row.start}〜{row.end}
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-sm font-bold text-ink tnum">
+                            {fmtWorkMinutes(row.minutes)}
                           </p>
                         </div>
-                        <p className="shrink-0 text-sm font-bold text-ink tnum">
-                          {fmtWorkMinutes(row.minutes)}
-                        </p>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
-                      </Link>
-                    ))}
+                      ) : (
+                        <Link
+                          key={row.key}
+                          href={`/reports/${row.reportId}`}
+                          className="flex items-center gap-3 px-4 py-3 tap-row"
+                        >
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                            <HardHat className="h-5 w-5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-ink">{row.siteName}</p>
+                            <p className="text-[11px] text-ink-muted tnum">
+                              {row.start}〜{row.end}
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-sm font-bold text-ink tnum">
+                            {fmtWorkMinutes(row.minutes)}
+                          </p>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+                        </Link>
+                      ),
+                    )}
                   </Card>
                 </div>
               ))}
@@ -168,7 +212,7 @@ export default async function AttendanceUserPage({
           )}
 
           <p className="px-1 text-[11px] leading-relaxed text-ink-faint">
-            各行は日報の作業時間（終了−開始）です。タップすると日報を開けます。日跨ぎは想定せず、時刻が未設定・異常な場合は 0 として扱います。
+            各行は日報の作業時間（終了−開始）です。「事務所作業」の予定も稼働に含みます（終日は 8:00〜17:00）。日跨ぎは想定せず、時刻が未設定・異常な場合は 0 として扱います。
           </p>
         </div>
       </PageContainer>

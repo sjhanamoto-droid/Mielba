@@ -11,6 +11,7 @@ import {
   EVENT_CATEGORY_OPTIONS,
   EVENT_CATEGORY_LABEL,
   isNonWorkEventCategory,
+  type EventCategory,
 } from "@/lib/constants";
 import { cn, toDateInputValue } from "@/lib/utils";
 
@@ -73,9 +74,16 @@ export function EventForm({
     new Set(event?.participants.map((p) => p.id) ?? []),
   );
 
+  // 個人予定（現場なし）のときは「事務所作業」をカテゴリー先頭に出す。現場予定では出さない。
+  const categoryOptions: EventCategory[] = siteId
+    ? EVENT_CATEGORY_OPTIONS
+    : ["OFFICE", ...EVENT_CATEGORY_OPTIONS];
+
   function onSiteChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const id = e.target.value;
     setSiteId(id);
+    // 現場を選んだら「事務所作業」は対象外なので選択を解除する
+    if (id && category === "OFFICE") setCategory("");
     if (!locationTouched) {
       const site = sites.find((s) => s.id === id);
       setLocation(site?.address ?? "");
@@ -179,7 +187,7 @@ export function EventForm({
               onChange={(e) => setCategory(e.target.value)}
             >
               <option value="">未分類</option>
-              {EVENT_CATEGORY_OPTIONS.map((c) => (
+              {categoryOptions.map((c) => (
                 <option key={c} value={c}>{EVENT_CATEGORY_LABEL[c]}</option>
               ))}
             </Select>

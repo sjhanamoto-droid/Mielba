@@ -13,12 +13,8 @@ import { buttonClass } from "@/components/ui/button";
 import { cn, toDateInputValue } from "@/lib/utils";
 import {
   PROJECT_TYPE_LABEL,
-  PROJECT_STATUS_LABEL,
-  PROJECT_STATUS_ORDER,
-  SITE_STATUS_LABEL,
   BILLING_STATUS_LABEL,
   type ProjectType,
-  type SiteStatus,
   type BillingStatus,
 } from "@/lib/constants";
 
@@ -44,6 +40,8 @@ export type SiteFormData = {
   keyboxPlace: string | null;
   keyboxNoneReason: string | null;
   keyboxPhotoNoneReason: string | null;
+  drawingNoneReason: string | null;
+  scheduleNoneReason: string | null;
   targetManDays: number | null;
   finalManDays: number | null;
   receivedDate: Date | string | null;
@@ -65,7 +63,6 @@ export type SiteFormPhoto = SitePhotoInit & { kind: string };
 type FormState = { error?: string };
 
 const PROJECT_TYPES: ProjectType[] = ["REFORM", "RENOVATION", "NEWBUILD", "MAINTENANCE"];
-const SITE_STATUSES: SiteStatus[] = ["SURVEY", "ACTIVE", "PAST"];
 const BILLING_STATUSES: BillingStatus[] = ["UNBILLED", "BILLED", "PARTIAL", "PAID"];
 
 // SitePhotoField の hidden JSON（{id} 維持 or {dataUrl,...} 新規の配列）から枚数を数える。
@@ -128,6 +125,14 @@ export function SiteForm({
   const [keyboxPhotoStatus, setKeyboxPhotoStatus] = useState<"HAS" | "NONE">(
     site?.keyboxPhotoNoneReason ? "NONE" : "HAS",
   );
+  // 図面 あり(HAS)/なし(NONE) の切替（既存の「無い理由」があれば NONE 初期化）
+  const [drawingStatus, setDrawingStatus] = useState<"HAS" | "NONE">(
+    site?.drawingNoneReason ? "NONE" : "HAS",
+  );
+  // 工程表 あり(HAS)/なし(NONE) の切替
+  const [scheduleStatus, setScheduleStatus] = useState<"HAS" | "NONE">(
+    site?.scheduleNoneReason ? "NONE" : "HAS",
+  );
   // クライアント側のハード必須エラー（サーバ state.error とは別に即時表示する）
   const [clientError, setClientError] = useState<string | null>(null);
 
@@ -150,8 +155,17 @@ export function SiteForm({
       keyboxPhotoStatus === "HAS"
         ? countPhotosField(fd.get("keyboxPhotos")) > 0
         : keyboxPhotoNoneReason !== "";
-    const hasDocument =
-      countPhotosField(fd.get("drawingPhotos")) + countPhotosField(fd.get("schedulePhotos")) > 0;
+    const drawingNoneReason = ((fd.get("drawingNoneReason") as string | null) ?? "").trim();
+    const scheduleNoneReason = ((fd.get("scheduleNoneReason") as string | null) ?? "").trim();
+    const hasDrawing =
+      drawingStatus === "HAS"
+        ? countPhotosField(fd.get("drawingPhotos")) > 0
+        : drawingNoneReason !== "";
+    const hasSchedule =
+      scheduleStatus === "HAS"
+        ? countPhotosField(fd.get("schedulePhotos")) > 0
+        : scheduleNoneReason !== "";
+    const hasDocument = hasDrawing && hasSchedule;
     return hasAddress && keyboxOk && hasKeyboxPhoto && hasDocument;
   }
 
@@ -172,6 +186,16 @@ export function SiteForm({
     if (keyboxPhotoStatus === "NONE" && ((fd.get("keyboxPhotoNoneReason") as string | null) ?? "").trim() === "") {
       e.preventDefault();
       setClientError("キーBOX写真が無い理由を入力してください");
+      return;
+    }
+    if (drawingStatus === "NONE" && ((fd.get("drawingNoneReason") as string | null) ?? "").trim() === "") {
+      e.preventDefault();
+      setClientError("図面が無い理由を入力してください");
+      return;
+    }
+    if (scheduleStatus === "NONE" && ((fd.get("scheduleNoneReason") as string | null) ?? "").trim() === "") {
+      e.preventDefault();
+      setClientError("工程表が無い理由を入力してください");
       return;
     }
     // 揃っていれば確認なしで本登録。揃っていなければ送信を止めて確認ダイアログを出す。
@@ -345,17 +369,87 @@ export function SiteForm({
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
               <FileText className="h-4 w-4 text-ink-muted" />
               図面 <span className="font-normal text-ink-faint">（画像・PDF可）</span>
-              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須（いずれか）</span>
+              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須</span>
             </p>
-            <SitePhotoField name="drawingPhotos" kind="DRAWING" allowPdf initial={drawingPhotos} buttonLabel="図面を追加" />
+            {/* 図面あり / なし の切替（なし→理由が必須） */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              {(["HAS", "NONE"] as const).map((v) => (
+                <label
+                  key={v}
+                  className={cn(
+                    "flex min-h-[44px] min-w-0 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors",
+                    drawingStatus === v
+                      ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                      : "border-line-strong bg-surface text-ink-soft",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="drawingStatus"
+                    value={v}
+                    checked={drawingStatus === v}
+                    onChange={() => setDrawingStatus(v)}
+                    className="sr-only"
+                  />
+                  {v === "HAS" ? "図面あり" : "なし"}
+                </label>
+              ))}
+            </div>
+            {drawingStatus === "HAS" ? (
+              <SitePhotoField name="drawingPhotos" kind="DRAWING" allowPdf initial={drawingPhotos} buttonLabel="図面を追加" />
+            ) : (
+              <Field label="図面が無い理由" required htmlFor="drawingNoneReason">
+                <Textarea
+                  id="drawingNoneReason"
+                  name="drawingNoneReason"
+                  defaultValue={site?.drawingNoneReason ?? ""}
+                  placeholder="例：既存図面が無く、現地調査で対応するため"
+                />
+              </Field>
+            )}
           </div>
           <div className="border-t border-line pt-4">
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
               <CalendarRange className="h-4 w-4 text-ink-muted" />
               工程表 <span className="font-normal text-ink-faint">（画像・PDF可）</span>
-              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須（いずれか）</span>
+              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須</span>
             </p>
-            <SitePhotoField name="schedulePhotos" kind="SCHEDULE" allowPdf initial={schedulePhotos} buttonLabel="工程表を追加" />
+            {/* 工程表あり / なし の切替（なし→理由が必須） */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              {(["HAS", "NONE"] as const).map((v) => (
+                <label
+                  key={v}
+                  className={cn(
+                    "flex min-h-[44px] min-w-0 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors",
+                    scheduleStatus === v
+                      ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                      : "border-line-strong bg-surface text-ink-soft",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="scheduleStatus"
+                    value={v}
+                    checked={scheduleStatus === v}
+                    onChange={() => setScheduleStatus(v)}
+                    className="sr-only"
+                  />
+                  {v === "HAS" ? "工程表あり" : "なし"}
+                </label>
+              ))}
+            </div>
+            {scheduleStatus === "HAS" ? (
+              <SitePhotoField name="schedulePhotos" kind="SCHEDULE" allowPdf initial={schedulePhotos} buttonLabel="工程表を追加" />
+            ) : (
+              <Field label="工程表が無い理由" required htmlFor="scheduleNoneReason">
+                <Textarea
+                  id="scheduleNoneReason"
+                  name="scheduleNoneReason"
+                  defaultValue={site?.scheduleNoneReason ?? ""}
+                  placeholder="例：短期工事で工程表を作成しないため"
+                />
+              </Field>
+            )}
           </div>
         </Card>
       </div>
@@ -376,15 +470,7 @@ export function SiteForm({
             />
           </Field>
           {/* 最終人工は提出日報の累計から自動計算するため入力欄は廃止 */}
-          <Field label="現場ステータス" htmlFor="siteStatus" className="sm:col-span-2">
-            <Select id="siteStatus" name="siteStatus" defaultValue={site?.siteStatus ?? "SURVEY"}>
-              {SITE_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {SITE_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          {/* 進捗（配線→…→完了）は現場詳細のステッパーで管理するため、ここでは状態欄を持たない */}
         </Card>
       </div>
 
@@ -406,15 +492,6 @@ export function SiteForm({
               {PROJECT_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {PROJECT_TYPE_LABEL[t]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="案件ステータス" htmlFor="projectStatus">
-            <Select id="projectStatus" name="projectStatus" defaultValue={site?.projectStatus ?? "ESTIMATING"}>
-              {PROJECT_STATUS_ORDER.map((s) => (
-                <option key={s} value={s}>
-                  {PROJECT_STATUS_LABEL[s]}
                 </option>
               ))}
             </Select>
