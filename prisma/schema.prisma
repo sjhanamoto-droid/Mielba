@@ -160,6 +160,7 @@ model Site {
   createdById      String? // 作成者（現場を登録したユーザー）
   keyboxStatus     String? // "HAS"(あり) | "NONE"(なし)
   keyboxNoneReason String? // キーBOXなしの理由（NONE時に必須）
+  keyboxPhotoNoneReason String? // キーBOX写真が撮れない理由（写真なし時に必須）
   provisional      Boolean @default(false) // 仮登録（必須項目が未入力）
 
   memo             String?

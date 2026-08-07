@@ -43,6 +43,7 @@ export type SiteFormData = {
   keyboxNumber: string | null;
   keyboxPlace: string | null;
   keyboxNoneReason: string | null;
+  keyboxPhotoNoneReason: string | null;
   targetManDays: number | null;
   finalManDays: number | null;
   receivedDate: Date | string | null;
@@ -123,6 +124,12 @@ export function SiteForm({
   const [keyboxStatus, setKeyboxStatus] = useState<"HAS" | "NONE">(
     site?.keyboxStatus === "NONE" ? "NONE" : "HAS",
   );
+  // キーBOX写真 あり(HAS)/撮れない(NONE) の切替（既存の「撮れない理由」があれば NONE 初期化）
+  const [keyboxPhotoStatus, setKeyboxPhotoStatus] = useState<"HAS" | "NONE">(
+    site?.keyboxPhotoNoneReason ? "NONE" : "HAS",
+  );
+  // クライアント側のハード必須エラー（サーバ state.error とは別に即時表示する）
+  const [clientError, setClientError] = useState<string | null>(null);
 
   // ── 不完全時の確認ダイアログ制御 ──
   // 本登録の必須が未充足のまま送信しようとしたら確認を挟む。OK なら bypassRef を立てて
@@ -136,9 +143,13 @@ export function SiteForm({
     const address = ((fd.get("address") as string | null) ?? "").trim();
     const keyboxNumber = ((fd.get("keyboxNumber") as string | null) ?? "").trim();
     const keyboxNoneReason = ((fd.get("keyboxNoneReason") as string | null) ?? "").trim();
+    const keyboxPhotoNoneReason = ((fd.get("keyboxPhotoNoneReason") as string | null) ?? "").trim();
     const hasAddress = address !== "";
     const keyboxOk = keyboxStatus === "HAS" ? keyboxNumber !== "" : keyboxNoneReason !== "";
-    const hasKeyboxPhoto = countPhotosField(fd.get("keyboxPhotos")) > 0;
+    const hasKeyboxPhoto =
+      keyboxPhotoStatus === "HAS"
+        ? countPhotosField(fd.get("keyboxPhotos")) > 0
+        : keyboxPhotoNoneReason !== "";
     const hasDocument =
       countPhotosField(fd.get("drawingPhotos")) + countPhotosField(fd.get("schedulePhotos")) > 0;
     return hasAddress && keyboxOk && hasKeyboxPhoto && hasDocument;
@@ -150,8 +161,21 @@ export function SiteForm({
       bypassRef.current = false;
       return;
     }
+    const fd = new FormData(e.currentTarget);
+    setClientError(null);
+    // ── ハード必須：理由が空なら保存させない（仮登録もさせない）──
+    if (keyboxStatus === "NONE" && ((fd.get("keyboxNoneReason") as string | null) ?? "").trim() === "") {
+      e.preventDefault();
+      setClientError("キーBOXが無い理由を入力してください");
+      return;
+    }
+    if (keyboxPhotoStatus === "NONE" && ((fd.get("keyboxPhotoNoneReason") as string | null) ?? "").trim() === "") {
+      e.preventDefault();
+      setClientError("キーBOX写真が無い理由を入力してください");
+      return;
+    }
     // 揃っていれば確認なしで本登録。揃っていなければ送信を止めて確認ダイアログを出す。
-    if (!isRegistrationComplete(new FormData(e.currentTarget))) {
+    if (!isRegistrationComplete(fd)) {
       e.preventDefault();
       setConfirmOpen(true);
     }
@@ -193,7 +217,7 @@ export function SiteForm({
             <Input id="name" name="name" defaultValue={site?.name ?? ""} placeholder="◯◯邸 浴室改修工事" required />
           </Field>
           <Field label="場所（住所）" required htmlFor="address" className="sm:col-span-2">
-            <Input id="address" name="address" defaultValue={site?.address ?? ""} placeholder="東京都◯◯区…" />
+            <Input id="address" name="address" required defaultValue={site?.address ?? ""} placeholder="東京都◯◯区…" />
           </Field>
           <Field label="現場担当者（元請側）" htmlFor="siteContactName">
             <Input id="siteContactName" name="siteContactName" defaultValue={site?.siteContactName ?? ""} placeholder="山田 太郎" />
@@ -273,7 +297,42 @@ export function SiteForm({
               キーBOXの写真
               <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/50 dark:text-red-300">必須</span>
             </p>
-            <SitePhotoField name="keyboxPhotos" kind="KEYBOX" initial={keyboxPhotos} />
+            {/* 写真あり / なし の切替（なし→理由が必須） */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              {(["HAS", "NONE"] as const).map((v) => (
+                <label
+                  key={v}
+                  className={cn(
+                    "flex min-h-[44px] min-w-0 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors",
+                    keyboxPhotoStatus === v
+                      ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                      : "border-line-strong bg-surface text-ink-soft",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="keyboxPhotoStatus"
+                    value={v}
+                    checked={keyboxPhotoStatus === v}
+                    onChange={() => setKeyboxPhotoStatus(v)}
+                    className="sr-only"
+                  />
+                  {v === "HAS" ? "写真あり" : "なし"}
+                </label>
+              ))}
+            </div>
+            {keyboxPhotoStatus === "HAS" ? (
+              <SitePhotoField name="keyboxPhotos" kind="KEYBOX" initial={keyboxPhotos} />
+            ) : (
+              <Field label="キーBOX写真が無い理由" required htmlFor="keyboxPhotoNoneReason">
+                <Textarea
+                  id="keyboxPhotoNoneReason"
+                  name="keyboxPhotoNoneReason"
+                  defaultValue={site?.keyboxPhotoNoneReason ?? ""}
+                  placeholder="例：オートロックで共用部の撮影が禁止されているため"
+                />
+              </Field>
+            )}
           </div>
         </Card>
       </div>
@@ -412,10 +471,10 @@ export function SiteForm({
         </div>
       </details>
 
-      {state.error && (
+      {(clientError || state.error) && (
         <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600 dark:bg-red-950/40 dark:text-red-300">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          {state.error}
+          {clientError || state.error}
         </div>
       )}
 

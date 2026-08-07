@@ -277,8 +277,15 @@ export default async function SiteDetailPage({
               </div>
             )}
 
-            {/* キーBOXの写真（タップで拡大） */}
-            {keyboxPhotos.length > 0 && <PhotoGrid photos={keyboxPhotos} />}
+            {/* キーBOXの写真（タップで拡大）。無い場合は「撮れない理由」を表示 */}
+            {keyboxPhotos.length > 0 ? (
+              <PhotoGrid photos={keyboxPhotos} />
+            ) : site.keyboxPhotoNoneReason ? (
+              <div className="rounded-xl bg-surface-sunken p-3.5">
+                <p className="text-xs font-semibold text-ink-muted">キーBOX写真が無い理由</p>
+                <p className="mt-1 text-sm font-medium text-ink-soft">{site.keyboxPhotoNoneReason}</p>
+              </div>
+            ) : null}
 
             {/* 住所・現場担当者 */}
             <DataList>

@@ -56,7 +56,7 @@ const siteSchema = z.object({
     z.enum(BILLING_STATUSES).optional(),
   ),
   locationName: optionalText,
-  address: optionalText,
+  address: z.string().min(1, "場所（住所）を入力してください"),
   siteContactName: optionalText,
   siteContactPhone: optionalText,
   keyboxStatus: z.preprocess(
@@ -66,6 +66,7 @@ const siteSchema = z.object({
   keyboxNumber: optionalText,
   keyboxPlace: optionalText,
   keyboxNoneReason: optionalText,
+  keyboxPhotoNoneReason: optionalText,
   targetManDays: optionalNonNegInt,
   receivedDate: optionalDate,
   contractNumber: optionalText,
@@ -101,6 +102,7 @@ function parseSiteForm(formData: FormData) {
     keyboxNumber: formData.get("keyboxNumber"),
     keyboxPlace: formData.get("keyboxPlace"),
     keyboxNoneReason: formData.get("keyboxNoneReason"),
+    keyboxPhotoNoneReason: formData.get("keyboxPhotoNoneReason"),
     targetManDays: formData.get("targetManDays"),
     receivedDate: formData.get("receivedDate"),
     contractNumber: formData.get("contractNumber"),
@@ -134,6 +136,7 @@ function toData(d: z.infer<typeof siteSchema>) {
     keyboxNumber: d.keyboxNumber ?? null,
     keyboxPlace: d.keyboxPlace ?? null,
     keyboxNoneReason: d.keyboxNoneReason ?? null,
+    keyboxPhotoNoneReason: d.keyboxPhotoNoneReason ?? null,
     targetManDays: d.targetManDays ?? null,
     receivedDate: toDate(d.receivedDate),
     contractNumber: d.contractNumber ?? null,
@@ -186,10 +189,25 @@ function computeProvisional(
       : d.keyboxStatus === "NONE"
         ? !!d.keyboxNoneReason
         : false;
-  const hasKeyboxPhoto = countKind("KEYBOX") > 0;
+  // 写真は1枚以上、または「撮れない理由」があれば本登録OK
+  const hasKeyboxPhoto = countKind("KEYBOX") > 0 || !!d.keyboxPhotoNoneReason;
   const hasDocument = countKind("DRAWING") + countKind("SCHEDULE") > 0;
   const complete = hasAddress && keyboxOk && hasKeyboxPhoto && hasDocument;
   return !complete;
+}
+
+// キーBOX「無し」/写真「撮れない」を選んだのに理由が空なら保存させない（ハード必須）。
+function keyboxReasonError(
+  d: z.infer<typeof siteSchema>,
+  formData: FormData,
+): string | null {
+  if (d.keyboxStatus === "NONE" && !d.keyboxNoneReason) {
+    return "キーBOXが無い理由を入力してください";
+  }
+  if (formData.get("keyboxPhotoStatus") === "NONE" && !d.keyboxPhotoNoneReason) {
+    return "キーBOX写真が無い理由を入力してください";
+  }
+  return null;
 }
 
 // kind ごとに「kept に無い既存写真を削除 → added を作成」する
@@ -226,6 +244,8 @@ export async function createSite(formData: FormData) {
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
   }
+  const keyboxErr = keyboxReasonError(parsed.data, formData);
+  if (keyboxErr) return { error: keyboxErr };
   const photoSets = parseSitePhotoFields(formData);
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
@@ -269,6 +289,8 @@ export async function updateSite(siteId: string, formData: FormData) {
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
   }
+  const keyboxErr = keyboxReasonError(parsed.data, formData);
+  if (keyboxErr) return { error: keyboxErr };
   const photoSets = parseSitePhotoFields(formData);
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
