@@ -49,11 +49,18 @@ export async function toggleVisit(
     });
 
     if (existing) {
-      // 取り消し：日報が既にある場合は不可（行った実績があるため）
+      // 取り消し：提出済み(SUBMITTED)の日報がある場合のみ不可（行った実績が確定しているため）。
+      // 下書き(DRAFT)や日報なしなら取り消し可。下書きがあれば稼働も残らないよう一緒に削除する。
       const report = await db.dailyReport.findUnique({
         where: { siteId_userId_workDate: { siteId, userId, workDate: date } },
+        select: { id: true, status: true },
       });
-      if (report) return { error: "日報があるため取り消せません" };
+      if (report?.status === "SUBMITTED") {
+        return { error: "提出済みの日報があるため取り消せません" };
+      }
+      if (report) {
+        await db.dailyReport.delete({ where: { id: report.id } });
+      }
       await db.siteVisit.delete({ where: { id: existing.id } });
     } else {
       await db.siteVisit.create({ data: { siteId, userId, date, createdById: me.id } });
