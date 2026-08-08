@@ -6,7 +6,7 @@ import { setSiteStage } from "./actions";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
-// 進捗ステータスを管理者が手動でタップして変更する（配線→撤去→調査→器具付→段取り→完了）。
+// 進捗ステータスを管理者が手動でタップして変更する（現調→配線→調査→ボード開口→器具付→段取り→完了）。
 // タップした段階に応じて siteStatus + projectStatus を更新する。楽観更新＋失敗時ロールバック。
 export function SiteStageControl({
   siteId,

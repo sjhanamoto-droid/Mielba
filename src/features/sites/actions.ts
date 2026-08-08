@@ -355,16 +355,17 @@ export async function deleteSite(siteId: string) {
 }
 
 // ── 進捗ステージ変更 ──
-// 進捗6工程(0-5: 配線/撤去/調査/器具付/段取り/完了)を siteStatus + projectStatus に反映。
+// 進捗7工程(0-6: 現調/配線/調査/ボード開口/器具付/段取り/完了)を siteStatus + projectStatus に反映。
 // projectStatus(6値) を各工程のマーカーに流用し、完了のみ siteStatus=PAST（過去）にする。
 // 管理者が現場詳細でタップして手動変更する。
 const STAGE_TO_STATUS: { siteStatus: string; projectStatus: string }[] = [
-  { siteStatus: "ACTIVE", projectStatus: "ESTIMATING" }, // 0 配線
-  { siteStatus: "ACTIVE", projectStatus: "ORDERED" }, // 1 撤去
+  { siteStatus: "ACTIVE", projectStatus: "ESTIMATING" }, // 0 現調
+  { siteStatus: "ACTIVE", projectStatus: "ORDERED" }, // 1 配線
   { siteStatus: "ACTIVE", projectStatus: "STARTED" }, // 2 調査
-  { siteStatus: "ACTIVE", projectStatus: "IN_PROGRESS" }, // 3 器具付
-  { siteStatus: "ACTIVE", projectStatus: "COMPLETED" }, // 4 段取り
-  { siteStatus: "PAST", projectStatus: "CLOSED" }, // 5 完了
+  { siteStatus: "ACTIVE", projectStatus: "IN_PROGRESS" }, // 3 ボード開口
+  { siteStatus: "ACTIVE", projectStatus: "COMPLETED" }, // 4 器具付
+  { siteStatus: "ACTIVE", projectStatus: "CLOSED" }, // 5 段取り
+  { siteStatus: "PAST", projectStatus: "CLOSED" }, // 6 完了
 ];
 
 export async function setSiteStage(

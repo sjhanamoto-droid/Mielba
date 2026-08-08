@@ -103,29 +103,29 @@ export const SITE_STATUS_COLOR: Record<SiteStatus, string> = {
   PAST: "past",
 };
 
-// 進捗ステータスの6工程（配線→撤去→調査→器具付→段取り→完了）。カード/詳細で現在地のみ点灯表示する。
+// 進捗ステータスの7工程（現調→配線→調査→ボード開口→器具付→段取り→完了）。カード/詳細で現在地のみ点灯表示する。
 // ※内部保存は projectStatus(6値) を各工程のマーカーに流用し、完了のみ siteStatus=PAST（過去）にする。
-export const SITE_STAGES = ["配線", "撤去", "調査", "器具付", "段取り", "完了"] as const;
+export const SITE_STAGES = ["現調", "配線", "調査", "ボード開口", "器具付", "段取り", "完了"] as const;
 
-// siteStatus(ACTIVE|PAST) と projectStatus から現在地(0-5)を導く純関数。
+// siteStatus(ACTIVE|PAST) と projectStatus から現在地(0-6)を導く純関数。
 // サーバー/クライアント双方から呼ぶため constants に置く。
 export function siteStageIndex(siteStatus: string, projectStatus: string): number {
-  if (siteStatus === "PAST") return 5; // 完了（過去）
+  if (siteStatus === "PAST") return 6; // 完了（過去）
   switch (projectStatus) {
     case "ESTIMATING":
-      return 0; // 配線
+      return 0; // 現調
     case "ORDERED":
-      return 1; // 撤去
+      return 1; // 配線
     case "STARTED":
       return 2; // 調査
     case "IN_PROGRESS":
-      return 3; // 器具付
+      return 3; // ボード開口
     case "COMPLETED":
-      return 4; // 段取り
+      return 4; // 器具付
     case "CLOSED":
-      return 5; // 完了
+      return 5; // 段取り
     default:
-      return 0; // 区分不明は配線（先頭）
+      return 0; // 区分不明は現調（先頭）
   }
 }
 
