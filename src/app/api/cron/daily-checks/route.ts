@@ -49,10 +49,9 @@ async function handle(req: NextRequest) {
     const elapsed = daysBetween(jstDateKey(site.createdAt), dayKey);
     if (![1, 3, 5, 7].includes(elapsed) && elapsed <= 7) continue;
 
-    const recipients = [site.createdById, ...adminIds].filter(
-      (id): id is string => !!id,
-    );
-    if (recipients.length === 0) continue;
+    // 仮登録リマインドは「作成者本人のみ」に通知する（管理者含め他者には出さない）
+    if (!site.createdById) continue;
+    const recipients = [site.createdById];
 
     created += await createNotificationForUsers(recipients, {
       type: "PROVISIONAL",
