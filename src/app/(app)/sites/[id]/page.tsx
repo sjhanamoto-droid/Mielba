@@ -83,8 +83,15 @@ export default async function SiteDetailPage({
 
   // 日報数（全件）・人工カウント（着工実績日以降のみ）・未解決引き継ぎ・現場写真・駐車場代累計
   // 人工は「着工実績日以降の日報」で数える（着工前＝現調段階はカウントしない）。actualStartDate 未設定なら 0。
-  const [reportCount, manDaysCount, openHandovers, sitePhotos, parkingAgg, siteMaterials] =
-    await Promise.all([
+  const [
+    reportCount,
+    manDaysCount,
+    openHandovers,
+    sitePhotos,
+    parkingAgg,
+    siteMaterials,
+    materialUses,
+  ] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
     site.actualStartDate
       ? db.dailyReport.count({
@@ -106,6 +113,11 @@ export default async function SiteDetailPage({
       where: { siteId: site.id, active: true },
       orderBy: [{ createdAt: "desc" }],
       select: { id: true, name: true, quantity: true, unit: true, unitPrice: true, amount: true },
+    }),
+    // 日報の使用材料（この現場の全日報）。残量＝登録数量−使用量の算出に使う。
+    db.materialUse.findMany({
+      where: { report: { siteId: site.id } },
+      select: { name: true, quantity: true },
     }),
   ]);
 
@@ -388,9 +400,13 @@ export default async function SiteDetailPage({
           <SectionTitle>
             <span className="flex items-center gap-1.5">登録材料</span>
           </SectionTitle>
-          <SiteMaterialSummary materials={siteMaterials} showAmount={superAdmin} />
+          <SiteMaterialSummary
+            materials={siteMaterials}
+            usages={materialUses}
+            showAmount={superAdmin}
+          />
           <p className="px-1 text-[11px] text-ink-faint">
-            現場に登録された材料（伝票OCR）です。数量は登録時点の値です。
+            残 ＝ 入荷（登録数量）− 使用（日報の使用材料）。
             {superAdmin
               ? "金額（原価）は最高管理者のみ表示されます。"
               : "金額は最高管理者のみ閲覧できます。"}
