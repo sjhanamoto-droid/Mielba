@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/session";
+import { requireUser, isAdmin } from "@/lib/session";
 import { dateFromKey } from "@/lib/date";
 
 export type VisitState = { error?: string; ok?: boolean };
@@ -30,14 +30,14 @@ export async function toggleVisit(
 ): Promise<VisitState> {
   try {
     const me = await requireUser();
-    const isAdmin = me.role === "ADMIN";
-    if (userId !== me.id && !isAdmin) return { error: "権限がありません" };
+    const admin = isAdmin(me); // 最高管理者(SUPER_ADMIN)も管理者として扱う
+    if (userId !== me.id && !admin) return { error: "権限がありません" };
 
     const date = parseDateKey(dateStr);
     if (!date) return { error: "日付が不正です" };
 
     // スタッフの自己申告は配属済みの現場のみ
-    if (!isAdmin) {
+    if (!admin) {
       const assigned = await db.siteAssignment.findUnique({
         where: { siteId_userId: { siteId, userId: me.id } },
       });
@@ -86,7 +86,7 @@ export async function addMyVisit(
 
     // 「別の現場に行った」は配属に限定せず、進行中（ACTIVE）の現場なら登録できる
     // （add-my-visit.tsx が全 ACTIVE 現場を候補に出す仕様に合わせる）
-    if (me.role !== "ADMIN") {
+    if (!isAdmin(me)) {
       const site = await db.site.findUnique({
         where: { id: siteId },
         select: { siteStatus: true },

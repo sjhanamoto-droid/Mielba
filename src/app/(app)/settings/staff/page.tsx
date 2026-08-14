@@ -44,7 +44,7 @@ export default async function StaffListPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate text-[15px] font-bold text-ink">{u.name}</span>
-                    <Badge tone={u.role === "ADMIN" ? "brand" : "neutral"}>
+                    <Badge tone={u.role === "STAFF" ? "neutral" : "brand"}>
                       {ROLE_LABEL[u.role as Role]}
                     </Badge>
                     {isSelf && <Badge tone="info">あなた</Badge>}

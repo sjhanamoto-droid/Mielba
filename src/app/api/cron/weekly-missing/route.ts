@@ -57,7 +57,7 @@ async function handle(req: NextRequest) {
   }
 
   const admins = await db.user.findMany({
-    where: { role: "ADMIN", active: true },
+    where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, active: true },
     select: { id: true },
   });
   if (admins.length === 0) {

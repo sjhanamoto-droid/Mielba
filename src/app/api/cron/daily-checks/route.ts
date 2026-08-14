@@ -33,7 +33,7 @@ async function handle(req: NextRequest) {
   const dayKey = jstDateKey();
 
   const admins = await db.user.findMany({
-    where: { role: "ADMIN", active: true },
+    where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, active: true },
     select: { id: true },
   });
   const adminIds = admins.map((a) => a.id);
