@@ -67,13 +67,18 @@ const OCR_SYSTEM_PROMPT = [
   "読み取れない項目は無理に埋めず null にする。",
 ].join("\n");
 
-// data:image/jpeg;base64,xxxx → { mediaType, data }
-function parseDataUrl(
-  dataUrl: string,
-): { mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } | null {
-  const m = /^data:(image\/(jpeg|png|gif|webp));base64,(.+)$/.exec(dataUrl);
-  if (!m) return null;
-  return { mediaType: m[1] as "image/jpeg", data: m[3] };
+type ImageMedia = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+type ParsedSource =
+  | { kind: "image"; mediaType: ImageMedia; data: string }
+  | { kind: "pdf"; data: string };
+
+// data:image/jpeg;base64,xxxx / data:application/pdf;base64,xxxx を判別する
+function parseDataUrl(dataUrl: string): ParsedSource | null {
+  const img = /^data:(image\/(jpeg|png|gif|webp));base64,(.+)$/.exec(dataUrl);
+  if (img) return { kind: "image", mediaType: img[1] as ImageMedia, data: img[3] };
+  const pdf = /^data:application\/pdf;base64,(.+)$/.exec(dataUrl);
+  if (pdf) return { kind: "pdf", data: pdf[1] };
+  return null;
 }
 
 export type OcrItem = {
@@ -105,8 +110,20 @@ export async function ocrDeliverySlip(input: { dataUrl: string }): Promise<OcrRe
 
   const parsed = parseDataUrl(input.dataUrl || "");
   if (!parsed) {
-    return { status: "error", message: "画像の形式が不正です。撮り直してください。" };
+    return { status: "error", message: "対応していない形式です（JPEG・PNG・PDF）。もう一度お試しください。" };
   }
+
+  // 画像は image ブロック、PDFは document ブロックとして Claude に渡す
+  const sourceBlock =
+    parsed.kind === "pdf"
+      ? {
+          type: "document" as const,
+          source: { type: "base64" as const, media_type: "application/pdf" as const, data: parsed.data },
+        }
+      : {
+          type: "image" as const,
+          source: { type: "base64" as const, media_type: parsed.mediaType, data: parsed.data },
+        };
 
   try {
     const client = new Anthropic({ apiKey });
@@ -118,14 +135,7 @@ export async function ocrDeliverySlip(input: { dataUrl: string }): Promise<OcrRe
         {
           role: "user",
           content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: parsed.mediaType,
-                data: parsed.data,
-              },
-            },
+            sourceBlock,
             {
               type: "text",
               text: "この納品書または発注書を読み取り、材料の明細を抽出してください。",

@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera, Loader2, Save, Trash2, Plus, AlertTriangle, ScanLine, Check, X,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Input, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
@@ -57,6 +58,19 @@ function compress(file: File): Promise<{ dataUrl: string; thumbUrl: string; widt
   });
 }
 
+// PDFはbase64化して未圧縮で送るため上限を設ける（Server Action の bodySizeLimit=12mb 内に収める）
+const MAX_PDF_BYTES = 8 * 1024 * 1024; // 8MB
+
+/** ファイルを dataURL（base64）として読み込む（PDF用・無圧縮） */
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 type Row = {
   name: string;
   quantity: string;
@@ -65,7 +79,8 @@ type Row = {
   amount: string; // 円（文字列で保持）
 };
 
-type Photo = { dataUrl: string; thumbUrl: string; width: number; height: number };
+// 画像は圧縮して thumb/寸法を持つ。PDFは無圧縮のため dataUrl のみ。
+type Photo = { dataUrl: string; thumbUrl?: string; width?: number; height?: number };
 
 function toRows(items: OcrResult["items"]): Row[] {
   return items.map((i) => ({
@@ -85,7 +100,8 @@ function toIntOrNull(s: string): number | null {
 export function MaterialOcrRegister({ site }: { site: { id: string; name: string } }) {
   const router = useRouter();
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null); // カメラ撮影（スマホ）
+  const fileSelectRef = useRef<HTMLInputElement>(null); // ファイル選択（PC・画像/PDF）
 
   const [busy, setBusy] = useState(false); // 圧縮＋OCR中
   const [saving, startSave] = useTransition();
@@ -106,16 +122,39 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
     setRows([]);
     setReviewing(false);
     if (fileRef.current) fileRef.current.value = "";
+    if (fileSelectRef.current) fileSelectRef.current.value = "";
   }
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+  function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith("image/")) return;
+    if (file) void handleFile(file);
+    // 同じファイルを連続選択しても発火するようリセット
+    if (fileRef.current) fileRef.current.value = "";
+    if (fileSelectRef.current) fileSelectRef.current.value = "";
+  }
+
+  async function handleFile(file: File) {
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    const isImage =
+      file.type === "image/jpeg" ||
+      file.type === "image/png" ||
+      /\.(jpe?g|png)$/i.test(file.name);
+    if (!isPdf && !isImage) {
+      toast("対応していない形式です。JPEG・PNG・PDF のいずれかを選んでください。", { type: "error" });
+      return;
+    }
+    if (isPdf && file.size > MAX_PDF_BYTES) {
+      toast("PDFのサイズが大きすぎます（8MBまで）。分割やページ指定でお試しください。", { type: "error" });
+      return;
+    }
     setBusy(true);
     try {
-      const img = await compress(file);
-      setPhoto(img);
-      const res = await ocrDeliverySlip({ dataUrl: img.dataUrl });
+      // PDFは無圧縮でそのまま、画像は圧縮してから読み取る
+      const media: Photo = isPdf
+        ? { dataUrl: await readAsDataUrl(file) }
+        : await compress(file);
+      setPhoto(media);
+      const res = await ocrDeliverySlip({ dataUrl: media.dataUrl });
       if (res.status === "unconfigured") {
         toast("OCRが未設定です（管理者にAPIキー設定を依頼してください）。手入力で登録できます。", { type: "error" });
         setRows([{ name: "", quantity: "", unit: "", unitPrice: "", amount: "" }]);
@@ -137,10 +176,9 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
       setReviewing(true);
       toast(`${r.items.length}件の材料を読み取りました。内容を確認してください。`);
     } catch {
-      toast("画像の読み込みに失敗しました。撮り直してください。", { type: "error" });
+      toast("ファイルの読み込みに失敗しました。もう一度お試しください。", { type: "error" });
     } finally {
       setBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -196,13 +234,22 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
 
   return (
     <div className="space-y-4">
+      {/* カメラ撮影（スマホ） */}
       <input
         ref={fileRef}
         type="file"
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={onFile}
+        onChange={onInputChange}
+      />
+      {/* ファイル選択（PC・画像/PDF） */}
+      <input
+        ref={fileSelectRef}
+        type="file"
+        accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf"
+        className="hidden"
+        onChange={onInputChange}
       />
 
       {!reviewing ? (
@@ -210,9 +257,9 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
             <ScanLine className="h-7 w-7" />
           </div>
-          <p className="text-sm font-bold text-ink">納品書・発注書を撮影</p>
+          <p className="text-sm font-bold text-ink">納品書・発注書を読み取り</p>
           <p className="mt-1 text-xs text-ink-muted">
-            伝票を撮影すると、材料名・数量・金額を自動で読み取ります。<br />
+            撮影またはファイル（JPEG・PNG・PDF）を選ぶと、材料名・数量・金額を自動で読み取ります。<br />
             登録先の現場：<span className="font-bold text-ink">{site.name}</span>
           </p>
           <button
@@ -226,6 +273,14 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
             ) : (
               <><Camera className="h-5 w-5" /> 伝票を撮影して読み取る</>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => fileSelectRef.current?.click()}
+            disabled={busy}
+            className={buttonClass({ variant: "outline", size: "lg", className: "mt-2 w-full" })}
+          >
+            <ImageIcon className="h-5 w-5" /> ファイルを選択（画像・PDF）
           </button>
         </div>
       ) : (
