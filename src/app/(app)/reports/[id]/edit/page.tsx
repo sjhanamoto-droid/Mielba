@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { ReportForm, type ReportFormData } from "@/features/reports/report-form";
 import type { PhotoKind } from "@/lib/constants";
+import { dedupeByName } from "@/lib/materials";
 import { jstDateKey, dayRangeForKey } from "@/lib/date";
 
 export default async function EditReportPage({
@@ -20,6 +21,7 @@ export default async function EditReportPage({
     include: {
       site: { select: { id: true, name: true } },
       materials: true,
+      stockUses: true,
       expenses: { orderBy: { sortOrder: "asc" } },
       // base64（dataUrl/thumbUrl）はRSCペイロードに載せない（既存写真は {id} 参照で維持）
       photos: {
@@ -35,8 +37,16 @@ export default async function EditReportPage({
     redirect(`/reports/${report.id}`);
   }
 
-  // 材料マスター（使用材料のセレクト候補）
-  const materialOptions = await db.materialMaster.findMany({
+  // 使用材料のセレクト候補は「この日報の現場に登録された材料」。金額は渡さない（財務情報）。
+  const siteMaterials = await db.siteMaterial.findMany({
+    where: { siteId: report.siteId, active: true },
+    orderBy: [{ createdAt: "desc" }],
+    select: { id: true, name: true, unit: true },
+  });
+  const materialOptions = dedupeByName(siteMaterials);
+
+  // 在庫材料のセレクト候補は「在庫材料マスター（active）」。
+  const stockOptions = await db.materialMaster.findMany({
     where: { active: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     select: { id: true, name: true, unit: true },
@@ -79,6 +89,11 @@ export default async function EditReportPage({
       quantity: m.quantity,
       unit: m.unit,
     })),
+    stockUses: report.stockUses.map((m) => ({
+      name: m.name,
+      quantity: m.quantity,
+      unit: m.unit,
+    })),
     expenses: report.expenses.map((e) => ({
       label: e.label,
       amount: e.amount,
@@ -108,6 +123,7 @@ export default async function EditReportPage({
           siteName={report.site.name}
           initial={initial}
           materialOptions={materialOptions}
+          stockOptions={stockOptions}
           canInputMaterials={canInputMaterials}
           aiEnabled={Boolean(process.env.ANTHROPIC_API_KEY)}
         />

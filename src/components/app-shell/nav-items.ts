@@ -1,5 +1,5 @@
 import {
-  Home, HardHat, CalendarDays, Building2, FileText, Users, Clock,
+  Home, HardHat, CalendarDays, Building2, FileText, Users, Clock, Package,
   type LucideIcon,
 } from "lucide-react";
 
@@ -17,12 +17,18 @@ const CALENDAR: NavItem = { href: "/calendar", label: "カレンダー", icon: C
 const CUSTOMERS: NavItem = { href: "/customers", label: "顧客", icon: Building2, match: (p) => p.startsWith("/customers") };
 const DISPATCH: NavItem = { href: "/dispatch", label: "配員", icon: Users, match: (p) => p.startsWith("/dispatch") };
 const ATTENDANCE: NavItem = { href: "/attendance", label: "稼働時間", icon: Clock, match: (p) => p.startsWith("/attendance") };
+const MATERIALS: NavItem = { href: "/materials", label: "材料登録", icon: Package, match: (p) => p.startsWith("/materials") };
+
+// 管理者権限を持つロール（最高管理者は管理者を内包する）
+function isAdminRole(role: string): boolean {
+  return role === "ADMIN" || role === "SUPER_ADMIN";
+}
 
 // 役割でナビの並びを変える。ボトムナビは5件以内に収める前提。
 // 現場管理・顧客管理・日報を中心に据える（TODO 機能は非表示）。
 // スタッフ：日報を中心に（メイン業務）。管理者：現場・配員・全体確認を中心に。
 export function navForRole(role: string): NavItem[] {
-  if (role === "ADMIN") {
+  if (isAdminRole(role)) {
     // 管理者：ホーム・現場・配員・日報・カレンダー（5個ちょうど）
     return [HOME, SITES, DISPATCH, REPORTS, CALENDAR];
   }
@@ -30,9 +36,12 @@ export function navForRole(role: string): NavItem[] {
   return [HOME, REPORTS, SITES, CALENDAR];
 }
 
-// PC サイドバー用（幅があるので全項目を出す）
+// PC サイドバー用（幅があるので全項目を出す）。材料登録は最高管理者のみ。
 export function sidebarNavForRole(role: string): NavItem[] {
-  if (role === "ADMIN") {
+  if (role === "SUPER_ADMIN") {
+    return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS, ATTENDANCE, MATERIALS];
+  }
+  if (isAdminRole(role)) {
     return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS, ATTENDANCE];
   }
   return [HOME, REPORTS, SITES, CALENDAR];

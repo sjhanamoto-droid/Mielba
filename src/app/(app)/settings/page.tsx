@@ -35,7 +35,14 @@ export default async function SettingsPage() {
     admin
       ? db.materialMaster.findMany({
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-          select: { id: true, name: true, unit: true, active: true },
+          select: {
+            id: true,
+            name: true,
+            unit: true,
+            stockQuantity: true,
+            location: true,
+            active: true,
+          },
         })
       : Promise.resolve([]),
   ]);
@@ -65,13 +72,13 @@ export default async function SettingsPage() {
             </section>
           )}
 
-          {/* 材料マスタ（管理者のみ） */}
+          {/* 在庫材料マスター（管理者のみ） */}
           {admin && (
             <section className="space-y-2.5">
               <SectionTitle>
                 <span className="flex items-center gap-1.5">
                   <Package className="h-4 w-4" />
-                  材料マスタ
+                  在庫材料マスター
                 </span>
               </SectionTitle>
               <MaterialsManager materials={materials} />

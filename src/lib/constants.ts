@@ -1,13 +1,18 @@
 // Mielba 区分値の定義（SQLite enum 非対応のためアプリ層で制約）
 // ラベル・色をここに集約し、UI 全体で共有する。
 
-export type Role = "ADMIN" | "STAFF";
+// SUPER_ADMIN(最高管理者) が最上位。管理者権限を内包し、原価・金額など会計情報の
+// 閲覧/入力と、材料のOCR登録を行える唯一の権限。
+export type Role = "SUPER_ADMIN" | "ADMIN" | "STAFF";
 export const ROLE_LABEL: Record<Role, string> = {
+  SUPER_ADMIN: "最高管理者",
   ADMIN: "管理者",
   STAFF: "スタッフ",
 };
-// セレクトの並び（スタッフを既定の先頭に）
+// セレクトの並び（スタッフを既定の先頭に）。最高管理者は最高管理者のみが付与できるため、
+// UI 側で表示可否を出し分ける（ROLE_OPTIONS_SUPER_ADMIN を使う）。
 export const ROLE_OPTIONS: Role[] = ["STAFF", "ADMIN"];
+export const ROLE_OPTIONS_SUPER_ADMIN: Role[] = ["STAFF", "ADMIN", "SUPER_ADMIN"];
 
 // アバター色のプリセット（ユーザー登録時に選択）
 export const AVATAR_COLORS: { value: string; label: string }[] = [
@@ -152,6 +157,8 @@ export type PhotoKind =
   | "DRAWING"
   | "SCHEDULE"
   | "KEYBOX"
+  | "DELIVERY"
+  | "ORDER"
   | "OTHER";
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   WORK: "作業",
@@ -160,7 +167,16 @@ export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   DRAWING: "図面",
   SCHEDULE: "工程表",
   KEYBOX: "キーBOX",
+  DELIVERY: "納品書",
+  ORDER: "発注書",
   OTHER: "その他",
+};
+
+// ── 材料の伝票種別（OCR登録） ──
+export type MaterialDocumentType = "DELIVERY" | "ORDER";
+export const MATERIAL_DOCUMENT_TYPE_LABEL: Record<MaterialDocumentType, string> = {
+  DELIVERY: "納品書",
+  ORDER: "発注書",
 };
 
 // ── カレンダー予定の出所 ──

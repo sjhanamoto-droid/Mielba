@@ -31,6 +31,7 @@ export default async function ReportPrintPage({
       },
       user: { select: { name: true } },
       materials: true,
+      stockUses: true,
       expenses: { orderBy: { sortOrder: "asc" } },
       orders: true,
       nextProcesses: true,
@@ -178,7 +179,21 @@ export default async function ReportPrintPage({
           <div style={{ breakInside: "avoid" }}>
             <h2 className={sectionTitle}>在庫材料の使用</h2>
             <div className="whitespace-pre-wrap border border-slate-400 px-3 py-2 text-[12px] leading-relaxed">
-              {report.stockUsed ? `使用あり${report.stockNote ? `：${report.stockNote}` : ""}` : "使用なし"}
+              {report.stockUsed ? (
+                <>
+                  使用あり
+                  {report.stockUses.length > 0 && (
+                    <>：
+                      {report.stockUses
+                        .map((m) => `${m.name}${m.quantity ? ` ${m.quantity}${m.unit ?? ""}` : ""}`)
+                        .join("、")}
+                    </>
+                  )}
+                  {report.stockNote ? `（${report.stockNote}）` : ""}
+                </>
+              ) : (
+                "使用なし"
+              )}
             </div>
           </div>
         )}

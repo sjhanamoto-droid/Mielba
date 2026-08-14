@@ -33,6 +33,7 @@ export default async function ReportDetailPage({
       site: { select: { id: true, name: true } },
       user: { select: { id: true, name: true, avatarColor: true } },
       materials: true,
+      stockUses: true,
       expenses: { orderBy: { sortOrder: "asc" } },
       orders: true,
       nextProcesses: true,
@@ -191,6 +192,21 @@ export default async function ReportDetailPage({
               {report.stockUsed ? (
                 <>
                   <Badge tone="active">使用あり</Badge>
+                  {report.stockUses.length > 0 && (
+                    <div className="mt-2 divide-y divide-line rounded-xl border border-line">
+                      {report.stockUses.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                          <span className="truncate text-sm font-medium text-ink">{m.name}</span>
+                          {(m.quantity || m.unit) && (
+                            <span className="shrink-0 text-sm tnum text-ink-soft">
+                              {m.quantity}
+                              {m.unit && <span className="text-ink-muted"> {m.unit}</span>}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {report.stockNote && (
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink">
                       {report.stockNote}

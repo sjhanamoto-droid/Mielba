@@ -5,17 +5,26 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
 
-// 材料マスタ（MaterialMaster）のサーバーアクション。全て管理者のみ。
-// スタッフが日報で選択する材料のリストを管理する。
+// 在庫材料マスター（MaterialMaster）のサーバーアクション。全て管理者のみ。
+// 現場に紐づかない在庫材料（残っている在庫）のリストを管理する。
+// スタッフは日報の「在庫材料の使用」でこのマスターから選択する。
 
 export type MaterialActionState = { error?: string; ok?: boolean };
 
+const optionalTrimmed = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z.string().trim().optional(),
+);
+
 const materialSchema = z.object({
   name: z.string().trim().min(1, "材料名を入力してください"),
-  unit: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().trim().optional(),
-  ),
+  unit: optionalTrimmed,
+  location: optionalTrimmed,
+  stockQuantity: z.preprocess((v) => {
+    if (typeof v !== "string" || v.trim() === "") return undefined;
+    const n = parseInt(v.replace(/[^\d-]/g, ""), 10);
+    return Number.isNaN(n) ? undefined : n;
+  }, z.number().int().optional()),
 });
 
 function revalidateMaterials() {
@@ -38,6 +47,8 @@ export async function createMaterial(formData: FormData): Promise<MaterialAction
       data: {
         name: parsed.data.name,
         unit: parsed.data.unit ?? null,
+        location: parsed.data.location ?? null,
+        stockQuantity: parsed.data.stockQuantity ?? null,
         sortOrder: (max._max.sortOrder ?? -1) + 1,
       },
     });
@@ -65,7 +76,12 @@ export async function updateMaterial(
   try {
     await db.materialMaster.update({
       where: { id },
-      data: { name: parsed.data.name, unit: parsed.data.unit ?? null },
+      data: {
+        name: parsed.data.name,
+        unit: parsed.data.unit ?? null,
+        location: parsed.data.location ?? null,
+        stockQuantity: parsed.data.stockQuantity ?? null,
+      },
     });
   } catch {
     return { error: "材料の更新に失敗しました。時間をおいて再度お試しください" };
@@ -105,8 +121,8 @@ export async function deleteMaterial(id: string): Promise<MaterialActionState> {
       select: { name: true },
     });
     if (!material) return { error: "材料が見つかりません" };
-    // 材料は日報側に名前で記録されるため、同名の使用実績を確認する
-    const usedCount = await db.materialUse.count({ where: { name: material.name } });
+    // 在庫材料は日報の「在庫材料の使用」に名前で記録されるため、同名の使用実績を確認する
+    const usedCount = await db.stockUse.count({ where: { name: material.name } });
     if (usedCount > 0) {
       return {
         error: `「${material.name}」は日報で ${usedCount} 件使用されているため削除できません。「無効」に切り替えてください`,

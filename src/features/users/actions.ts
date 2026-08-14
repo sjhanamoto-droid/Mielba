@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, isSuperAdmin } from "@/lib/session";
 import { hashPassword } from "@/lib/password";
 import { DEFAULT_AVATAR_COLOR } from "@/lib/constants";
 
@@ -18,7 +18,7 @@ function nz(v: FormDataEntryValue | null): string | undefined {
 const baseShape = {
   name: z.string().min(1, "氏名を入力してください"),
   email: z.string().email("メールアドレスの形式が正しくありません"),
-  role: z.enum(["ADMIN", "STAFF"]),
+  role: z.enum(["SUPER_ADMIN", "ADMIN", "STAFF"]),
   department: z.string().optional(),
   avatarColor: z.string().optional(),
 };
@@ -38,7 +38,7 @@ export async function createUser(
   _prev: UserFormState,
   formData: FormData,
 ): Promise<UserFormState> {
-  await requireAdmin();
+  const me = await requireAdmin();
   const parsed = createSchema.safeParse({
     name: nz(formData.get("name")),
     email: (formData.get("email") ?? "").toString().trim().toLowerCase(),
@@ -49,6 +49,11 @@ export async function createUser(
   });
   if (!parsed.success) return { error: parsed.error.errors[0]?.message };
   const d = parsed.data;
+
+  // 最高管理者の付与は最高管理者のみ
+  if (d.role === "SUPER_ADMIN" && !isSuperAdmin(me)) {
+    return { error: "最高管理者を付与できるのは最高管理者のみです" };
+  }
 
   const exists = await db.user.findUnique({ where: { email: d.email } });
   if (exists) return { error: "このメールアドレスは既に登録されています" };
@@ -71,7 +76,7 @@ export async function updateUser(
   _prev: UserFormState,
   formData: FormData,
 ): Promise<UserFormState> {
-  await requireAdmin();
+  const me = await requireAdmin();
   const parsed = updateSchema.safeParse({
     id: formData.get("id"),
     name: nz(formData.get("name")),
@@ -87,6 +92,16 @@ export async function updateUser(
   const target = await db.user.findUnique({ where: { id: d.id } });
   if (!target) return { error: "ユーザーが見つかりません" };
 
+  // 最高管理者の付与・変更は最高管理者のみ（対象が最高管理者の場合も編集不可）
+  if (!isSuperAdmin(me)) {
+    if (target.role === "SUPER_ADMIN") {
+      return { error: "最高管理者の情報を変更できるのは最高管理者のみです" };
+    }
+    if (d.role === "SUPER_ADMIN") {
+      return { error: "最高管理者を付与できるのは最高管理者のみです" };
+    }
+  }
+
   if (d.email !== target.email) {
     const dup = await db.user.findUnique({ where: { email: d.email } });
     if (dup && dup.id !== d.id) {
@@ -94,9 +109,19 @@ export async function updateUser(
     }
   }
 
-  // 管理者を減らす変更（降格）で管理者が0人にならないか
+  // 最高管理者を降格して最高管理者が0人にならないか
+  if (target.role === "SUPER_ADMIN" && d.role !== "SUPER_ADMIN") {
+    const superCount = await db.user.count({ where: { role: "SUPER_ADMIN", active: true } });
+    if (superCount <= 1) {
+      return { error: "最高管理者が0人になるため、この変更はできません" };
+    }
+  }
+
+  // 管理者を減らす変更（降格）で管理者（最高管理者を含む）が0人にならないか
   if (target.role === "ADMIN" && d.role !== "ADMIN") {
-    const adminCount = await db.user.count({ where: { role: "ADMIN", active: true } });
+    const adminCount = await db.user.count({
+      where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, active: true },
+    });
     if (adminCount <= 1) {
       return { error: "管理者が0人になるため、この変更はできません" };
     }
@@ -126,10 +151,21 @@ export async function toggleUserActive(id: string): Promise<UserFormState> {
   const target = await db.user.findUnique({ where: { id } });
   if (!target) return { error: "ユーザーが見つかりません" };
 
+  // 最高管理者を無効化できるのは最高管理者のみ
+  if (target.role === "SUPER_ADMIN" && !isSuperAdmin(me)) {
+    return { error: "最高管理者を無効化できるのは最高管理者のみです" };
+  }
+
   if (target.active) {
     if (target.id === me.id) return { error: "自分自身は無効化できません" };
+    if (target.role === "SUPER_ADMIN") {
+      const activeSupers = await db.user.count({ where: { role: "SUPER_ADMIN", active: true } });
+      if (activeSupers <= 1) return { error: "最後の最高管理者は無効化できません" };
+    }
     if (target.role === "ADMIN") {
-      const activeAdmins = await db.user.count({ where: { role: "ADMIN", active: true } });
+      const activeAdmins = await db.user.count({
+        where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, active: true },
+      });
       if (activeAdmins <= 1) return { error: "最後の管理者は無効化できません" };
     }
   }
@@ -147,8 +183,18 @@ export async function deleteUser(id: string): Promise<UserFormState> {
   const target = await db.user.findUnique({ where: { id } });
   if (!target) return { error: "ユーザーが見つかりません" };
 
+  // 最高管理者を削除できるのは最高管理者のみ
+  if (target.role === "SUPER_ADMIN" && !isSuperAdmin(me)) {
+    return { error: "最高管理者を削除できるのは最高管理者のみです" };
+  }
+
+  if (target.role === "SUPER_ADMIN") {
+    const supers = await db.user.count({ where: { role: "SUPER_ADMIN" } });
+    if (supers <= 1) return { error: "最後の最高管理者は削除できません" };
+  }
+
   if (target.role === "ADMIN") {
-    const admins = await db.user.count({ where: { role: "ADMIN" } });
+    const admins = await db.user.count({ where: { role: { in: ["ADMIN", "SUPER_ADMIN"] } } });
     if (admins <= 1) return { error: "最後の管理者は削除できません" };
   }
 

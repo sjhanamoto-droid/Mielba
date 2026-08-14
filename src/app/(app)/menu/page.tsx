@@ -3,25 +3,29 @@ import {
   LogOut, Settings, ChevronRight, Bell,
   Building2, UserCog, Clock, Lightbulb, type LucideIcon,
 } from "lucide-react";
-import { requireUser, isAdmin } from "@/lib/session";
+import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { logoutAction } from "@/features/auth/actions";
+import { Package } from "lucide-react";
 
 // スマホ用のメニュー（旧：ボトムシートのモーダル）を独立した1ページに。
 // 役割別のショートカット・通知・ログアウトを整理して表示する。
 export default async function MenuPage() {
   const user = await requireUser();
   const admin = isAdmin(user);
+  const superAdmin = isSuperAdmin(user);
   const unreadCount = await db.notification.count({
     where: { userId: user.id, read: false },
   });
 
   const shortcuts: { href: string; label: string; icon: LucideIcon }[] = admin
     ? [
+        // 材料登録（納品書/発注書のOCR）は最高管理者のみ
+        ...(superAdmin ? [{ href: "/materials", label: "材料登録（伝票OCR）", icon: Package }] : []),
         { href: "/customers", label: "顧客（元請企業）", icon: Building2 },
         { href: "/attendance", label: "稼働時間", icon: Clock },
         { href: "/settings/staff", label: "スタッフ管理", icon: UserCog },

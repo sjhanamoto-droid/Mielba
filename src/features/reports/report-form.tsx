@@ -47,6 +47,7 @@ export type ReportFormData = {
   stockUsed: boolean | null;
   stockNote: string | null;
   materials: { name: string; quantity: string | null; unit: string | null }[];
+  stockUses: { name: string; quantity: string | null; unit: string | null }[];
   expenses: { label: string; amount: number }[];
   // 既存写真は {id} 参照（base64 は再送しない）
   photos: UploaderPhoto[];
@@ -95,6 +96,7 @@ export function ReportForm({
   defaultEndTime = "17:00",
   eventContext,
   materialOptions = [],
+  stockOptions = [],
   canInputMaterials = true,
   aiEnabled = false,
 }: {
@@ -114,8 +116,10 @@ export function ReportForm({
     allDay: boolean;
     note: string | null;
   };
-  /** 材料マスター（active のみ・sortOrder 順） */
+  /** 使用材料の候補（その現場に登録された材料 SiteMaterial） */
   materialOptions?: MaterialOption[];
+  /** 在庫材料の候補（在庫材料マスター MaterialMaster・active のみ） */
+  stockOptions?: MaterialOption[];
   /** 材料・在庫を入力できるか（メインの人のみ true。既定 true） */
   canInputMaterials?: boolean;
   /** ANTHROPIC_API_KEY が設定されているか（AIで整えるボタンの表示） */
@@ -130,6 +134,8 @@ export function ReportForm({
 
   const isCustomMaterial = (name: string) =>
     name !== "" && !materialOptions.some((o) => o.name === name);
+  const isCustomStock = (name: string) =>
+    name !== "" && !stockOptions.some((o) => o.name === name);
 
   // ── フォーム state（自動保存の対象。写真は容量のため対象外） ──
   const [workDate, setWorkDate] = useState<string>(
@@ -180,6 +186,16 @@ export function ReportForm({
     })) ?? [],
   );
 
+  // 在庫材料の使用（在庫材料マスターから選択）。既存データはマスタに無ければ自由入力扱い。
+  const [stockRows, setStockRows] = useState<MaterialRow[]>(
+    initial?.stockUses?.map((m) => ({
+      name: m.name,
+      quantity: m.quantity ?? "",
+      unit: m.unit ?? "",
+      custom: isCustomStock(m.name),
+    })) ?? [],
+  );
+
   const [expenses, setExpenses] = useState<ExpenseDraftRow[]>(
     initial?.expenses?.map((e) => ({
       label: e.label,
@@ -195,14 +211,14 @@ export function ReportForm({
       handover, handoverChoice,
       parkingFee, parkingFeeChoice, trainFare, trainFareChoice,
       timeChangeReason, stockChoice, stockNote,
-      materials, expenses,
+      materials, stockRows, expenses,
     }),
     [
       workDate, startTime, endTime, aiDraft, detail,
       handover, handoverChoice,
       parkingFee, parkingFeeChoice, trainFare, trainFareChoice,
       timeChangeReason, stockChoice, stockNote,
-      materials, expenses,
+      materials, stockRows, expenses,
     ],
   );
   const initialJsonRef = useRef<string | null>(null);
@@ -246,6 +262,7 @@ export function ReportForm({
     setStockChoice((d.stockChoice as Choice) ?? "");
     setStockNote(d.stockNote ?? "");
     setMaterials(Array.isArray(d.materials) ? d.materials : []);
+    setStockRows(Array.isArray(d.stockRows) ? d.stockRows : []);
     setExpenses(Array.isArray(d.expenses) ? d.expenses : []);
     setRestoreCandidate(null);
   }
@@ -334,6 +351,19 @@ export function ReportForm({
     });
   }
 
+  function updateStock(i: number, patch: Partial<MaterialRow>) {
+    setStockRows((p) => p.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  function onStockSelect(i: number, value: string) {
+    if (value === CUSTOM_MATERIAL) {
+      updateStock(i, { custom: true, name: "" });
+      return;
+    }
+    const opt = stockOptions.find((o) => o.name === value);
+    updateStock(i, { custom: false, name: value, unit: opt?.unit ?? "" });
+  }
+
   return (
     <form ref={formRef} action={action} className="space-y-5">
       {mode === "edit" && initial && (
@@ -349,6 +379,19 @@ export function ReportForm({
           materialsLocked
             ? "[]"
             : JSON.stringify(materials.map(({ name, quantity, unit }) => ({ name, quantity, unit })))
+        }
+      />
+      <input
+        type="hidden"
+        name="stockUses"
+        value={
+          materialsLocked
+            ? "[]"
+            : JSON.stringify(
+                stockRows
+                  .filter((r) => r.name.trim() !== "")
+                  .map(({ name, quantity, unit }) => ({ name, quantity, unit })),
+              )
         }
       />
       <input
@@ -717,24 +760,96 @@ export function ReportForm({
         ))}
       </DynamicSection>
 
-      {/* 在庫材料の使用（あり/なし＋内容） */}
+      {/* 在庫材料の使用（あり/なし＋在庫材料マスターから選択） */}
       <YesNoField
         label="在庫材料の使用"
         icon={<Boxes className="h-4 w-4 text-ink-muted" />}
         choiceName="stockChoice"
         value={stockChoice}
         onChange={setStockChoice}
-        error={fieldErrors.stockNote}
-        description="弊社在庫（ストック品）を使った場合は「あり」を選び、内容を記載してください。"
+        error={fieldErrors.stockUses}
+        description="弊社在庫（ストック品）を使った場合は「あり」を選び、使った在庫材料を選択してください。"
       >
-        <Textarea
-          id="stockNote"
-          name="stockNote"
-          rows={3}
-          placeholder="例）在庫のVVFケーブル1.6-2C を20mほど使用。"
-          value={stockNote}
-          onChange={(e) => setStockNote(e.target.value)}
-        />
+        <DynamicSection
+          title="使用した在庫材料"
+          icon={<Boxes className="h-4 w-4" />}
+          emptyLabel="在庫材料を追加"
+          hint="在庫材料マスターに登録された材料から選べます。無ければ「その他（自由入力）」。"
+          onAdd={() =>
+            setStockRows((p) => [...p, { name: "", quantity: "", unit: "", custom: stockOptions.length === 0 }])
+          }
+        >
+          {stockRows.map((m, i) => (
+            <RowCard
+              key={i}
+              onRemove={() => setStockRows((p) => p.filter((_, idx) => idx !== i))}
+              className="md:grid md:grid-cols-2 md:items-start md:gap-2 md:space-y-0"
+            >
+              <div className="space-y-2">
+                {stockOptions.length > 0 ? (
+                  <>
+                    <Select
+                      aria-label="在庫材料名"
+                      value={m.custom ? CUSTOM_MATERIAL : m.name}
+                      onChange={(e) => onStockSelect(i, e.target.value)}
+                    >
+                      <option value="">在庫材料を選択</option>
+                      {stockOptions.map((o) => (
+                        <option key={o.id} value={o.name}>
+                          {o.name}
+                          {o.unit ? `（${o.unit}）` : ""}
+                        </option>
+                      ))}
+                      <option value={CUSTOM_MATERIAL}>その他（自由入力）</option>
+                    </Select>
+                    {m.custom && (
+                      <Input
+                        aria-label="在庫材料名（自由入力）"
+                        placeholder="材料名を入力"
+                        value={m.name}
+                        onChange={(e) => updateStock(i, { name: e.target.value })}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <Input
+                    aria-label="在庫材料名"
+                    placeholder="材料名"
+                    value={m.name}
+                    onChange={(e) => updateStock(i, { name: e.target.value })}
+                  />
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  aria-label="数量"
+                  placeholder="数量"
+                  value={m.quantity}
+                  onChange={(e) => updateStock(i, { quantity: e.target.value })}
+                />
+                <Input
+                  aria-label="単位"
+                  placeholder="単位（個/m 等）"
+                  value={m.unit}
+                  onChange={(e) => updateStock(i, { unit: e.target.value })}
+                />
+              </div>
+            </RowCard>
+          ))}
+        </DynamicSection>
+        <div className="mt-2.5">
+          <label htmlFor="stockNote" className="mb-1 block text-xs font-semibold text-ink-muted">
+            補足メモ（任意）
+          </label>
+          <Textarea
+            id="stockNote"
+            name="stockNote"
+            rows={2}
+            placeholder="例）在庫のVVFケーブル1.6-2C を20mほど使用。"
+            value={stockNote}
+            onChange={(e) => setStockNote(e.target.value)}
+          />
+        </div>
       </YesNoField>
       </>
       )}

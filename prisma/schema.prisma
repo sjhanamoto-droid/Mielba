@@ -202,6 +202,7 @@ model Site {
   visits      SiteVisit[]
   photos      Photo[] // 現場に直接紐づく写真（図面・工程表・キーBOX等）
   handovers   Handover[]
+  siteMaterials SiteMaterial[] // 現場に登録した材料（納品書/発注書のOCR登録・最高管理者のみ）
 
   // 関連現場リンク（同一住所）— 双方向に検索する
   relationsA SiteRelation[] @relation("SiteRelationA")
@@ -317,6 +318,7 @@ model DailyReport {
   site          Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   materials     MaterialUse[]
+  stockUses     StockUse[]
   expenses      ReportExpense[]
   orders        MaterialOrder[]
   nextProcesses NextProcess[]
@@ -335,6 +337,19 @@ model MaterialUse {
   reportId String
   name     String
   quantity String? // 数量（単位込みの自由入力も許容）
+  unit     String?
+  report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+// 在庫材料の使用・数量（在庫材料マスター MaterialMaster から選択）。
+// 現場に紐づく使用材料(MaterialUse)とは別枠で、弊社在庫（ストック品）の使用を記録する。
+model StockUse {
+  id       String  @id @default(cuid())
+  reportId String
+  name     String
+  quantity String? // 使用数量（単位込みの自由入力も許容）
   unit     String?
   report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
@@ -415,18 +430,47 @@ model Photo {
   @@index([siteId])
 }
 
-// ──────────────────────── MaterialMaster（材料マスター） ────────────────────────
-// 日報の使用材料・発注の入力候補となる材料マスター。管理者が編集する。
+// ──────────────────────── MaterialMaster（在庫材料マスター） ────────────────────────
+// 現場に紐づかない「残っている在庫材料」を管理するマスター。管理者が編集する。
+// 日報の「在庫材料の使用」の選択候補になる（現場ごとの使用材料は SiteMaterial 側）。
+// ※内部モデル名は互換のため MaterialMaster のまま（UI表記は「在庫材料マスター」）。
 model MaterialMaster {
-  id        String   @id @default(cuid())
-  name      String // 材料名
-  unit      String? // 単位（枚・本・袋 等）
-  active    Boolean  @default(true) // 無効化（削除の代わり）
-  sortOrder Int      @default(0) // 表示順
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String // 材料名
+  unit          String? // 単位（枚・本・袋 等）
+  stockQuantity Int? // 在庫数（残数）。棚卸し等で手動更新
+  location      String? // 置き場所（任意）
+  active        Boolean  @default(true) // 無効化（削除の代わり）
+  sortOrder     Int      @default(0) // 表示順
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([active, sortOrder])
+}
+
+// ──────────────────── SiteMaterial（現場ごとの登録材料） ────────────────────
+// 最高管理者(SUPER_ADMIN)が納品書/発注書の写真をOCRして現場に登録する材料。
+// 日報の使用材料はこの一覧から選択する（スタッフには単価/金額を渡さない＝財務情報）。
+model SiteMaterial {
+  id           String    @id @default(cuid())
+  siteId       String
+  name         String // 材料名
+  quantity     String? // 数量（単位込みの自由入力も許容）
+  unit         String? // 単位（枚・本・袋 等）
+  unitPrice    Int? // 単価（円）— 財務情報・最高管理者のみ閲覧
+  amount       Int? // 金額（円・行合計）— 財務情報・最高管理者のみ閲覧
+  documentType String? // "DELIVERY"(納品書) | "ORDER"(発注書)
+  supplier     String? // 仕入先・業者（OCRで拾えれば）
+  orderedAt    DateTime? // 伝票日付（OCRで拾えれば）
+  photoId      String? // 元となった伝票写真の Photo.id（任意・弱参照）
+  active       Boolean   @default(true) // 無効化（削除の代わり）
+  createdById  String? // 登録者
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, active])
 }
 
 // ──────────────────────── Handover（引き継ぎ事項） ────────────────────────

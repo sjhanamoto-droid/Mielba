@@ -32,6 +32,7 @@ export type ExpenseDraftRow = {
 // 第3弾で あり/なし選択（handoverChoice/parkingFeeChoice/trainFareChoice/stockChoice）、
 // 電車賃(trainFare)・時間変更理由(timeChangeReason)・在庫材料(stockNote)を追加。
 // choice は "HAS" | "NONE" | "" を文字列で保持する（古いドラフトは "" で補う）。
+// 第4弾で 在庫材料の選択式(stockRows)を追加（在庫材料マスターから選択）。古いドラフトは [] で補う。
 export type ReportDraftData = {
   workDate: string;
   startTime: string;
@@ -48,6 +49,7 @@ export type ReportDraftData = {
   stockChoice: string;
   stockNote: string;
   materials: MaterialDraftRow[];
+  stockRows: MaterialDraftRow[];
   expenses: ExpenseDraftRow[];
 };
 

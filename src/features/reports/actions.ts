@@ -115,14 +115,11 @@ const reportSchema = z
       }
     }
 
-    // 在庫材料 あり/なし（提出時必須。あり→内容必須）
-    // メインの人以外（materialsLocked）は在庫欄を持たないため必須チェックをスキップ
-    if (submitted && v.materialsLocked !== "1") {
-      if (!v.stockChoice) {
-        err("stockNote", "在庫材料の使用有無を選択してください");
-      } else if (v.stockChoice === "HAS" && (!v.stockNote || v.stockNote.trim() === "")) {
-        err("stockNote", "使用した在庫材料の内容を入力してください");
-      }
+    // 在庫材料 あり/なし（提出時必須）。「あり」時の内容必須（在庫行 or 補足メモ）は
+    // persist 側で在庫行を数えて判定する（superRefine からは在庫行を参照できないため）。
+    // メインの人以外（materialsLocked）は在庫欄を持たないため必須チェックをスキップ。
+    if (submitted && v.materialsLocked !== "1" && !v.stockChoice) {
+      err("stockUses", "在庫材料の使用有無を選択してください");
     }
   });
 
@@ -180,6 +177,13 @@ async function writeNested(
     : parseJson<z.infer<typeof materialSchema>>(formData.get("materials"))
         .filter((m) => m && typeof m.name === "string" && m.name.trim() !== "");
 
+  // 在庫材料の使用（在庫材料マスターから選択）。ロック時・在庫「あり」以外は空扱い。
+  const stockUsed = !skipMaterials && formData.get("stockChoice") === "HAS";
+  const stockUses = stockUsed
+    ? parseJson<z.infer<typeof materialSchema>>(formData.get("stockUses"))
+        .filter((m) => m && typeof m.name === "string" && m.name.trim() !== "")
+    : [];
+
   // 経費（駐車場代以外）。label が非空 かつ amount が有効な整数の行のみ採用する。
   const expenses = parseJson<z.infer<typeof expenseSchema>>(formData.get("expenses"))
     .map((e) => ({
@@ -188,8 +192,9 @@ async function writeNested(
     }))
     .filter((e) => e.label !== "" && Number.isFinite(e.amount) && e.amount >= 0);
 
-  // 使用材料・経費は作り直し（重複防止）。発注・次回工程・カレンダーは残置。
+  // 使用材料・在庫材料・経費は作り直し（重複防止）。発注・次回工程・カレンダーは残置。
   await tx.materialUse.deleteMany({ where: { reportId } });
+  await tx.stockUse.deleteMany({ where: { reportId } });
   await tx.reportExpense.deleteMany({ where: { reportId } });
 
   // 写真は全削除→再作成をやめ、kept に無い既存のみ削除・新規のみ作成
@@ -203,6 +208,17 @@ async function writeNested(
   if (materials.length > 0) {
     await tx.materialUse.createMany({
       data: materials.map((m) => ({
+        reportId,
+        name: m.name.trim(),
+        quantity: clean(m.quantity),
+        unit: clean(m.unit),
+      })),
+    });
+  }
+
+  if (stockUses.length > 0) {
+    await tx.stockUse.createMany({
+      data: stockUses.map((m) => ({
         reportId,
         name: m.name.trim(),
         quantity: clean(m.quantity),
@@ -325,6 +341,19 @@ async function persist(
 
   // メインの人以外は材料・在庫を持たない（在庫は null 固定・材料は書き込まない）
   const materialsLocked = d.materialsLocked === "1";
+
+  // 在庫材料「あり」で提出するときは、在庫行 or 補足メモのどちらかが必要。
+  if (d.status === "SUBMITTED" && !materialsLocked && d.stockChoice === "HAS") {
+    const stockRows = parseJson<z.infer<typeof materialSchema>>(formData.get("stockUses")).filter(
+      (m) => m && typeof m.name === "string" && m.name.trim() !== "",
+    );
+    if (stockRows.length === 0 && clean(d.stockNote) === null) {
+      return {
+        error: "使用した在庫材料を選択してください",
+        fieldErrors: { stockUses: "使用した在庫材料を選択してください（または補足メモを入力）" },
+      };
+    }
+  }
 
   const data = {
     aiDraft: clean(d.aiDraft),

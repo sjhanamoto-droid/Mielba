@@ -7,7 +7,7 @@ import { createUser, updateUser, type UserFormState } from "./actions";
 import { Field, Input, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { ColorPicker } from "@/features/settings/color-picker";
-import { ROLE_OPTIONS, ROLE_LABEL } from "@/lib/constants";
+import { ROLE_OPTIONS, ROLE_OPTIONS_SUPER_ADMIN, ROLE_LABEL } from "@/lib/constants";
 
 type UserData = {
   id: string;
@@ -31,12 +31,24 @@ function SubmitButton({ isEdit }: { isEdit: boolean }) {
   );
 }
 
-export function UserForm({ user }: { user?: UserData }) {
+export function UserForm({
+  user,
+  canAssignSuperAdmin = false,
+}: {
+  user?: UserData;
+  /** 最高管理者の付与可否（最高管理者のみ true）。選択肢の出し分けに使う */
+  canAssignSuperAdmin?: boolean;
+}) {
   const isEdit = !!user;
   const [state, formAction] = useActionState<UserFormState, FormData>(
     isEdit ? updateUser : createUser,
     {},
   );
+  // 編集中の相手が既に最高管理者なら、その選択肢は必ず出す（最高管理者本人が編集する前提）
+  const roleOptions =
+    canAssignSuperAdmin || user?.role === "SUPER_ADMIN"
+      ? ROLE_OPTIONS_SUPER_ADMIN
+      : ROLE_OPTIONS;
 
   return (
     <form action={formAction} className="space-y-4">
@@ -48,7 +60,7 @@ export function UserForm({ user }: { user?: UserData }) {
         </Field>
         <Field label="権限" htmlFor="role" required>
           <Select id="role" name="role" defaultValue={user?.role ?? "STAFF"}>
-            {ROLE_OPTIONS.map((r) => (
+            {roleOptions.map((r) => (
               <option key={r} value={r}>{ROLE_LABEL[r]}</option>
             ))}
           </Select>

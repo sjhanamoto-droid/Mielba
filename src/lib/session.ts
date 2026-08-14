@@ -47,12 +47,25 @@ export async function requireUser(): Promise<CurrentUser> {
   return user;
 }
 
+// 管理者権限が必要（最高管理者は管理者権限を内包するため許可）
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
-  if (user.role !== "ADMIN") redirect("/");
+  if (!isAdmin(user)) redirect("/");
   return user;
 }
 
+// 最高管理者のみ（原価・会計情報、材料のOCR登録など）
+export async function requireSuperAdmin(): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!isSuperAdmin(user)) redirect("/");
+  return user;
+}
+
+// 最高管理者は管理者権限を内包する（既存の isAdmin 判定を通す）
 export function isAdmin(user: { role: string } | null): boolean {
-  return user?.role === "ADMIN";
+  return user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+}
+
+export function isSuperAdmin(user: { role: string } | null): boolean {
+  return user?.role === "SUPER_ADMIN";
 }

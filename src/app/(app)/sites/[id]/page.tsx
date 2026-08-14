@@ -6,7 +6,7 @@ import {
   ClipboardCheck, Wallet, ScrollText, Phone, ArrowRight, Map, CalendarRange,
   UserRound, CircleParking, AlertTriangle,
 } from "lucide-react";
-import { requireUser, isAdmin } from "@/lib/session";
+import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -45,6 +45,7 @@ export default async function SiteDetailPage({
 }) {
   const user = await requireUser();
   const admin = isAdmin(user);
+  const superAdmin = isSuperAdmin(user); // 金額・原価など会計情報は最高管理者のみ閲覧
   const { id } = await params;
 
   // 「今日以降」の判定は Asia/Tokyo の暦日で行う（UTCサーバーでの前日ズレ防止）
@@ -719,16 +720,21 @@ export default async function SiteDetailPage({
         <section className="space-y-2.5">
           <SectionTitle>将来フェーズ（項目定義のみ）</SectionTitle>
           <Card className="space-y-3 p-4 opacity-90">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-ink-muted">
-              <Wallet className="h-4 w-4" />
-              金額・収支
-            </div>
-            <DataList>
-              <DataRow label="請求ステータス" value={site.billingStatus ? labelOf(BILLING_STATUS_LABEL, site.billingStatus as BillingStatus) : null} />
-              <DataRow label="契約金額" value={null} />
-              <DataRow label="実行予算" value={null} />
-              <DataRow label="粗利" value={null} />
-            </DataList>
+            {/* 金額・収支は会計情報のため最高管理者のみ閲覧できる */}
+            {superAdmin && (
+              <>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-ink-muted">
+                  <Wallet className="h-4 w-4" />
+                  金額・収支
+                </div>
+                <DataList>
+                  <DataRow label="請求ステータス" value={site.billingStatus ? labelOf(BILLING_STATUS_LABEL, site.billingStatus as BillingStatus) : null} />
+                  <DataRow label="契約金額" value={null} />
+                  <DataRow label="実行予算" value={null} />
+                  <DataRow label="粗利" value={null} />
+                </DataList>
+              </>
+            )}
             <div className="flex items-center gap-1.5 pt-1 text-xs font-bold text-ink-muted">
               <ScrollText className="h-4 w-4" />
               法令・書類

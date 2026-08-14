@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -11,7 +11,7 @@ export default async function EditStaffPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAdmin();
+  const me = await requireAdmin();
   const { id } = await params;
   const user = await db.user.findUnique({
     where: { id },
@@ -24,7 +24,7 @@ export default async function EditStaffPage({
       <PageHeader title="スタッフを編集" subtitle={user.name} backHref="/settings/staff" />
       <PageContainer size="narrow">
         <Card className="p-4 sm:p-5">
-          <UserForm user={user} />
+          <UserForm user={user} canAssignSuperAdmin={isSuperAdmin(me)} />
         </Card>
       </PageContainer>
     </div>

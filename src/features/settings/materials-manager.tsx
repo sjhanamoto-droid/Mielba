@@ -10,6 +10,8 @@ import {
   Check,
   X,
   Loader2,
+  MapPin,
+  Boxes,
 } from "lucide-react";
 import {
   createMaterial,
@@ -28,12 +30,14 @@ export type MaterialRow = {
   id: string;
   name: string;
   unit: string | null;
+  stockQuantity: number | null;
+  location: string | null;
   active: boolean;
 };
 
 /**
- * 材料マスタの管理UI（設定画面・管理者のみ）。
- * 追加 / 名称・単位の編集 / 有効・無効トグル / 上下ボタンで並び替え / 削除（使用実績が無い場合）。
+ * 在庫材料マスターの管理UI（設定画面・管理者のみ）。
+ * 追加 / 名称・単位・在庫数・置き場所の編集 / 有効・無効トグル / 並び替え / 削除（使用実績が無い場合）。
  * サーバーアクション側の revalidatePath("/settings") で一覧が更新される。
  */
 export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
@@ -42,6 +46,8 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editUnit, setEditUnit] = useState("");
+  const [editQty, setEditQty] = useState("");
+  const [editLocation, setEditLocation] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<MaterialRow | null>(null);
   const addFormRef = useRef<HTMLFormElement>(null);
 
@@ -60,12 +66,16 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
     setEditingId(m.id);
     setEditName(m.name);
     setEditUnit(m.unit ?? "");
+    setEditQty(m.stockQuantity != null ? String(m.stockQuantity) : "");
+    setEditLocation(m.location ?? "");
   }
 
   function saveEdit(id: string) {
     const fd = new FormData();
     fd.set("name", editName);
     fd.set("unit", editUnit);
+    fd.set("stockQuantity", editQty);
+    fd.set("location", editLocation);
     startTransition(async () => {
       const result = await updateMaterial(id, fd);
       if (result?.error) {
@@ -80,25 +90,26 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
   return (
     <div className="space-y-2.5">
       <p className="px-1 text-xs text-ink-muted">
-        スタッフが日報で選択する材料のリストです。使わなくなった材料は「無効」に切り替えると選択肢に出なくなります。
+        現場に紐づかない「残っている在庫材料」を管理します。ここに登録した材料は、日報の「在庫材料の使用」で選べます。使わなくなった材料は「無効」に切り替えると選択肢に出なくなります。
       </p>
 
       {/* 一覧 */}
       {materials.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line-strong bg-surface/50 px-4 py-6 text-center text-sm text-ink-muted">
-          材料がまだ登録されていません
+          在庫材料がまだ登録されていません
         </div>
       ) : (
         <div className={cn("card divide-y divide-line", pending && "opacity-70")}>
           {materials.map((m, i) => (
-            <div key={m.id} className="flex items-center gap-2 px-3.5 py-2.5">
+            <div key={m.id} className="px-3.5 py-2.5">
               {editingId === m.id ? (
-                <>
-                  <div className="grid min-w-0 flex-1 grid-cols-[1fr_5rem] gap-2">
+                <div className="space-y-2">
+                  <div className="grid grid-cols-[1fr_5rem] gap-2">
                     <Input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       aria-label="材料名"
+                      placeholder="材料名"
                       className="h-10"
                     />
                     <Input
@@ -109,27 +120,46 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
                       className="h-10"
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => saveEdit(m.id)}
-                    disabled={pending}
-                    aria-label="保存"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white active:scale-95"
-                  >
-                    {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(null)}
-                    disabled={pending}
-                    aria-label="キャンセル"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line-strong text-ink-muted active:scale-95"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      value={editQty}
+                      onChange={(e) => setEditQty(e.target.value)}
+                      aria-label="在庫数"
+                      placeholder="在庫数"
+                      inputMode="numeric"
+                      className="h-10"
+                    />
+                    <Input
+                      value={editLocation}
+                      onChange={(e) => setEditLocation(e.target.value)}
+                      aria-label="置き場所"
+                      placeholder="置き場所"
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(null)}
+                      disabled={pending}
+                      aria-label="キャンセル"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line-strong text-ink-muted active:scale-95"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveEdit(m.id)}
+                      disabled={pending}
+                      aria-label="保存"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white active:scale-95"
+                    >
+                      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <>
+                <div className="flex items-center gap-2">
                   {/* 並び替え */}
                   <div className="flex shrink-0 flex-col">
                     <button
@@ -152,10 +182,23 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
                     </button>
                   </div>
 
-                  {/* 名称・単位 */}
+                  {/* 名称・単位・在庫数・置き場所 */}
                   <div className={cn("min-w-0 flex-1", !m.active && "opacity-50")}>
-                    <p className="truncate text-sm font-semibold text-ink">{m.name}</p>
-                    {m.unit && <p className="text-xs text-ink-muted">単位: {m.unit}</p>}
+                    <p className="truncate text-sm font-semibold text-ink">
+                      {m.name}
+                      {m.stockQuantity != null && (
+                        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-brand-50 px-1.5 py-0.5 text-[11px] font-bold text-brand-600 dark:bg-brand-950/40 dark:text-brand-300">
+                          <Boxes className="h-3 w-3" />
+                          {m.stockQuantity}
+                          {m.unit ?? ""}
+                        </span>
+                      )}
+                    </p>
+                    <p className="truncate text-xs text-ink-muted">
+                      {[m.unit ? `単位: ${m.unit}` : null, m.location ? `置き場所: ${m.location}` : null]
+                        .filter(Boolean)
+                        .join(" ・ ") || "—"}
+                    </p>
                   </div>
 
                   {/* 有効/無効トグル */}
@@ -197,7 +240,7 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                </>
+                </div>
               )}
             </div>
           ))}
@@ -215,18 +258,28 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
               return;
             }
             addFormRef.current?.reset();
-            toast("材料を追加しました");
+            toast("在庫材料を追加しました");
           });
         }}
         className="space-y-2 rounded-xl border border-dashed border-line-strong bg-surface/50 p-3"
       >
         <div className="grid grid-cols-[1fr_6rem] gap-2">
-          <Input name="name" placeholder="材料名（例: 石膏ボード）" aria-label="材料名" required />
+          <Input name="name" placeholder="材料名（例: VVFケーブル 1.6-2C）" aria-label="材料名" required />
           <Input name="unit" placeholder="単位" aria-label="単位" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="relative">
+            <Boxes className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+            <Input name="stockQuantity" placeholder="在庫数" aria-label="在庫数" inputMode="numeric" className="pl-9" />
+          </div>
+          <div className="relative">
+            <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+            <Input name="location" placeholder="置き場所" aria-label="置き場所" className="pl-9" />
+          </div>
         </div>
         <Button type="submit" disabled={pending} className="w-full" size="md">
           <Plus className="h-4 w-4" />
-          材料を追加
+          在庫材料を追加
         </Button>
       </form>
 
@@ -235,12 +288,12 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         danger
-        title="材料を削除しますか？"
+        title="在庫材料を削除しますか？"
         description={
           deleteTarget ? (
             <>
               「<span className="font-bold">{deleteTarget.name}</span>」を削除します。
-              日報で使用されている材料は削除できません（その場合は無効化してください）。
+              日報で使用されている在庫材料は削除できません（その場合は無効化してください）。
             </>
           ) : null
         }
@@ -252,7 +305,7 @@ export function MaterialsManager({ materials }: { materials: MaterialRow[] }) {
             toast(result.error, { type: "error" });
             return;
           }
-          toast("材料を削除しました");
+          toast("在庫材料を削除しました");
         }}
       />
     </div>

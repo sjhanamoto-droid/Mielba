@@ -7,6 +7,7 @@ import { ReportForm } from "@/features/reports/report-form";
 import { MainVoteGate } from "@/features/reports/main-vote-gate";
 import { getMainVoteState } from "@/features/reports/main-vote-actions";
 import { getAppSettings } from "@/lib/settings";
+import { dedupeByName } from "@/lib/materials";
 import { fmtDateWithDay } from "@/lib/utils";
 import { jstDateKey, dateFromKey, dayRangeForKey } from "@/lib/date";
 import { Crown } from "lucide-react";
@@ -98,8 +99,17 @@ export default async function NewReportPage({
     },
   });
 
-  // 材料マスター（使用材料のセレクト候補）
-  const materialOptions = await db.materialMaster.findMany({
+  // 使用材料のセレクト候補は「この現場に登録された材料」。金額は渡さない（財務情報）。
+  // 同名の重複（複数伝票で同じ材料）は名前で1つに集約する。
+  const siteMaterials = await db.siteMaterial.findMany({
+    where: { siteId: site.id, active: true },
+    orderBy: [{ createdAt: "desc" }],
+    select: { id: true, name: true, unit: true },
+  });
+  const materialOptions = dedupeByName(siteMaterials);
+
+  // 在庫材料の選択候補は「在庫材料マスター（active）」。
+  const stockOptions = await db.materialMaster.findMany({
     where: { active: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     select: { id: true, name: true, unit: true },
@@ -134,6 +144,7 @@ export default async function NewReportPage({
           defaultStartTime={defaultStartTime}
           defaultEndTime={defaultEndTime}
           materialOptions={materialOptions}
+          stockOptions={stockOptions}
           canInputMaterials={canInputMaterials}
           aiEnabled={Boolean(process.env.ANTHROPIC_API_KEY)}
           eventContext={
