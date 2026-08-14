@@ -23,6 +23,7 @@ import { getOpenHandovers } from "@/features/handovers/actions";
 import { SiteStageControl } from "@/features/sites/site-stage-control";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
+import { SiteMaterialSummary } from "@/features/materials/site-material-summary";
 import { photoSrc } from "@/lib/photos";
 import { todayRange } from "@/lib/date";
 import { fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
@@ -82,7 +83,8 @@ export default async function SiteDetailPage({
 
   // 日報数（全件）・人工カウント（着工実績日以降のみ）・未解決引き継ぎ・現場写真・駐車場代累計
   // 人工は「着工実績日以降の日報」で数える（着工前＝現調段階はカウントしない）。actualStartDate 未設定なら 0。
-  const [reportCount, manDaysCount, openHandovers, sitePhotos, parkingAgg] = await Promise.all([
+  const [reportCount, manDaysCount, openHandovers, sitePhotos, parkingAgg, siteMaterials] =
+    await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
     site.actualStartDate
       ? db.dailyReport.count({
@@ -98,6 +100,12 @@ export default async function SiteDetailPage({
     db.dailyReport.aggregate({
       where: { siteId: site.id },
       _sum: { parkingFee: true },
+    }),
+    // 現場に登録された材料（有効のみ）。種類・数量は全員、単価/金額は最高管理者のみ描画する。
+    db.siteMaterial.findMany({
+      where: { siteId: site.id, active: true },
+      orderBy: [{ createdAt: "desc" }],
+      select: { id: true, name: true, quantity: true, unit: true, unitPrice: true, amount: true },
     }),
   ]);
 
@@ -373,6 +381,20 @@ export default async function SiteDetailPage({
               />
             </DataList>
           </Card>
+        </section>
+
+        {/* 登録材料（種類・数量は全員／金額は最高管理者のみ） */}
+        <section className="space-y-2.5">
+          <SectionTitle>
+            <span className="flex items-center gap-1.5">登録材料</span>
+          </SectionTitle>
+          <SiteMaterialSummary materials={siteMaterials} showAmount={superAdmin} />
+          <p className="px-1 text-[11px] text-ink-faint">
+            現場に登録された材料（伝票OCR）です。数量は登録時点の値です。
+            {superAdmin
+              ? "金額（原価）は最高管理者のみ表示されます。"
+              : "金額は最高管理者のみ閲覧できます。"}
+          </p>
         </section>
 
         {/* ⓪-3 図面・工程表 */}
