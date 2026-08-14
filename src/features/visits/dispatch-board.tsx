@@ -9,6 +9,7 @@ import Link from "next/link";
 import { toggleVisit } from "./actions";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/components/ui/toast";
+import { ConfirmDialog } from "@/components/ui/modal";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -123,13 +124,26 @@ export function DispatchBoard({
   const [editSiteId, setEditSiteId] = useState<string | null>(null);
   // セル単位の pending（`${siteId}_${userId}`）。1タップで全ボタンをロックしない。
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
+  // 現場入りの取り消し確認（削除は日報下書きの削除を伴うため二重確認する）
+  const [confirmRemove, setConfirmRemove] = useState<{ siteId: string; userId: string; name: string } | null>(null);
   const [visited, setVisited] = useState<Record<string, Set<string>>>(() => {
     const m: Record<string, Set<string>> = {};
     for (const s of sites) m[s.id] = new Set(s.visitedIds);
     return m;
   });
 
-  function toggle(siteId: string, userId: string) {
+  // 追加はそのまま実行。取り消し（削除）は確認ダイアログを挟む。
+  function requestToggle(siteId: string, userId: string) {
+    const isRemoval = visited[siteId]?.has(userId) ?? false;
+    if (!isRemoval) {
+      doToggle(siteId, userId);
+      return;
+    }
+    const name = userById.get(userId)?.name ?? "";
+    setConfirmRemove({ siteId, userId, name });
+  }
+
+  function doToggle(siteId: string, userId: string) {
     const key = `${siteId}_${userId}`;
     if (pendingKeys.has(key)) return; // 同一セルの多重タップは無視
     const was = visited[siteId]?.has(userId) ?? false;
@@ -218,7 +232,7 @@ export function DispatchBoard({
                       <button
                         key={uid}
                         type="button"
-                        onClick={() => toggle(s.id, uid)}
+                        onClick={() => requestToggle(s.id, uid)}
                         disabled={cellPending}
                         aria-label={`${u.name} を当日から外す`}
                         className={cn(
@@ -279,10 +293,30 @@ export function DispatchBoard({
           allUsers={allUsers}
           visitedSet={visited[editSite.id] ?? new Set()}
           pendingKeys={pendingKeys}
-          onToggle={toggle}
+          onToggle={requestToggle}
           onClose={() => setEditSiteId(null)}
         />
       )}
+
+      {/* 現場入りの取り消し確認（削除は当日の日報下書きの削除を伴う） */}
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        onClose={() => setConfirmRemove(null)}
+        danger
+        title="現場入りを取り消しますか？"
+        description={
+          confirmRemove ? (
+            <>
+              「<span className="font-bold">{confirmRemove.name}</span>」をこの日の現場入りから外します。
+              当日の日報が下書きの場合は一緒に削除されます（提出済みの場合は取り消せません）。
+            </>
+          ) : null
+        }
+        confirmLabel="取り消す"
+        onConfirm={() => {
+          if (confirmRemove) doToggle(confirmRemove.siteId, confirmRemove.userId);
+        }}
+      />
     </div>
   );
 }
