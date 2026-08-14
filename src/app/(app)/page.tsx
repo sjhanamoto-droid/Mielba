@@ -14,6 +14,7 @@ import { SiteCard } from "@/components/site-card";
 import { mapSearchUrl } from "@/lib/utils";
 import { HandoverAlert } from "@/components/handover-alert";
 import { TodayConfirm, type HeroSite } from "@/features/dashboard/today-confirm";
+import { RemindReportsButton } from "@/features/dashboard/remind-reports-button";
 import { StatTile, EmptyState } from "@/components/ui/misc";
 import { IconBadge } from "@/components/ui/icon-badge";
 import { SectionTitle } from "@/components/ui/card";
@@ -546,13 +547,16 @@ export default async function HomePage() {
                         <MiniStat label="未提出" value={dispatchSummary.pending} tone="amber" />
                       </div>
                       {dispatchSummary.pending > 0 && (
-                        <Link
-                          href="/dispatch"
-                          className="mt-3 flex items-center justify-center gap-1 rounded-xl bg-surface-subtle py-2.5 text-sm font-bold text-brand-600 active:scale-[0.99]"
-                        >
-                          未提出の {dispatchSummary.pending} 名を配員ボードで確認
-                          <ArrowRight className="h-4 w-4" />
-                        </Link>
+                        <>
+                          <RemindReportsButton pendingCount={dispatchSummary.pending} />
+                          <Link
+                            href="/dispatch"
+                            className="mt-2 flex items-center justify-center gap-1 rounded-xl bg-surface-subtle py-2.5 text-sm font-bold text-brand-600 active:scale-[0.99]"
+                          >
+                            未提出の {dispatchSummary.pending} 名を配員ボードで確認
+                            <ArrowRight className="h-4 w-4" />
+                          </Link>
+                        </>
                       )}
                     </>
                   ) : (
