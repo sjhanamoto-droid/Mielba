@@ -6,7 +6,7 @@ import {
   Camera, Loader2, Save, Trash2, Plus, AlertTriangle, ScanLine, Check, X,
   Image as ImageIcon,
 } from "lucide-react";
-import { Input, Select } from "@/components/ui/form";
+import { Input } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -14,11 +14,14 @@ import {
   registerSiteMaterials,
   type OcrResult,
 } from "./ocr-actions";
-import { MATERIAL_DOCUMENT_TYPE_LABEL } from "@/lib/constants";
 
 // 画像を本体（最大1600px・OCR精度優先）＋サムネイル（320px）へ圧縮する
 const MAX_DIM = 1600;
 const THUMB_DIM = 320;
+
+// OCRで読み取る金額は税抜き。税込み合計は消費税(10%)を加えて表示する。
+const TAX_RATE = 0.1;
+const yen = (n: number) => `¥${n.toLocaleString()}`;
 
 function scaleDims(w: number, h: number, max: number) {
   if (w > h && w > max) return { width: max, height: Math.round((h * max) / w) };
@@ -225,7 +228,10 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
     });
   }
 
-  const totalAmount = rows.reduce((sum, r) => sum + (toIntOrNull(r.amount) ?? 0), 0);
+  // 税抜き合計（OCR/入力値の合算）→ 消費税(10%) → 税込み合計
+  const subtotal = rows.reduce((sum, r) => sum + (toIntOrNull(r.amount) ?? 0), 0);
+  const tax = Math.round(subtotal * TAX_RATE);
+  const totalWithTax = subtotal + tax;
   const siteNameMismatch =
     detectedSiteName != null &&
     detectedSiteName.trim() !== "" &&
@@ -316,18 +322,6 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
           {/* 伝票メタ情報 */}
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs font-semibold text-ink-muted">
-              伝票種別
-              <Select
-                className="mt-1"
-                value={documentType}
-                onChange={(e) => setDocumentType(e.target.value as "" | "DELIVERY" | "ORDER")}
-              >
-                <option value="">未選択</option>
-                <option value="DELIVERY">{MATERIAL_DOCUMENT_TYPE_LABEL.DELIVERY}</option>
-                <option value="ORDER">{MATERIAL_DOCUMENT_TYPE_LABEL.ORDER}</option>
-              </Select>
-            </label>
-            <label className="text-xs font-semibold text-ink-muted">
               伝票日付
               <Input
                 className="mt-1"
@@ -336,7 +330,7 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
                 onChange={(e) => setOrderedAt(e.target.value)}
               />
             </label>
-            <label className="col-span-2 text-xs font-semibold text-ink-muted">
+            <label className="text-xs font-semibold text-ink-muted">
               仕入先
               <Input
                 className="mt-1"
@@ -352,7 +346,7 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-ink">材料明細</span>
               <span className="text-xs text-ink-muted">
-                合計 <span className="font-bold text-ink">¥{totalAmount.toLocaleString()}</span>
+                税抜 <span className="font-bold text-ink">{yen(subtotal)}</span>
               </span>
             </div>
             {rows.map((r, i) => (
@@ -414,7 +408,24 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
             </button>
           </div>
 
+          {/* 金額サマリー（税抜き＋消費税10%＝税込み） */}
+          <div className="space-y-1.5 rounded-xl border border-line bg-surface-subtle px-4 py-3 text-sm">
+            <div className="flex items-center justify-between text-ink-soft">
+              <span>税抜き合計</span>
+              <span className="tnum font-semibold text-ink">{yen(subtotal)}</span>
+            </div>
+            <div className="flex items-center justify-between text-ink-soft">
+              <span>消費税（10%）</span>
+              <span className="tnum font-semibold text-ink">{yen(tax)}</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-line pt-1.5">
+              <span className="font-bold text-ink">税込み合計</span>
+              <span className="tnum text-base font-bold text-brand-600">{yen(totalWithTax)}</span>
+            </div>
+          </div>
+
           <p className="text-[11px] text-ink-faint">
+            ※ OCRで読み取る金額は税抜きです。税込み合計は消費税10%で自動計算しています。<br />
             ※ 単価・金額は最高管理者のみが閲覧できます。スタッフの日報では材料名の選択にのみ使われます。
           </p>
 

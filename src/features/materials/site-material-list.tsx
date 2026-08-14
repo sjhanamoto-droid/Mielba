@@ -41,16 +41,20 @@ export function SiteMaterialList({ materials }: { materials: SiteMaterialRow[] }
     );
   }
 
-  const total = materials
+  // 原価（税抜き）合計 → 消費税(10%) → 税込み合計。OCRで読み取る金額は税抜き。
+  const subtotal = materials
     .filter((m) => m.active)
     .reduce((sum, m) => sum + (m.amount ?? 0), 0);
+  const totalWithTax = subtotal + Math.round(subtotal * 0.1);
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between px-1">
         <span className="text-xs text-ink-muted">有効な材料 {materials.filter((m) => m.active).length}件</span>
         <span className="text-xs text-ink-muted">
-          原価合計 <span className="font-bold text-ink">¥{total.toLocaleString()}</span>
+          原価 税抜 <span className="font-bold text-ink">¥{subtotal.toLocaleString()}</span>
+          <span className="mx-1 text-ink-faint">/</span>
+          税込 <span className="font-bold text-ink">¥{totalWithTax.toLocaleString()}</span>
         </span>
       </div>
 
