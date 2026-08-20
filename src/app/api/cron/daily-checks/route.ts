@@ -1,9 +1,9 @@
 // POST/GET /api/cron/daily-checks — 仮登録リマインド＋人工超過の日次チェック（毎日09時JST想定）。
 //
 // (A) 仮登録リマインド: provisional=true の現場について、作成からの経過日数(JST暦日)が
-//     1/3/5/7 または 7超 のとき、作成者＋全ADMIN へ通知する。
-// (B) 人工超過: actualStartDate があり targetManDays>0 の現場で、着工日以降の日報件数が
-//     目標人工を超えたら、全ADMIN へ通知する。
+//     1/3/5/7 または 7超 のとき、作成者本人のみへ通知する。
+// (B) 人工超過: actualStartDate があり targetManDays>0 の現場で、着工日以降の
+//     提出済み日報件数が目標人工を超えたら、全ADMIN へ通知する。
 // いずれも dedupeKey は現場・当日単位で、同日の重複通知を防ぐ。
 
 import { type NextRequest, NextResponse } from "next/server";
@@ -71,8 +71,9 @@ async function handle(req: NextRequest) {
     });
     for (const site of targetSites) {
       if (!site.actualStartDate || !site.targetManDays) continue;
+      // 下書きは人工に数えない（提出済みのみ。勤怠集計と同じ基準）
       const count = await db.dailyReport.count({
-        where: { siteId: site.id, workDate: { gte: site.actualStartDate } },
+        where: { siteId: site.id, workDate: { gte: site.actualStartDate }, status: "SUBMITTED" },
       });
       if (count <= site.targetManDays) continue;
 

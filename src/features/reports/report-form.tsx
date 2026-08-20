@@ -33,6 +33,7 @@ const CUSTOM_MATERIAL = "__custom__";
 
 export type ReportFormData = {
   id: string;
+  status: string; // DRAFT | SUBMITTED（提出済みは「下書き保存」で未提出に戻せない）
   workDate: Date | string;
   startTime: string;
   endTime: string;
@@ -56,22 +57,26 @@ export type ReportFormData = {
 /** あり/なし選択。未選択は "" */
 type Choice = "HAS" | "NONE" | "";
 
-function SubmitButtons() {
+function SubmitButtons({ allowDraft }: { allowDraft: boolean }) {
   const { pending } = useFormStatus();
   return (
     <div className="flex gap-2.5">
-      {/* 下書きはブラウザ検証をスキップ（未入力でも保存できる） */}
-      <button
-        type="submit"
-        name="status"
-        value="DRAFT"
-        formNoValidate
-        disabled={pending}
-        className={buttonClass({ variant: "outline", size: "lg", className: "flex-1" })}
-      >
-        <Save className="h-5 w-5" />
-        下書き保存
-      </button>
+      {/* 下書きはブラウザ検証をスキップ（未入力でも保存できる）。
+          提出済みの編集では出さない（「下書き保存」で未提出に戻り、
+          未入力ゲート復活＋引き継ぎ掲示だけ残る不整合を防ぐ）。 */}
+      {allowDraft && (
+        <button
+          type="submit"
+          name="status"
+          value="DRAFT"
+          formNoValidate
+          disabled={pending}
+          className={buttonClass({ variant: "outline", size: "lg", className: "flex-1" })}
+        >
+          <Save className="h-5 w-5" />
+          下書き保存
+        </button>
+      )}
       <button
         type="submit"
         name="status"
@@ -80,7 +85,7 @@ function SubmitButtons() {
         className={buttonClass({ variant: "primary", size: "lg", className: "flex-1" })}
       >
         <Send className="h-5 w-5" />
-        {pending ? "送信中..." : "提出する"}
+        {pending ? "送信中..." : allowDraft ? "提出する" : "保存して提出"}
       </button>
     </div>
   );
@@ -92,6 +97,7 @@ export function ReportForm({
   siteName,
   initial,
   defaultDate,
+  maxDate,
   defaultStartTime = "08:00",
   defaultEndTime = "17:00",
   eventContext,
@@ -106,6 +112,8 @@ export function ReportForm({
   initial?: ReportFormData;
   /** new モードの作業日初期値 "YYYY-MM-DD"（未指定は今日）。後追い入力で過去日を渡す */
   defaultDate?: string;
+  /** 作業日の上限 "YYYY-MM-DD"（JSTの今日）。未来日の日報を防ぐ */
+  maxDate?: string;
   defaultStartTime?: string;
   defaultEndTime?: string;
   eventContext?: {
@@ -371,6 +379,9 @@ export function ReportForm({
       )}
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="aiSummary" value={aiSummary} readOnly />
+      {/* 所定時間（時間変更理由の基準）。設定既定 or カレンダー予定の時刻 */}
+      <input type="hidden" name="baseStartTime" value={defaultStartTime} />
+      <input type="hidden" name="baseEndTime" value={defaultEndTime} />
       {materialsLocked && <input type="hidden" name="materialsLocked" value="1" />}
       <input
         type="hidden"
@@ -528,6 +539,7 @@ export function ReportForm({
               name="workDate"
               type="date"
               value={workDate}
+              max={maxDate}
               onChange={(e) => setWorkDate(e.target.value)}
               required
             />
@@ -559,12 +571,12 @@ export function ReportForm({
           <Clock className="h-3.5 w-3.5" />
           作業時間がそのままタイムカード（勤怠）になります。
         </p>
-        {/* 8:00-17:00 以外のときは理由を入力（提出時必須） */}
-        {(startTime !== "08:00" || endTime !== "17:00") && (
+        {/* 所定時間（設定既定 or カレンダー予定の時刻）以外のときは理由を入力（提出時必須） */}
+        {(startTime !== defaultStartTime || endTime !== defaultEndTime) && (
           <Field
             htmlFor="timeChangeReason"
             error={fieldErrors.timeChangeReason}
-            description="8:00〜17:00 以外の作業になった理由を入力してください。"
+            description={`所定時間（${defaultStartTime}〜${defaultEndTime}）以外の作業になった理由を入力してください。`}
           >
             <label
               htmlFor="timeChangeReason"
@@ -610,7 +622,7 @@ export function ReportForm({
               name="parkingFee"
               type="number"
               inputMode="numeric"
-              min={0}
+              min={1}
               step={1}
               placeholder="例）800"
               className="pl-11"
@@ -636,7 +648,7 @@ export function ReportForm({
               name="trainFare"
               type="number"
               inputMode="numeric"
-              min={0}
+              min={1}
               step={1}
               placeholder="例）480"
               className="pl-11"
@@ -901,7 +913,7 @@ export function ReportForm({
         </div>
       )}
 
-      <SubmitButtons />
+      <SubmitButtons allowDraft={!(mode === "edit" && initial?.status === "SUBMITTED")} />
     </form>
   );
 }

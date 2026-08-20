@@ -6,7 +6,8 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { ReportForm, type ReportFormData } from "@/features/reports/report-form";
 import type { PhotoKind } from "@/lib/constants";
 import { dedupeByName } from "@/lib/materials";
-import { jstDateKey, dayRangeForKey } from "@/lib/date";
+import { getAppSettings } from "@/lib/settings";
+import { jstDateKey, storedDateKey, dayRangeForKey } from "@/lib/date";
 
 export default async function EditReportPage({
   params,
@@ -54,7 +55,10 @@ export default async function EditReportPage({
 
   // メインの人（全員一致投票）: この日報の作業日・現場で consensus が確定していれば、
   // 材料・在庫はメイン本人（＝日報の所有者と一致する場合）のみ入力可。未確定なら誰でも可。
-  const { gte, lt } = dayRangeForKey(jstDateKey(report.workDate));
+  // 注: この編集ページは投票ゲートを通らない（下書きの続きから提出できる）。
+  // 投票が集まらず詰んだ場合の逃げ道として意図的に残している（管理者の代理確定も併用可）。
+  const workDateKey = storedDateKey(report.workDate);
+  const { gte, lt } = dayRangeForKey(workDateKey);
   const visits = await db.siteVisit.findMany({
     where: { siteId: report.siteId, date: { gte, lt } },
     select: { userId: true, mainVote: true },
@@ -69,8 +73,27 @@ export default async function EditReportPage({
   const canInputMaterials =
     consensus == null ? true : ownerIsMember ? consensus === report.userId : true;
 
+  // 所定時間（時間変更理由の基準）: 新規作成時と同じく、作業日のカレンダー予定の時刻 →
+  // 無ければアプリ設定の既定時刻。8:00-17:00 固定だと予定通りの時間でも理由入力を求められるため。
+  const settings = await getAppSettings();
+  const event = await db.calendarEvent.findFirst({
+    where: {
+      siteId: report.siteId,
+      date: { gte, lt },
+      OR: [
+        { participants: { some: { userId: report.userId } } },
+        { ownerId: report.userId },
+      ],
+    },
+    orderBy: [{ allDay: "asc" }, { startTime: "asc" }],
+    select: { startTime: true, endTime: true },
+  });
+  const baseStartTime = event?.startTime ?? settings.defaultStartTime;
+  const baseEndTime = event?.endTime ?? settings.defaultEndTime;
+
   const initial: ReportFormData = {
     id: report.id,
+    status: report.status,
     workDate: report.workDate,
     startTime: report.startTime,
     endTime: report.endTime,
@@ -122,6 +145,9 @@ export default async function EditReportPage({
           siteId={report.site.id}
           siteName={report.site.name}
           initial={initial}
+          maxDate={jstDateKey()}
+          defaultStartTime={baseStartTime}
+          defaultEndTime={baseEndTime}
           materialOptions={materialOptions}
           stockOptions={stockOptions}
           canInputMaterials={canInputMaterials}

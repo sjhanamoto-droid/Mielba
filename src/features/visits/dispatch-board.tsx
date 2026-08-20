@@ -3,10 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Check, HardHat, Loader2, ChevronLeft, ChevronRight, Users, X,
+  Check, HardHat, Loader2, ChevronLeft, ChevronRight, Users, X, Crown,
 } from "lucide-react";
 import Link from "next/link";
 import { toggleVisit } from "./actions";
+import { adminSetMain } from "@/features/reports/main-vote-actions";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/modal";
@@ -23,6 +24,8 @@ type SiteRow = {
   customerName: string | null;
   staff: Staff[];
   visitedIds: string[];
+  /** メインの人（全員一致で確定した userId）。未確定は null */
+  mainUserId?: string | null;
   /** userId → 当日の日報状況（現場入りONの人の提出状況表示に使う） */
   reportStatusByUserId?: Record<string, ReportStatus>;
 };
@@ -256,6 +259,18 @@ export function DispatchBoard({
                 </div>
               )}
 
+              {/* メインの人の確定状況＋管理者の代理確定（配員2名以上のとき） */}
+              {goingCount >= 2 && (
+                <MainConfirm
+                  siteId={s.id}
+                  dateStr={dateStr}
+                  visitors={visitorIds
+                    .map((uid) => userById.get(uid))
+                    .filter((u): u is Staff => Boolean(u))}
+                  initialMainId={s.mainUserId ?? null}
+                />
+              )}
+
               {/* 配員を編集（配属0名の現場でも表示） */}
               <button
                 type="button"
@@ -317,6 +332,81 @@ export function DispatchBoard({
           if (confirmRemove) doToggle(confirmRemove.siteId, confirmRemove.userId);
         }}
       />
+    </div>
+  );
+}
+
+// メインの人の確定状況＋管理者の代理確定（配員2名以上の現場に表示）。
+// 全員一致の投票が集まらない（病欠・退職など）と配員が日報を書けないまま
+// 未入力ゲートで詰むため、管理者がここから代理でメインを確定できる。
+function MainConfirm({
+  siteId,
+  dateStr,
+  visitors,
+  initialMainId,
+}: {
+  siteId: string;
+  dateStr: string;
+  visitors: Staff[];
+  initialMainId: string | null;
+}) {
+  const toast = useToast();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [sel, setSel] = useState<string>(initialMainId ?? "");
+  const confirmedName = initialMainId
+    ? visitors.find((u) => u.id === initialMainId)?.name ?? null
+    : null;
+
+  function apply() {
+    if (!sel || pending) return;
+    startTransition(async () => {
+      const r = await adminSetMain(siteId, dateStr, sel);
+      if ("error" in r) {
+        toast(r.error, { type: "error" });
+        return;
+      }
+      toast("メインの人を確定しました");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20">
+      <span className="flex items-center gap-1 text-xs font-bold text-ink-soft">
+        <Crown className="h-4 w-4 text-amber-500" aria-hidden />
+        メイン
+      </span>
+      {confirmedName ? (
+        <span className="text-xs font-bold text-ink">{confirmedName}</span>
+      ) : (
+        <span className="text-xs font-medium text-ink-muted">未確定（投票待ち）</span>
+      )}
+      <span className="ml-auto flex items-center gap-1.5">
+        <select
+          aria-label="メインの人を選択"
+          value={sel}
+          onChange={(e) => setSel(e.target.value)}
+          disabled={pending}
+          className="h-8 rounded-lg border border-line-strong bg-surface px-2 text-xs font-semibold text-ink"
+        >
+          <option value="">選択…</option>
+          {visitors.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={apply}
+          disabled={pending || !sel || sel === initialMainId}
+          className="flex h-8 items-center gap-1 rounded-lg bg-brand-600 px-2.5 text-xs font-bold text-white disabled:opacity-50 active:scale-95"
+        >
+          {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+          確定
+        </button>
+      </span>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft, ChevronRight, Clock, HardHat, Briefcase } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
-import { jstMonthKey, jstDateKey, dateFromKey, monthRangeForKey, addMonthsKey } from "@/lib/date";
+import { jstMonthKey, storedDateKey, dateFromKey, monthRangeForKey, addMonthsKey } from "@/lib/date";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { Card } from "@/components/ui/card";
@@ -49,8 +49,9 @@ export default async function AttendanceUserPage({
 
   const [target, reports, officeEvents] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { name: true, avatarColor: true } }),
+    // 下書き(DRAFT)は勤怠に計上しない（提出して初めて稼働になる）
     db.dailyReport.findMany({
-      where: { userId, workDate: range },
+      where: { userId, workDate: range, status: "SUBMITTED" },
       select: {
         id: true,
         workDate: true,
@@ -72,7 +73,7 @@ export default async function AttendanceUserPage({
   // 日（JST暦日）ごとに、現場ごとの稼働をまとめる。
   const dayMap = new Map<string, { minutes: number; rows: DayRow[] }>();
   for (const r of reports) {
-    const key = jstDateKey(r.workDate);
+    const key = storedDateKey(r.workDate);
     const minutes = workMinutes(r.startTime, r.endTime);
     const entry = dayMap.get(key) ?? { minutes: 0, rows: [] };
     entry.minutes += minutes;
@@ -89,7 +90,7 @@ export default async function AttendanceUserPage({
   }
   // 事務所作業（日報なし）を日別内訳に加える。終日は 8:00-17:00 で計上。
   for (const e of officeEvents) {
-    const key = jstDateKey(e.date);
+    const key = storedDateKey(e.date);
     const start = e.allDay ? "08:00" : e.startTime ?? "";
     const end = e.allDay ? "17:00" : e.endTime ?? "";
     const minutes = e.allDay ? workMinutes("08:00", "17:00") : workMinutes(e.startTime, e.endTime);
@@ -212,7 +213,7 @@ export default async function AttendanceUserPage({
           )}
 
           <p className="px-1 text-[11px] leading-relaxed text-ink-faint">
-            各行は日報の作業時間（終了−開始）です。「事務所作業」の予定も稼働に含みます（終日は 8:00〜17:00）。日跨ぎは想定せず、時刻が未設定・異常な場合は 0 として扱います。
+            各行は提出済みの日報の作業時間（終了−開始）です。下書きの日報は計上されません。「事務所作業」の予定も稼働に含みます（終日は 8:00〜17:00）。日跨ぎは想定せず、時刻が未設定・異常な場合は 0 として扱います。
           </p>
         </div>
       </PageContainer>

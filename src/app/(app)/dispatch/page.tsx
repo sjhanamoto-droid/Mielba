@@ -60,15 +60,25 @@ export default async function DispatchPage({
 
   const rows = sites.map((s) => {
     // その日の現場入り(visits)からその日の訪問者を構築（有効ユーザーのみ）
-    const visitors = s.visits
-      .filter((v) => v.user.active)
-      .map((v) => ({ id: v.user.id, name: v.user.name, avatarColor: v.user.avatarColor }));
+    const activeVisits = s.visits.filter((v) => v.user.active);
+    const visitors = activeVisits.map((v) => ({
+      id: v.user.id,
+      name: v.user.name,
+      avatarColor: v.user.avatarColor,
+    }));
+    // メインの人（全員一致投票）の確定状況。管理者の代理確定UIに使う。
+    const firstVote = activeVisits[0]?.mainVote ?? null;
+    const mainUserId =
+      activeVisits.length > 0 && firstVote && activeVisits.every((v) => v.mainVote === firstVote)
+        ? firstVote
+        : null;
     return {
       id: s.id,
       name: s.name,
       customerName: s.customer?.name ?? null,
       staff: visitors,
       visitedIds: visitors.map((u) => u.id),
+      mainUserId,
       reportStatusByUserId: Object.fromEntries(
         visitors.map((u) => [u.id, statusByKey.get(`${s.id}_${u.id}`) ?? ("none" as ReportStatus)]),
       ),

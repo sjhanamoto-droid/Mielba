@@ -24,6 +24,18 @@ export function dateFromKey(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/**
+ * DB保存の日付カラム（サーバーTZ深夜0時。dateFromKey の対）→ 'YYYY-MM-DD' キー。
+ * jstDateKey ではなくローカル日付要素で復元する（保存時の慣習と対にする）。
+ * 保存済み Date をキーに戻す箇所は必ずこれを使うこと（jstDateKey は「今」の判定専用）。
+ */
+export function storedDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
 /** 'YYYY-MM-DD' のキーが指す1日分の範囲（Prisma の where: { gte, lt } 用） */
 export function dayRangeForKey(key: string): { gte: Date; lt: Date } {
   const gte = dateFromKey(key);

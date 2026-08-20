@@ -7,7 +7,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
 import { assistReport, type AiAssist } from "@/lib/ai";
-import { dateFromKey } from "@/lib/date";
+import { dateFromKey, jstDateKey } from "@/lib/date";
 import { parseAndValidatePhotosField, type ParsedPhotosField } from "@/lib/photos";
 
 // ───────────────────────── AIサポート（§4.3.3） ─────────────────────────
@@ -43,6 +43,9 @@ const reportSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, "作業日を入力してください"),
     startTime: z.string().min(1, "開始時刻を入力してください"),
     endTime: z.string().min(1, "終了時刻を入力してください"),
+    // 所定時間（時間変更理由の基準）。フォームの初期値（設定既定 or カレンダー予定の時刻）
+    baseStartTime: z.string().optional(),
+    baseEndTime: z.string().optional(),
     aiDraft: z.string().optional(),
     detail: z.string().optional(),
     aiSummary: z.string().optional(),
@@ -70,6 +73,13 @@ const reportSchema = z
       const n = Number(s);
       return Number.isInteger(n) && n >= 0;
     };
+    // 1以上の整数かどうか（「あり」選択時の金額。0円は「なし」で記録する）
+    const isPosInt = (s: string | undefined) => isNonNegInt(s) && Number(s) >= 1;
+
+    // 作業日は今日(JST)まで。未来日の日報は勤怠・人工に誤計上されるため作成不可
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v.workDate) && v.workDate > jstDateKey()) {
+      err("workDate", "未来の日付では日報を作成できません");
+    }
 
     // 下書きは detail 空でも保存可。提出時のみ必須（Top10 #4）
     if (submitted && (!v.detail || v.detail.trim() === "")) {
@@ -85,33 +95,41 @@ const reportSchema = z
       }
     }
 
-    // 駐車場代 あり/なし（提出時必須。あり→0以上整数）
+    // 駐車場代 あり/なし（提出時必須。あり→1円以上の整数。0円は「なし」で記録）
     if (submitted) {
       if (!v.parkingFeeChoice) {
         err("parkingFee", "駐車場代のあり/なしを選択してください");
-      } else if (v.parkingFeeChoice === "HAS" && !isNonNegInt(v.parkingFee)) {
-        err("parkingFee", "駐車場代は0以上の整数で入力してください");
+      } else if (v.parkingFeeChoice === "HAS" && !isPosInt(v.parkingFee)) {
+        err("parkingFee", "駐車場代は1円以上の整数で入力してください（0円の場合は「なし」を選択）");
       }
     } else if (v.parkingFee && v.parkingFee.trim() !== "" && !isNonNegInt(v.parkingFee)) {
       // 下書きでも数値が入っていれば整数チェック（従来動作）
       err("parkingFee", "駐車場代は0以上の整数で入力してください");
     }
 
-    // 電車賃 あり/なし（提出時必須。あり→0以上整数）
+    // 電車賃 あり/なし（提出時必須。あり→1円以上の整数。0円は「なし」で記録）
     if (submitted) {
       if (!v.trainFareChoice) {
         err("trainFare", "電車賃のあり/なしを選択してください");
-      } else if (v.trainFareChoice === "HAS" && !isNonNegInt(v.trainFare)) {
-        err("trainFare", "電車賃は0以上の整数で入力してください");
+      } else if (v.trainFareChoice === "HAS" && !isPosInt(v.trainFare)) {
+        err("trainFare", "電車賃は1円以上の整数で入力してください（0円の場合は「なし」を選択）");
       }
     } else if (v.trainFare && v.trainFare.trim() !== "" && !isNonNegInt(v.trainFare)) {
       err("trainFare", "電車賃は0以上の整数で入力してください");
     }
 
-    // 時間変更理由（8:00-17:00 以外のとき提出時必須）
-    if (submitted && (v.startTime !== "08:00" || v.endTime !== "17:00")) {
+    // 時間変更理由（所定時間＝フォーム初期値と異なるとき提出時必須）。
+    // 所定はアプリ設定の既定時刻 or カレンダー予定の時刻。未送信の旧クライアントは 8:00-17:00。
+    const baseStart =
+      v.baseStartTime && /^\d{1,2}:\d{2}$/.test(v.baseStartTime) ? v.baseStartTime : "08:00";
+    const baseEnd =
+      v.baseEndTime && /^\d{1,2}:\d{2}$/.test(v.baseEndTime) ? v.baseEndTime : "17:00";
+    if (submitted && (v.startTime !== baseStart || v.endTime !== baseEnd)) {
       if (!v.timeChangeReason || v.timeChangeReason.trim() === "") {
-        err("timeChangeReason", "8:00〜17:00 以外の作業になった理由を入力してください");
+        err(
+          "timeChangeReason",
+          `所定時間（${baseStart}〜${baseEnd}）以外の作業になった理由を入力してください`,
+        );
       }
     }
 
@@ -193,8 +211,12 @@ async function writeNested(
     .filter((e) => e.label !== "" && Number.isFinite(e.amount) && e.amount >= 0);
 
   // 使用材料・在庫材料・経費は作り直し（重複防止）。発注・次回工程・カレンダーは残置。
-  await tx.materialUse.deleteMany({ where: { reportId } });
-  await tx.stockUse.deleteMany({ where: { reportId } });
+  // メインの人以外（skipMaterials）は材料・在庫を「送らない」だけでなく「消さない」。
+  // 投票確定前に本人が入力した材料を、確定後の編集保存で黙って消さないため。
+  if (!skipMaterials) {
+    await tx.materialUse.deleteMany({ where: { reportId } });
+    await tx.stockUse.deleteMany({ where: { reportId } });
+  }
   await tx.reportExpense.deleteMany({ where: { reportId } });
 
   // 写真は全削除→再作成をやめ、kept に無い既存のみ削除・新規のみ作成
@@ -293,6 +315,8 @@ async function persist(
     workDate: formData.get("workDate"),
     startTime: formData.get("startTime"),
     endTime: formData.get("endTime"),
+    baseStartTime: formData.get("baseStartTime") || undefined,
+    baseEndTime: formData.get("baseEndTime") || undefined,
     aiDraft: formData.get("aiDraft") || undefined,
     detail: formData.get("detail") || undefined,
     aiSummary: formData.get("aiSummary") || undefined,
@@ -355,7 +379,7 @@ async function persist(
     }
   }
 
-  const data = {
+  const baseData = {
     aiDraft: clean(d.aiDraft),
     detail: clean(d.detail),
     aiSummary: clean(d.aiSummary),
@@ -364,26 +388,45 @@ async function persist(
     parkingFee,
     trainFare,
     timeChangeReason: clean(d.timeChangeReason),
-    // 未選択（下書き）は null、あり=true、なし=false。ロック時は常に null。
-    stockUsed: materialsLocked ? null : d.stockChoice ? d.stockChoice === "HAS" : null,
-    stockNote: materialsLocked ? null : d.stockChoice === "HAS" ? clean(d.stockNote) : null,
     startTime: d.startTime,
     endTime: d.endTime,
     status: d.status,
-    submittedAt: d.status === "SUBMITTED" ? new Date() : null,
   };
+  // 在庫のあり/なし。未選択（下書き）は null、あり=true、なし=false。
+  // ロック時（メインの人以外）は既存値を壊さないよう update には含めない（新規は null）。
+  const stockData = {
+    stockUsed: d.stockChoice ? d.stockChoice === "HAS" : null,
+    stockNote: d.stockChoice === "HAS" ? clean(d.stockNote) : null,
+  };
+  const updateData = materialsLocked ? baseData : { ...baseData, ...stockData };
+  const createData = materialsLocked
+    ? { ...baseData, stockUsed: null, stockNote: null }
+    : { ...baseData, ...stockData };
 
   let savedId: string;
   try {
     // 途中失敗で材料・写真が消える事故を防ぐため、一連の書き込みをアトミックに
     const report = await db.$transaction(async (tx) => {
+      // 初回提出時刻を保持する：既に submittedAt があれば再提出でも上書きしない
+      const prev = reportId
+        ? await tx.dailyReport.findUnique({
+            where: { id: reportId },
+            select: { submittedAt: true },
+          })
+        : await tx.dailyReport.findUnique({
+            where: { siteId_userId_workDate: { siteId: d.siteId, userId, workDate } },
+            select: { submittedAt: true },
+          });
+      const submittedAt =
+        d.status === "SUBMITTED" ? prev?.submittedAt ?? new Date() : null;
+
       let rep;
       if (reportId) {
         // 編集時は id で直接更新する（workDate を変えても複合キーで別レコードに
         // upsert されて日報が分裂するのを防ぐ）。workDate を含む全項目を更新。
         rep = await tx.dailyReport.update({
           where: { id: reportId },
-          data: { workDate, ...data },
+          data: { workDate, ...updateData, submittedAt },
         });
       } else {
         // @@unique([siteId, userId, workDate]) なので新規は upsert で重複時に上書き
@@ -395,24 +438,36 @@ async function persist(
             siteId: d.siteId,
             userId,
             workDate,
-            ...data,
+            ...createData,
+            submittedAt,
           },
-          update: data,
+          update: { ...updateData, submittedAt },
         });
       }
 
       // 確定した rep.id に対して使用材料・写真を再生成する
       await writeNested(tx, rep.id, formData, photos, materialsLocked);
 
-      // 提出時に引き継ぎ事項（Handover）を起票・更新する（「なし」は取り下げ）
       if (d.status === "SUBMITTED") {
+        // 提出時に引き継ぎ事項（Handover）を起票・更新する（「なし」は取り下げ）
         await syncHandover(tx, rep.id, d.siteId, userId, handoverContent);
+      } else {
+        // 下書き（未提出）として保存した場合、この日報が起票した未解決の引き継ぎは取り下げる
+        // （日報は下書きなのに引き継ぎ掲示だけ残る不整合を防ぐ）
+        await tx.handover.deleteMany({ where: { reportId: rep.id, resolvedAt: null } });
       }
 
       return rep;
     });
     savedId = report.id;
   } catch (e) {
+    // 編集で作業日を変えて既存日報と衝突した場合（unique制約 P2002）は原因を明示する
+    if ((e as { code?: string } | null)?.code === "P2002") {
+      return {
+        error: "同じ現場・同じ作業日の日報がすでにあります。作業日をご確認ください。",
+        fieldErrors: { workDate: "この作業日の日報はすでにあります" },
+      };
+    }
     console.error("[reports] 保存エラー:", e);
     return { error: GENERIC_ERROR };
   }
@@ -511,7 +566,11 @@ export async function deleteReport(id: string) {
     return { error: "削除権限がありません" };
   }
   try {
-    await db.dailyReport.delete({ where: { id } });
+    // 起票元の日報が消えるのに引き継ぎ掲示だけ残らないよう、未解決の引き継ぎも一緒に削除する
+    await db.$transaction([
+      db.handover.deleteMany({ where: { reportId: id, resolvedAt: null } }),
+      db.dailyReport.delete({ where: { id } }),
+    ]);
   } catch (e) {
     console.error("[reports] 削除エラー:", e);
     return { error: "削除に失敗しました。もう一度お試しください。" };

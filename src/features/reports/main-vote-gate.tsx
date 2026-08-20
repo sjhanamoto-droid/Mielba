@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Crown, Check, RefreshCw, Users, AlertCircle, Hourglass } from "lucide-react";
+import { Crown, Check, RefreshCw, Users, AlertCircle, Hourglass, ShieldCheck } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
 import { IconBadge } from "@/components/ui/icon-badge";
-import { voteMain, type MainVoteState } from "./main-vote-actions";
+import { voteMain, adminSetMain, type MainVoteState } from "./main-vote-actions";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,11 +24,14 @@ export function MainVoteGate({
   dateKey,
   siteName,
   initial,
+  isAdminViewer = false,
 }: {
   siteId: string;
   dateKey: string;
   siteName: string;
   initial: MainVoteState;
+  /** 管理者が開いているとき true。投票が集まらない詰みを解除する代理確定UIを出す */
+  isAdminViewer?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<MainVoteState>(initial);
@@ -47,10 +50,11 @@ export function MainVoteGate({
     if (state.consensus) router.refresh();
   }, [state.consensus, router]);
 
-  // 未一致の間は ~10秒ごとに自動更新（他メンバーの投票を取り込む）
+  // 未一致の間は ~30秒ごとに自動更新（他メンバーの投票を取り込む）。
+  // 全員一致待ちで開きっぱなしにしても通信・電池を消費しすぎない間隔にする。
   useEffect(() => {
     if (state.consensus) return;
-    const t = setInterval(() => router.refresh(), 10000);
+    const t = setInterval(() => router.refresh(), 30000);
     return () => clearInterval(t);
   }, [state.consensus, router]);
 
@@ -199,6 +203,44 @@ export function MainVoteGate({
         <RefreshCw className="h-5 w-5" />
         最新の投票状況に更新
       </button>
+
+      {/* 管理者の代理確定：病欠・退職などで投票が集まらないときの解除導線 */}
+      {isAdminViewer && !state.consensus && (
+        <div className="card space-y-2.5 p-4">
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
+            <ShieldCheck className="h-4 w-4 text-brand-600" />
+            管理者：メインを代理で確定
+          </span>
+          <p className="text-xs text-ink-muted">
+            投票できない人がいる場合、管理者が代わりにメインの人を確定できます（全員の投票がこの人に揃います）。
+          </p>
+          <div className="space-y-2">
+            {state.members.map((m) => (
+              <button
+                key={m.userId}
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  if (pending) return;
+                  setError(null);
+                  startTransition(async () => {
+                    const res = await adminSetMain(siteId, dateKey, m.userId);
+                    if ("error" in res) {
+                      setError(res.error);
+                      return;
+                    }
+                    setState(res);
+                  });
+                }}
+                className={buttonClass({ variant: "outline", size: "md", className: "w-full justify-start" })}
+              >
+                <Crown className="h-4 w-4 text-amber-500" />
+                {m.name} をメインに確定
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

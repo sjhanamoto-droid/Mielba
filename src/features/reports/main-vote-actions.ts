@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/session";
+import { requireUser, isAdmin } from "@/lib/session";
 import { dayRangeForKey } from "@/lib/date";
 
 // ───────────────────── メインの人（全員一致投票） ─────────────────────
@@ -92,5 +92,37 @@ export async function voteMain(
   });
 
   revalidatePath("/reports/new");
+  return getMainVoteState(siteId, dateKey);
+}
+
+/**
+ * 管理者によるメインの人の代理確定。
+ * その日・その現場の全配員の投票を指定ユーザーに揃え、全員一致（consensus）を成立させる。
+ * 病欠・退職などで投票が集まらず、配員が日報を書けないまま未入力ゲートで詰む状況の解除に使う。
+ */
+export async function adminSetMain(
+  siteId: string,
+  dateKey: string,
+  mainUserId: string,
+): Promise<MainVoteState | { error: string }> {
+  const user = await requireUser();
+  if (!isAdmin(user)) return { error: "管理者のみ操作できます" };
+
+  const { gte, lt } = dayRangeForKey(dateKey);
+
+  // 確定先はその日の配員のいずれかであること
+  const target = await db.siteVisit.findFirst({
+    where: { siteId, userId: mainUserId, date: { gte, lt } },
+    select: { id: true },
+  });
+  if (!target) return { error: "指定した人はその日の配員ではありません" };
+
+  await db.siteVisit.updateMany({
+    where: { siteId, date: { gte, lt } },
+    data: { mainVote: mainUserId },
+  });
+
+  revalidatePath("/reports/new");
+  revalidatePath("/dispatch");
   return getMainVoteState(siteId, dateKey);
 }

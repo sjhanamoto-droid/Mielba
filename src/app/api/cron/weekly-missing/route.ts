@@ -7,7 +7,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createNotificationForUsers } from "@/lib/notifications";
-import { addDaysKey, dateFromKey, jstDateKey } from "@/lib/date";
+import { addDaysKey, dateFromKey, jstDateKey, storedDateKey } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 
@@ -43,12 +43,13 @@ async function handle(req: NextRequest) {
   ]);
 
   // (現場, 本人, 日) 単位で提出済みを引く。未提出の現場入りがある人を未入力者とする。
+  // 保存済み Date のキー化は storedDateKey（jstDateKey は「今」の判定専用）。
   const submitted = new Set(
-    reports.map((r) => `${r.siteId}:${r.userId}:${jstDateKey(r.workDate)}`),
+    reports.map((r) => `${r.siteId}:${r.userId}:${storedDateKey(r.workDate)}`),
   );
   const missingUsers = new Map<string, string>(); // userId -> name
   for (const v of visits) {
-    const key = `${v.siteId}:${v.userId}:${jstDateKey(v.date)}`;
+    const key = `${v.siteId}:${v.userId}:${storedDateKey(v.date)}`;
     if (!submitted.has(key)) missingUsers.set(v.userId, v.user.name);
   }
 

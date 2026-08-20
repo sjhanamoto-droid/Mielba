@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { requireUser } from "@/lib/session";
+import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -71,6 +71,7 @@ export default async function NewReportPage({
             dateKey={dateKey}
             siteName={site.name}
             initial={voteState}
+            isAdminViewer={isAdmin(user)}
           />
         </PageContainer>
       </div>
@@ -141,6 +142,7 @@ export default async function NewReportPage({
           siteId={site.id}
           siteName={site.name}
           defaultDate={dateKey}
+          maxDate={todayKey}
           defaultStartTime={defaultStartTime}
           defaultEndTime={defaultEndTime}
           materialOptions={materialOptions}

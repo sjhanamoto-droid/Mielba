@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
+import { jstDateKey, dateFromKey, addDaysKey, storedDateKey } from "@/lib/date";
 import { fmtDateWithDay } from "@/lib/utils";
 
 // 前日以前の「日報未入力」を強制ゲートで遡ってチェックする日数。
@@ -13,15 +13,6 @@ export type MissingReport = {
   dateLabel: string; // 表示用（例: 8月4日(月)）
   draftReportId: string | null; // 下書きがあれば編集リンク、なければ新規作成
 };
-
-// stored Date（サーバーTZ深夜0時。dateFromKey の対）→ "YYYY-MM-DD"。
-// jstDateKey ではなくローカル日付要素で復元する（dateFromKey と同じ慣習に揃える）。
-function storedKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
-}
 
 /**
  * 指定ユーザーの「前日以前・直近 MISSING_LOOKBACK_DAYS 日」の範囲で、
@@ -50,14 +41,14 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
   const submitted = new Set<string>();
   const draftByKey = new Map<string, string>();
   for (const r of reports) {
-    const k = `${r.siteId}:${storedKey(r.workDate)}`;
+    const k = `${r.siteId}:${storedDateKey(r.workDate)}`;
     if (r.status === "SUBMITTED") submitted.add(k);
     else if (!draftByKey.has(k)) draftByKey.set(k, r.id);
   }
 
   const missing: MissingReport[] = [];
   for (const v of visits) {
-    const dateKey = storedKey(v.date);
+    const dateKey = storedDateKey(v.date);
     const k = `${v.siteId}:${dateKey}`;
     if (submitted.has(k)) continue;
     missing.push({

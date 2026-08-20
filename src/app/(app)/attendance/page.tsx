@@ -41,11 +41,12 @@ export default async function AttendancePage({
   const monthLabel = `${y}年${m}月`;
   const isCurrent = ym === jstMonthKey();
 
-  // 対象月の全日報＋「事務所作業」の予定を取得し、ユーザー×月で稼働時間（Σ end-start）と日数を集計する。
+  // 対象月の提出済み日報＋「事務所作業」の予定を取得し、ユーザー×月で稼働時間（Σ end-start）と日数を集計する。
+  // 下書き(DRAFT)は勤怠に計上しない（未提出扱いと矛盾するため。提出して初めて稼働になる）。
   // 事務所作業（個人予定・日報なし）も稼働時間に計上する（予定の開始〜終了、終日は 8:00-17:00）。
   const [reports, officeEvents] = await Promise.all([
     db.dailyReport.findMany({
-      where: { workDate: range },
+      where: { workDate: range, status: "SUBMITTED" },
       select: {
         userId: true,
         startTime: true,
@@ -185,8 +186,8 @@ export default async function AttendancePage({
           </section>
 
           <p className="px-1 text-[11px] leading-relaxed text-ink-faint">
-            稼働時間は各日報の作業開始〜終了（Σ 終了−開始）に、「事務所作業」の予定（終日は 8:00〜17:00）を
-            加えて算出します。日跨ぎは想定せず、時刻が未設定・異常な場合は 0 として扱います。
+            稼働時間は提出済みの日報の作業開始〜終了（Σ 終了−開始）に、「事務所作業」の予定（終日は 8:00〜17:00）を
+            加えて算出します。下書きの日報は計上されません。日跨ぎは想定せず、時刻が未設定・異常な場合は 0 として扱います。
           </p>
         </div>
       </PageContainer>
