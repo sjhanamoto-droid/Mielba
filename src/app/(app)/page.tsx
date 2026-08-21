@@ -142,10 +142,14 @@ export default async function HomePage() {
       where: { userId: user.id, workDate: today },
       select: { id: true, siteId: true, status: true },
     }),
-    // 本日の予定（全員が全現場の予定を見られる）
+    // 本日の予定。表示は自分の予定のみに絞るため参加者も取得する
+    // （配達/支給品の情報タスクは現場単位の情報なので全件のまま使う）
     db.calendarEvent.findMany({
       where: { date: today },
-      include: { site: { select: { id: true, name: true } } },
+      include: {
+        site: { select: { id: true, name: true } },
+        participants: { select: { userId: true } },
+      },
       orderBy: [{ startTime: "asc" }],
     }),
     // 今週の予定（週ストリップの出所色ドット用・全員が全現場分）
@@ -230,6 +234,13 @@ export default async function HomePage() {
   // 本日の配達(DELIVERY)/支給品(SUPPLY)予定は「情報」タスクとして知らせる
   const deliveryEvents = todayEvents.filter(
     (e) => e.source === "DELIVERY" || e.source === "SUPPLY",
+  );
+
+  // ホームの「本日の予定」はログイン本人の予定のみ表示する
+  // （自分が所有者の個人予定＝休み等、または自分が参加者の現場予定。
+  //   他人の休みなど無関係な予定は出さない。全員分はカレンダー画面で見る）
+  const myTodayEvents = todayEvents.filter(
+    (e) => e.ownerId === user.id || e.participants.some((p) => p.userId === user.id),
   );
 
   // 週ストリップの集計（取得済みデータから組み立てる）
@@ -678,14 +689,14 @@ export default async function HomePage() {
                   })}
                 </div>
 
-                {/* 本日の予定 */}
+                {/* 本日の予定（ログイン本人の予定のみ） */}
                 <div className="mt-3 border-t border-line pt-3">
-                  <p className="mb-2 text-xs font-bold text-ink-muted">本日の予定</p>
-                  {todayEvents.length === 0 ? (
-                    <p className="rounded-xl bg-surface-subtle px-3 py-3 text-sm text-ink-muted">本日の予定はありません</p>
+                  <p className="mb-2 text-xs font-bold text-ink-muted">本日の予定（自分）</p>
+                  {myTodayEvents.length === 0 ? (
+                    <p className="rounded-xl bg-surface-subtle px-3 py-3 text-sm text-ink-muted">本日のあなたの予定はありません</p>
                   ) : (
                     <ul className="space-y-1.5">
-                      {todayEvents.map((e) => {
+                      {myTodayEvents.map((e) => {
                         const color = EVENT_SOURCE_COLOR[e.source as EventSource];
                         const Icon = e.source === "DELIVERY" ? Truck : e.source === "SUPPLY" ? PackageCheck : CalendarClock;
                         return (
@@ -720,7 +731,7 @@ export default async function HomePage() {
               ) : (
                 <StatTile label="今週の予定" value={weekEventCount} tone="neutral" icon={CalendarDays} href="/calendar" />
               )}
-              <StatTile label="本日の予定" value={todayEvents.length} tone="neutral" icon={CalendarClock} href="/calendar" />
+              <StatTile label="本日の予定" value={myTodayEvents.length} tone="neutral" icon={CalendarClock} href="/calendar" />
             </section>
 
             {/* 明日の現場入り */}
