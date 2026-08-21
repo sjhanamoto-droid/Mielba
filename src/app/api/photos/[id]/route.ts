@@ -31,6 +31,10 @@ export async function GET(
 
   const { id } = await params;
   const wantThumb = req.nextUrl.searchParams.get("v") === "thumb";
+  // ?dl=1 でダウンロード（Content-Disposition: attachment）。モバイル/PWAでは
+  // インライン表示だと保存・印刷の手段が無いため、明示的な保存導線に使う。
+  const wantDownload = req.nextUrl.searchParams.get("dl") === "1";
+  const rawName = req.nextUrl.searchParams.get("name") ?? "";
 
   const photo = await db.photo.findUnique({
     where: { id },
@@ -47,13 +51,20 @@ export async function GET(
     return NextResponse.json({ error: "写真データが不正です" }, { status: 404 });
   }
 
-  return new NextResponse(new Uint8Array(parsed.buffer), {
-    status: 200,
-    headers: {
-      "Content-Type": parsed.mime,
-      "Content-Length": String(parsed.buffer.byteLength),
-      // 写真は不変（編集時は新IDで再作成）なので長期キャッシュ。認証必須のため private。
-      "Cache-Control": "private, max-age=31536000, immutable",
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": parsed.mime,
+    "Content-Length": String(parsed.buffer.byteLength),
+    // 写真は不変（編集時は新IDで再作成）なので長期キャッシュ。認証必須のため private。
+    "Cache-Control": "private, max-age=31536000, immutable",
+  };
+  if (wantDownload) {
+    // ファイル名: ?name= を採用（制御文字・引用符・パス区切りは除去）。日本語は filename* で渡す
+    const ext = parsed.mime === "application/pdf" ? ".pdf" : "";
+    const safe = rawName.replace(/[\r\n"\\/]/g, "").trim().slice(0, 80) || `file-${id}`;
+    const fileName = safe.endsWith(ext) ? safe : safe + ext;
+    headers["Content-Disposition"] =
+      `attachment; filename="download${ext}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+  }
+
+  return new NextResponse(new Uint8Array(parsed.buffer), { status: 200, headers });
 }

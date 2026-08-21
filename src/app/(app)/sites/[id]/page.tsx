@@ -17,6 +17,7 @@ import { ProgressBar, SiteStageStepper } from "@/components/site-card";
 import { ReportCard } from "@/components/report-card";
 import { EmptyState } from "@/components/ui/misc";
 import { PhotoGrid, type PhotoData } from "@/components/photo-grid";
+import { PdfRow } from "@/components/pdf-row";
 import { HandoverAlert } from "@/components/handover-alert";
 import { SearchParamToast } from "@/components/ui/toast";
 import { getOpenHandovers } from "@/features/handovers/actions";
@@ -24,7 +25,6 @@ import { SiteStageControl } from "@/features/sites/site-stage-control";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
 import { SiteMaterialSummary } from "@/features/materials/site-material-summary";
-import { photoSrc } from "@/lib/photos";
 import { todayRange } from "@/lib/date";
 import { fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
 import {
@@ -435,17 +435,7 @@ export default async function SiteDetailPage({
                   </p>
                   {drawingImages.length > 0 && <PhotoGrid photos={drawingImages} />}
                   {drawingPdfs.map((p) => (
-                    <a
-                      key={p.id}
-                      href={photoSrc(p.id)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-line bg-surface-subtle px-3.5 py-2.5 text-sm font-semibold text-ink hover:border-line-strong"
-                    >
-                      <FileText className="h-5 w-5 shrink-0 text-red-500" />
-                      <span className="min-w-0 flex-1 truncate">{p.caption || "図面PDF"}</span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
-                    </a>
+                    <PdfRow key={p.id} photoId={p.id} label={p.caption || "図面PDF"} />
                   ))}
                 </div>
               )}
@@ -457,17 +447,7 @@ export default async function SiteDetailPage({
                   </p>
                   {scheduleImages.length > 0 && <PhotoGrid photos={scheduleImages} />}
                   {schedulePdfs.map((p) => (
-                    <a
-                      key={p.id}
-                      href={photoSrc(p.id)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-line bg-surface-subtle px-3.5 py-2.5 text-sm font-semibold text-ink hover:border-line-strong"
-                    >
-                      <FileText className="h-5 w-5 shrink-0 text-red-500" />
-                      <span className="min-w-0 flex-1 truncate">{p.caption || "工程表PDF"}</span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
-                    </a>
+                    <PdfRow key={p.id} photoId={p.id} label={p.caption || "工程表PDF"} />
                   ))}
                 </div>
               )}
