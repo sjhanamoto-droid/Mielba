@@ -421,13 +421,10 @@ model Photo {
   dataUrl   String // 圧縮済み base64（軽量・高速アップロード）
   thumbUrl  String? // サムネイル（base64、一覧表示用）
   caption   String? // 連動する文章
-  kind      String   @default("WORK") // WORK | COMPANY_STOCK(弊社分) | SURVEY | DRAWING(図面) | SCHEDULE(工程表) | KEYBOX(キーBOX) | INBOX(LINE受信・現場未振り分け) | OTHER
+  kind      String   @default("WORK") // WORK | COMPANY_STOCK(弊社分) | SURVEY | DRAWING(図面) | SCHEDULE(工程表) | KEYBOX(キーBOX) | OTHER
   isVideo   Boolean  @default(false)
   width     Int?
   height    Int?
-  // ── LINE取り込み（受信ボックス）。kind="INBOX" は現場未振り分けのLINE受信PDF ──
-  fileName       String? // 元ファイル名（LINE転送時）
-  lineSenderName String? // LINE送信者の表示名
   createdAt DateTime @default(now())
 
   report DailyReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
@@ -437,17 +434,6 @@ model Photo {
   @@index([reportId])
   @@index([surveyId])
   @@index([siteId])
-}
-
-// ──────────────────────── LineSender（LINEボット送信者） ────────────────────────
-// MielbaのLINE公式アカウントへファイルを送れる人の許可リスト。
-// 合言葉（LINE_JOIN_CODE）をボットに送ると approved=true になり、以後PDFを送信できる。
-model LineSender {
-  id          String   @id @default(cuid())
-  lineUserId  String   @unique // LINEのユーザーID（Uから始まる）
-  displayName String // LINEの表示名（プロフィール取得時点のもの）
-  approved    Boolean  @default(false)
-  createdAt   DateTime @default(now())
 }
 
 // ──────────────────────── MaterialMaster（在庫材料マスター） ────────────────────────

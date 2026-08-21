@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  LogOut, Settings, ChevronRight, Bell, Inbox,
+  LogOut, Settings, ChevronRight, Bell,
   Building2, UserCog, Clock, Lightbulb, type LucideIcon,
 } from "lucide-react";
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
@@ -18,15 +18,12 @@ export default async function MenuPage() {
   const user = await requireUser();
   const admin = isAdmin(user);
   const superAdmin = isSuperAdmin(user);
-  const [unreadCount, inboxCount] = await Promise.all([
-    db.notification.count({ where: { userId: user.id, read: false } }),
-    // LINEで届いた未振り分けPDF（受信ボックス）
-    db.photo.count({ where: { kind: "INBOX" } }),
-  ]);
+  const unreadCount = await db.notification.count({
+    where: { userId: user.id, read: false },
+  });
 
-  const shortcuts: { href: string; label: string; icon: LucideIcon; badge?: number }[] = admin
+  const shortcuts: { href: string; label: string; icon: LucideIcon }[] = admin
     ? [
-        { href: "/inbox", label: "受信ボックス（LINE）", icon: Inbox, badge: inboxCount },
         // 材料登録（納品書/発注書のOCR）は最高管理者のみ
         ...(superAdmin ? [{ href: "/materials", label: "材料登録（伝票OCR）", icon: Package }] : []),
         { href: "/customers", label: "顧客（元請企業）", icon: Building2 },
@@ -36,7 +33,6 @@ export default async function MenuPage() {
         { href: "/settings", label: "設定", icon: Settings },
       ]
     : [
-        { href: "/inbox", label: "受信ボックス（LINE）", icon: Inbox, badge: inboxCount },
         { href: "/help", label: "使い方・ヒント", icon: Lightbulb },
         { href: "/settings", label: "設定", icon: Settings },
       ];
@@ -76,7 +72,7 @@ export default async function MenuPage() {
               )}
               <ChevronRight className="h-5 w-5 shrink-0 text-ink-faint" />
             </Link>
-            {shortcuts.map(({ href, label, icon: Icon, badge }) => (
+            {shortcuts.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
@@ -86,11 +82,6 @@ export default async function MenuPage() {
                   <Icon className="h-5 w-5" />
                 </span>
                 <span className="flex-1 text-[15px] font-bold text-ink">{label}</span>
-                {badge != null && badge > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-status-danger px-1.5 text-[11px] font-bold text-white">
-                    {badge > 99 ? "99+" : badge}
-                  </span>
-                )}
                 <ChevronRight className="h-5 w-5 shrink-0 text-ink-faint" />
               </Link>
             ))}

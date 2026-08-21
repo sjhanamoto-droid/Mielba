@@ -39,33 +39,20 @@ export default async function PhotoViewerPage({
       caption: true,
       kind: true,
       siteId: true,
-      fileName: true,
-      lineSenderName: true,
       site: { select: { name: true } },
     },
   });
   if (!photo) notFound();
 
   const label =
-    photo.caption ||
-    photo.fileName ||
-    (photo.kind === "SCHEDULE" ? "工程表PDF" : "図面PDF");
-  // 受信ボックス（LINE取り込み・現場未振り分け）のプレビューは /inbox に戻す
-  const backHref = photo.siteId
-    ? `/sites/${photo.siteId}`
-    : photo.kind === "INBOX"
-      ? "/inbox"
-      : "/";
-  const subtitle =
-    photo.site?.name ??
-    (photo.lineSenderName ? `LINEから: ${photo.lineSenderName}` : undefined);
+    photo.caption || (photo.kind === "SCHEDULE" ? "工程表PDF" : "図面PDF");
 
   return (
     <div>
       <PageHeader
         title={label}
-        subtitle={subtitle}
-        backHref={backHref}
+        subtitle={photo.site?.name}
+        backHref={photo.siteId ? `/sites/${photo.siteId}` : "/"}
         right={<PdfShareButton photoId={photo.id} label={label} />}
       />
       <PageContainer size="narrow">
