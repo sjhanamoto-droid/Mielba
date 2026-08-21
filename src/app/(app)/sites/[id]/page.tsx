@@ -25,6 +25,7 @@ import { SiteStageControl } from "@/features/sites/site-stage-control";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
 import { SiteMaterialSummary } from "@/features/materials/site-material-summary";
+import { SiteAnalysisCard } from "@/features/sites/site-analysis-card";
 import { todayRange } from "@/lib/date";
 import { fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
 import {
@@ -93,9 +94,14 @@ export default async function SiteDetailPage({
     materialUses,
   ] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
+    // 人工は提出済み(SUBMITTED)のみ数える（勤怠・人工超過チェックと同じ基準）
     site.actualStartDate
       ? db.dailyReport.count({
-          where: { siteId: site.id, workDate: { gte: site.actualStartDate } },
+          where: {
+            siteId: site.id,
+            status: "SUBMITTED",
+            workDate: { gte: site.actualStartDate },
+          },
         })
       : Promise.resolve(0),
     getOpenHandovers(site.id),
@@ -171,6 +177,15 @@ export default async function SiteDetailPage({
   }
 
   const projectType = labelOf(PROJECT_TYPE_LABEL, site.projectType as ProjectType);
+
+  // AI分析（管理者のみ）: 人工超過の原因分析 と 工事完了の振り返り分析
+  const aiEnabled = Boolean(process.env.ANTHROPIC_API_KEY);
+  const isOverrun =
+    hasStarted &&
+    site.targetManDays != null &&
+    site.targetManDays > 0 &&
+    manDaysCount > site.targetManDays;
+  const isCompleted = site.siteStatus === "PAST";
 
   return (
     <div>
@@ -255,6 +270,16 @@ export default async function SiteDetailPage({
               )}
             </div>
           </Card>
+
+          {/* 工事完了のAI分析（管理者のみ・完了＝過去の現場に表示） */}
+          {admin && aiEnabled && isCompleted && (
+            <SiteAnalysisCard
+              siteId={site.id}
+              type="COMPLETION"
+              initialAnalysis={site.completionAnalysis}
+              initialAnalyzedAt={site.completionAnalyzedAt?.toISOString() ?? null}
+            />
+          )}
         </section>
 
         {/* ⓪-1 現場入り情報（ぱっと見で分かる） */}
@@ -392,6 +417,16 @@ export default async function SiteDetailPage({
               />
             </DataList>
           </Card>
+
+          {/* 人工超過のAI分析（管理者のみ・超過中の現場に表示） */}
+          {admin && aiEnabled && isOverrun && (
+            <SiteAnalysisCard
+              siteId={site.id}
+              type="OVERRUN"
+              initialAnalysis={site.overrunAnalysis}
+              initialAnalyzedAt={site.overrunAnalyzedAt?.toISOString() ?? null}
+            />
+          )}
         </section>
 
         {/* 登録材料（種類・数量は全員／金額は最高管理者のみ） */}

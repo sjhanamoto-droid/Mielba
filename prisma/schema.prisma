@@ -167,6 +167,12 @@ model Site {
 
   memo             String?
 
+  // ── AI分析（人工超過・工事完了）。再分析で上書き（最新のみ保持） ──
+  overrunAnalysis      String?   // 人工超過のAI分析
+  overrunAnalyzedAt    DateTime? // 人工超過分析の実行日時
+  completionAnalysis   String?   // 工事完了（振り返り）のAI分析
+  completionAnalyzedAt DateTime? // 完了分析の実行日時
+
   // ── 将来フェーズ：金額・収支（項目定義のみ。入力UI/集計は将来有効化） ──
   billingStatus     String? // 未請求|請求済|一部入金|入金完了
   contractAmount    Int? // 契約金額（請負金額）
