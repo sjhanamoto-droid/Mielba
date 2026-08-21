@@ -5,9 +5,10 @@ import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Vercel Cron は Bearer CRON_SECRET で自前認証する（セッション Cookie を持たない）ため、
-  // セッションガードの対象外とする。認可は各 /api/cron ルート側で行う。
-  if (pathname.startsWith("/api/cron/")) {
+  // Vercel Cron は Bearer CRON_SECRET、LINE Webhook は X-Line-Signature（HMAC）で
+  // それぞれ自前認証する（セッション Cookie を持たない）ため、セッションガードの対象外とする。
+  // 認可は各ルート側（/api/cron/* は CRON_SECRET、/api/line/* は署名検証）で行う。
+  if (pathname.startsWith("/api/cron/") || pathname.startsWith("/api/line/")) {
     return NextResponse.next();
   }
 
