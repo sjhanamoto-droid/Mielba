@@ -179,17 +179,16 @@ export default async function SiteDetailPage({
         subtitle={site.customer.name}
         backHref="/sites"
         right={
-          admin || site.createdById === user.id ? (
-            <LinkButton
-              href={`/sites/${site.id}/edit`}
-              variant="outline"
-              size="sm"
-              aria-label="現場を修正"
-            >
-              <Pencil className="h-4 w-4" />
-              <span>現場を修正</span>
-            </LinkButton>
-          ) : undefined
+          /* 現場の修正は全ログインユーザー可（スタッフも現場情報を最新に保てるように） */
+          <LinkButton
+            href={`/sites/${site.id}/edit`}
+            variant="outline"
+            size="sm"
+            aria-label="現場を修正"
+          >
+            <Pencil className="h-4 w-4" />
+            <span>現場を修正</span>
+          </LinkButton>
         }
       />
 

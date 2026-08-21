@@ -1,5 +1,5 @@
-import { notFound, redirect } from "next/navigation";
-import { requireUser, isAdmin } from "@/lib/session";
+import { notFound } from "next/navigation";
+import { requireUser } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -10,7 +10,7 @@ export default async function EditSitePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireUser();
+  await requireUser();
   const { id } = await params;
 
   const [site, customers, sitePhotos] = await Promise.all([
@@ -25,8 +25,7 @@ export default async function EditSitePage({
   ]);
 
   if (!site) notFound();
-  // 編集は作成者本人 または 管理者のみ。それ以外は現場詳細へ戻す。
-  if (site.createdById !== user.id && !isAdmin(user)) redirect(`/sites/${site.id}`);
+  // 現場の編集は全ログインユーザー可（スタッフも現場情報を最新に保てるように）
 
   return (
     <div>

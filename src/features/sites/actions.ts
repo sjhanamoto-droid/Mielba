@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { requireAdmin, requireUser, isAdmin } from "@/lib/session";
+import { requireAdmin, requireUser } from "@/lib/session";
 import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
 
 // ── 区分の許容値（@/lib/constants の型に対応） ──
@@ -283,16 +283,13 @@ export async function createSite(formData: FormData) {
 }
 
 export async function updateSite(siteId: string, formData: FormData) {
-  // 編集は作成者本人 または 管理者のみ
-  const user = await requireUser();
+  // 編集は全ログインユーザー可（現場情報は全員で最新に保つ運用。作成は元々全員可）
+  await requireUser();
   const existing = await db.site.findUnique({
     where: { id: siteId },
     select: { createdById: true },
   });
   if (!existing) return { error: "現場が見つかりません" };
-  if (existing.createdById !== user.id && !isAdmin(user)) {
-    return { error: "この現場を編集する権限がありません" };
-  }
   const parsed = parseSiteForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
