@@ -5,9 +5,10 @@ import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Vercel Cron は Bearer CRON_SECRET で自前認証する（セッション Cookie を持たない）ため、
-  // セッションガードの対象外とする。認可は各 /api/cron ルート側で行う。
-  if (pathname.startsWith("/api/cron/")) {
+  // Vercel Cron（Bearer CRON_SECRET）と共有アップロードAPI（Bearer SHARE_UPLOAD_TOKEN。
+  // iOSショートカットからの図面PDF登録）はセッション Cookie を持たないため、
+  // セッションガードの対象外とする。認可は各ルート側の Bearer トークン検証で行う。
+  if (pathname.startsWith("/api/cron/") || pathname.startsWith("/api/share/")) {
     return NextResponse.next();
   }
 
