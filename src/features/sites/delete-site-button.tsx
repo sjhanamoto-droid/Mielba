@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 
 /**
  * 現場の削除（危険操作）。ConfirmDialog で二重確認してから deleteSite を実行する。
- * 日報が存在する現場はサーバー側で拒否され、エラーはトーストで表示する。
+ * ステータスや日報の有無に関わらず削除でき、紐づくデータも全て消える（取り消し不可）。
  */
 export function DeleteSiteButton({ siteId, siteName }: { siteId: string; siteName: string }) {
   const [open, setOpen] = useState(false);
@@ -19,8 +19,8 @@ export function DeleteSiteButton({ siteId, siteName }: { siteId: string; siteNam
     <div className="rounded-2xl border border-red-200 bg-red-50/60 p-4 dark:border-red-900 dark:bg-red-950/30">
       <p className="text-sm font-bold text-red-700 dark:text-red-300">危険な操作</p>
       <p className="mt-1 text-xs leading-relaxed text-red-600/90 dark:text-red-300/80">
-        現場を削除すると、現調記録・写真・予定・TODOなど紐づくデータも全て削除されます。
-        日報が存在する現場は削除できません（ステータスを『過去』にしてください）。
+        現場を削除すると、日報・現調記録・写真・予定・TODO・材料など紐づくデータが
+        全て完全に削除されます。この操作は取り消せません。
       </p>
       <Button
         type="button"
@@ -37,10 +37,11 @@ export function DeleteSiteButton({ siteId, siteName }: { siteId: string; siteNam
         open={open}
         onClose={() => setOpen(false)}
         danger
-        title="現場を削除しますか？"
+        title="本当に削除しますか？"
         description={
           <>
             「<span className="font-bold">{siteName}</span>」を完全に削除します。
+            日報・写真・予定など、この現場の全てのデータが消えます。
             この操作は取り消せません。
           </>
         }

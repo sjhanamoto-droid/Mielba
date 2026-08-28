@@ -4,6 +4,7 @@ import { CalendarView, type CalendarViewMode } from "@/features/calendar/calenda
 import { requireUser } from "@/lib/session";
 import { db } from "@/lib/db";
 import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
+import { isNonWorkEventCategory } from "@/lib/constants";
 
 // "YYYY-MM" を解釈。不正なら当月（日本時間の暦日基準）。
 function parseYm(ym: string | undefined): { year: number; month: number } {
@@ -41,7 +42,7 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ ym?: string; view?: string; d?: string }>;
 }) {
-  const user = await requireUser();
+  await requireUser(); // 認証ゲート（未ログインはここでリダイレクト）
   const sp = await searchParams;
   const view = parseView(sp.view);
 
@@ -73,7 +74,7 @@ export default async function CalendarPage({
 
   // 権限: 管理者は全件、スタッフは自分の担当現場＋自分の個人予定
   // 互いに独立した4クエリを1波で並列取得（本番PostgreSQLの往復回数を削減）
-  const [events, myVisits, sites, users] = await Promise.all([
+  const [events, allVisits, sites, users] = await Promise.all([
     db.calendarEvent.findMany({
       // 担当という区別は廃止。全員が全現場の予定を見られる。
       where: { date: { gte: rangeStart, lt: rangeEnd } },
@@ -85,10 +86,14 @@ export default async function CalendarPage({
       },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
     }),
-    // 自分の現場入り（出面）。読み取り専用の予定チップとして表示する（管理者も自分の分のみ）。
+    // 現場入り（配員・自己申告）を全員ぶん取得。現場×日でまとめ、誰が行くかを共有表示する。
+    // （以前は自分の分だけ表示していたため、配員で他の人を追加してもカレンダーに出なかった）
     db.siteVisit.findMany({
-      where: { userId: user.id, date: { gte: rangeStart, lt: rangeEnd } },
-      include: { site: { select: { id: true, name: true } } },
+      where: { date: { gte: rangeStart, lt: rangeEnd } },
+      include: {
+        site: { select: { id: true, name: true } },
+        user: { select: { id: true, name: true, avatarColor: true } },
+      },
       orderBy: { date: "asc" },
     }),
     // 予定追加用の現場候補：全員に全現場を表示（担当でなくても、登録済みの現場は誰でも選べる）
@@ -121,10 +126,44 @@ export default async function CalendarPage({
     participants: e.participants.map((p) => p.user),
   }));
 
-  const viewVisits = myVisits.map((v) => ({
-    id: v.id,
-    date: v.date.toISOString(),
-    site: v.site,
+  // 現場予定(CalendarEvent)に参加者として既に出ている人は「現場入り」から除外し、重複表示を防ぐ。
+  // 手動の現場予定は参加者ぶんの現場入り(SiteVisit)も作るため、そのままだと予定と現場入りで二重に出る。
+  // 「休み」「その他」の予定は現場入りを作らないので除外対象にしない（write 側の条件と揃える）。
+  const eventPeopleBySiteDay = new Map<string, Set<string>>();
+  for (const e of events) {
+    if (!e.siteId || isNonWorkEventCategory(e.category)) continue;
+    const k = `${e.siteId}|${jstDateKey(e.date)}`;
+    let set = eventPeopleBySiteDay.get(k);
+    if (!set) {
+      set = new Set<string>();
+      eventPeopleBySiteDay.set(k, set);
+    }
+    for (const p of e.participants) set.add(p.user.id);
+  }
+
+  // 現場×日でまとめる（同じ現場に複数人 → 1件の「現場入り」に集約）。現場予定に出ている人は除く。
+  const visitGroups = new Map<
+    string,
+    {
+      id: string;
+      date: string;
+      site: { id: string; name: string };
+      visitors: { id: string; name: string; avatarColor: string }[];
+    }
+  >();
+  for (const v of allVisits) {
+    const k = `${v.siteId}|${jstDateKey(v.date)}`;
+    if (eventPeopleBySiteDay.get(k)?.has(v.userId)) continue;
+    let g = visitGroups.get(k);
+    if (!g) {
+      g = { id: k, date: v.date.toISOString(), site: v.site, visitors: [] };
+      visitGroups.set(k, g);
+    }
+    g.visitors.push(v.user);
+  }
+  const viewVisits = [...visitGroups.values()].map((g) => ({
+    ...g,
+    visitors: g.visitors.slice().sort((a, b) => a.name.localeCompare(b.name, "ja")),
   }));
 
   return (

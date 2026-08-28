@@ -56,11 +56,12 @@ export type CalendarEventData = {
   participants: PersonRef[]; // 参加者（現場に行く人・複数）
 };
 
-// 自分の現場入り（出面）。読み取り専用の予定チップとして表示する。
+// 現場入り（配員・自己申告）。現場×日でまとめた「誰が行くか」を読み取り専用チップで表示する。
 export type CalendarVisitData = {
   id: string;
   date: string; // ISO 文字列
   site: { id: string; name: string };
+  visitors: PersonRef[]; // その現場に入る人（配員・自己申告）
 };
 
 type SiteOption = { id: string; name: string; address?: string | null };
@@ -111,12 +112,14 @@ function categoryTone(category: string | null): "neutral" | "past" {
   return category === "HOLIDAY" ? "past" : "neutral";
 }
 
-// ─────────────────── 自分の現場入り（読み取り専用チップ） ───────────────────
-// EVENT 色とは別の識別：ブランド色の破線ボーダー＋ヘルメットアイコン
+// ─────────────────── 現場入り（読み取り専用チップ） ───────────────────
+// EVENT 色とは別の識別：ブランド色の破線ボーダー＋ヘルメットアイコン。
+// 配員・自己申告でその現場に入る人を、末尾にアバターで添える。
 function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compact?: boolean }) {
+  const names = visit.visitors.map((p) => p.name).join("・");
   return (
     <span
-      title={`現場入り：${visit.site.name}`}
+      title={names ? `現場入り：${visit.site.name}（${names}）` : `現場入り：${visit.site.name}`}
       className={cn(
         "flex items-center gap-1 rounded-md border border-dashed border-brand-400 bg-brand-50/60 text-brand-700",
         compact ? "px-1 py-0.5 text-[10px] font-semibold" : "px-2 py-1 text-[11px] font-semibold",
@@ -124,11 +127,29 @@ function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compa
     >
       <HardHat className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"} aria-hidden />
       <span className="truncate">{visit.site.name}</span>
+      {!compact && visit.visitors.length > 0 && (
+        <span className="ml-auto flex shrink-0 items-center -space-x-1.5">
+          {visit.visitors.slice(0, 3).map((p) => (
+            <Avatar
+              key={p.id}
+              name={p.name}
+              color={p.avatarColor}
+              size="sm"
+              className="h-4 w-4 text-[8px] ring-1 ring-white"
+            />
+          ))}
+          {visit.visitors.length > 3 && (
+            <span className="pl-1 text-[9px] font-bold text-brand-700">
+              +{visit.visitors.length - 3}
+            </span>
+          )}
+        </span>
+      )}
     </span>
   );
 }
 
-// リスト表示用（選択日の予定リスト・日ビュー）
+// リスト表示用（選択日の予定リスト・日ビュー）。現場に入る人をアバターで表示する。
 function VisitRow({ visit }: { visit: CalendarVisitData }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
@@ -138,8 +159,26 @@ function VisitRow({ visit }: { visit: CalendarVisitData }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-ink">{visit.site.name}</p>
         <p className="text-xs text-ink-muted">現場入り（出面）</p>
+        {visit.visitors.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="flex items-center -space-x-1.5">
+              {visit.visitors.slice(0, 8).map((p) => (
+                <Avatar
+                  key={p.id}
+                  name={p.name}
+                  color={p.avatarColor}
+                  size="sm"
+                  className="h-5 w-5 text-[9px] ring-1 ring-white"
+                />
+              ))}
+            </span>
+            <span className="truncate text-xs font-medium text-ink-muted">
+              {visit.visitors.map((p) => p.name).join("・")}
+            </span>
+          </div>
+        )}
       </div>
-      <Badge tone="brand">現場入り</Badge>
+      <Badge tone="brand">{visit.visitors.length}名</Badge>
     </div>
   );
 }
@@ -620,7 +659,7 @@ export function CalendarView({
         ))}
         <span className="flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
           <HardHat className="h-3 w-3 text-brand-600" aria-hidden />
-          自分の現場入り
+          現場入り（配員）
         </span>
       </div>
 

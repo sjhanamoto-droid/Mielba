@@ -325,21 +325,19 @@ export async function updateSite(siteId: string, formData: FormData) {
   redirect(`/sites/${siteId}?toast=${encodeURIComponent("保存しました")}`);
 }
 
-// ── 現場の削除（管理者のみ・日報が無い場合のみ） ──
+// ── 現場の削除（管理者のみ） ──
+// ステータスや日報の有無に関わらず削除可。紐づくデータ（日報・写真・現場入り・予定・
+// TODO・現調・材料など）は全リレーションの onDelete: Cascade で一緒に削除される。
+// UI 側で「本当に削除しますか？全てのデータが消えます」の二重確認を挟む前提。
 export async function deleteSite(siteId: string) {
   await requireAdmin();
   if (!siteId) return { error: "現場が指定されていません" };
 
   const site = await db.site.findUnique({
     where: { id: siteId },
-    select: { id: true, customerId: true, _count: { select: { reports: true } } },
+    select: { id: true, customerId: true },
   });
   if (!site) return { error: "現場が見つかりません" };
-  if (site._count.reports > 0) {
-    return {
-      error: "日報が存在する現場は削除できません。ステータスを『過去』にしてください",
-    };
-  }
   try {
     await db.site.delete({ where: { id: siteId } });
   } catch {

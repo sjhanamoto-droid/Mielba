@@ -58,7 +58,7 @@ export default async function DispatchPage({
     ]),
   );
 
-  const rows = sites.map((s) => {
+  const unsortedRows = sites.map((s) => {
     // その日の現場入り(visits)からその日の訪問者を構築（有効ユーザーのみ）
     const activeVisits = s.visits.filter((v) => v.user.active);
     const visitors = activeVisits.map((v) => ({
@@ -84,6 +84,12 @@ export default async function DispatchPage({
       ),
     };
   });
+
+  // 配員がいる現場（現場入り1名以上）を上に。残りは元の並び（updatedAt 降順）を維持。
+  // ※サーバー側で並べるので、編集中にトグルしても順番が急に入れ替わらない（再読込で反映）。
+  const rows = [...unsortedRows].sort(
+    (a, b) => Number(b.visitedIds.length > 0) - Number(a.visitedIds.length > 0),
+  );
 
   return (
     <div>
