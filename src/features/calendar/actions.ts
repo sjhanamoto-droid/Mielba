@@ -62,6 +62,47 @@ async function ensureVisits(
   }
 }
 
+// 指定の (siteId, date) から、対象ユーザーの現場入り(SiteVisit)を掃除する。
+// 予定の日付・現場を変えた（＝予定が移動した）ときや、予定を削除したときに、
+// もう不要になった旧コンテキストの現場入りを消してカレンダーと配員を一致させる。
+// ただし次の人は残す（実績・他予定との整合を壊さないため）:
+//   (a) その日その現場に日報がある人（行った実績）
+//   (b) 同じ (siteId, date) に残る別の作業系予定に、まだ参加している人
+// excludeEventId は「残る別の予定」判定から自分自身を除外するための予定ID。
+async function pruneVisits(
+  siteId: string,
+  date: Date,
+  userIds: string[],
+  excludeEventId: string,
+): Promise<void> {
+  const targets = [...new Set(userIds)];
+  if (targets.length === 0) return;
+
+  const reports = await db.dailyReport.findMany({
+    where: { siteId, workDate: date, userId: { in: targets } },
+    select: { userId: true },
+  });
+  const keep = new Set(reports.map((r) => r.userId));
+
+  // 同一 (siteId, date) に残る他の予定のうち、現場作業を生む予定（休み/その他/事務所作業 以外）の
+  // 参加者は現場入りを残す。null カテゴリーも作業扱いのため JS 側で判定する（SQLのNOT IN×NULL回避）。
+  const others = await db.calendarEvent.findMany({
+    where: { siteId, date, id: { not: excludeEventId } },
+    select: { category: true, participants: { select: { userId: true } } },
+  });
+  for (const e of others) {
+    if (isNonWorkEventCategory(e.category)) continue;
+    for (const p of e.participants) keep.add(p.userId);
+  }
+
+  const removable = targets.filter((uid) => !keep.has(uid));
+  if (removable.length > 0) {
+    await db.siteVisit.deleteMany({
+      where: { siteId, date, userId: { in: removable } },
+    });
+  }
+}
+
 export async function createEvent(
   formData: FormData,
 ): Promise<{ ok?: boolean; error?: string }> {
@@ -207,35 +248,28 @@ export async function updateEvent(
       });
     }
 
-    // 現場入り(SiteVisit)の同期。「休み」「その他」は現場作業ではないため作らない。
+    // 現場入り(SiteVisit)を新しいコンテキスト(現場×日)に同期。「休み」「その他」は作らない。
     const nonWork = isNonWorkEventCategory(d.category);
     if (siteId && !nonWork) {
       await ensureVisits(siteId, participantIds, date, user.id);
     }
-    // 同一現場・同一日で現場入りを解除すべき人（日報が無い場合のみ）:
-    //  - 通常: 参加者から外れた人
-    //  - 休み/その他になった予定: （新旧）参加者全員（現場作業ではないので実績以外は解除）
+
+    // 旧コンテキスト(oldSiteId, oldDate)から不要になった現場入りを掃除する。
+    // これでカレンダーと配員が一致する（日付や現場を変えたら配員の日付も移動する）。
+    //  - 予定が移動（現場 or 日付が変わった）: 旧コンテキストの旧参加者を掃除
+    //  - 休み/その他へ変更（同一コンテキスト）: 現場作業ではないので（新旧）参加者を掃除
+    //  - 参加者を外しただけ（同一コンテキスト・作業のまま）: 外した人を掃除
     const oldSiteId = existing.siteId;
-    const sameContext = oldSiteId === siteId && existing.date.getTime() === date.getTime();
-    if (sameContext && oldSiteId) {
+    const oldDate = existing.date;
+    if (oldSiteId) {
       const prevParticipantIds = existing.participants.map((p) => p.userId);
-      const removed = nonWork
-        ? [...new Set([...prevParticipantIds, ...participantIds])]
-        : prevParticipantIds.filter((uid) => !participantIds.includes(uid));
-      if (removed.length > 0) {
-        // 日報がある人は「行った実績」なので現場入りを残す
-        const reports = await db.dailyReport.findMany({
-          where: { siteId: oldSiteId, workDate: existing.date, userId: { in: removed } },
-          select: { userId: true },
-        });
-        const keep = new Set(reports.map((r) => r.userId));
-        const removable = removed.filter((uid) => !keep.has(uid));
-        if (removable.length > 0) {
-          await db.siteVisit.deleteMany({
-            where: { siteId: oldSiteId, date: existing.date, userId: { in: removable } },
-          });
-        }
-      }
+      const contextChanged = oldSiteId !== siteId || oldDate.getTime() !== date.getTime();
+      const removeCandidates = contextChanged
+        ? prevParticipantIds
+        : nonWork
+          ? [...new Set([...prevParticipantIds, ...participantIds])]
+          : prevParticipantIds.filter((uid) => !participantIds.includes(uid));
+      await pruneVisits(oldSiteId, oldDate, removeCandidates, id);
     }
 
     revalidateCalendar(siteId);
@@ -255,11 +289,23 @@ export async function deleteEvent(
     // 手動予定のみ削除可能（日報由来は削除させない）。参加者は cascade で削除。
     const event = await db.calendarEvent.findUnique({
       where: { id },
-      select: { siteId: true, source: true },
+      select: {
+        siteId: true,
+        source: true,
+        date: true,
+        category: true,
+        participants: { select: { userId: true } },
+      },
     });
     if (!event) return { error: "予定が見つかりません" };
     if (event.source !== "MANUAL") return { error: "この予定は削除できません" };
+    const participantIds = event.participants.map((p) => p.userId);
     await db.calendarEvent.delete({ where: { id } });
+    // 現場作業予定なら、紐づく現場入り(配員)も掃除してカレンダーと一致させる
+    //（提出済み日報や、同日同現場に残る別の作業予定の参加者は残す）。
+    if (event.siteId && !isNonWorkEventCategory(event.category)) {
+      await pruneVisits(event.siteId, event.date, participantIds, id);
+    }
     revalidateCalendar(event.siteId);
     return { ok: true };
   } catch (e) {
