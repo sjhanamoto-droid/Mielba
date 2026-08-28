@@ -51,7 +51,7 @@ export function Sidebar({
         >
           <Image
             src="/logo.png"
-            alt="シゲ電気 Mielba"
+            alt="シゲ電気"
             width={36}
             height={36}
             className="h-full w-full object-cover"
@@ -59,8 +59,8 @@ export function Sidebar({
         </span>
         {!collapsed && (
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-lg font-black tracking-tight text-ink">Mielba</p>
-            <p className="text-[10px] font-medium text-ink-faint">建設業 現場管理</p>
+            <p className="truncate text-lg font-black tracking-tight text-ink">シゲ電気</p>
+            <p className="text-[10px] font-medium text-ink-faint">現場管理</p>
           </div>
         )}
         <button

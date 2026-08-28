@@ -360,7 +360,7 @@ export default async function ReportPrintPage({
         </div>
 
         <p className="mt-4 text-right text-[10px] text-slate-500">
-          Mielba 作業日報 — 出力日 {fmtDate(new Date())}
+          作業日報 — 出力日 {fmtDate(new Date())}
         </p>
       </div>
     </div>

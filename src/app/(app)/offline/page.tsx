@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { WifiOff } from "lucide-react";
 
-export const metadata: Metadata = { title: "オフライン | Mielba" };
+export const metadata: Metadata = { title: "オフライン | シゲ電気" };
 
 /**
  * オフラインフォールバックページ。

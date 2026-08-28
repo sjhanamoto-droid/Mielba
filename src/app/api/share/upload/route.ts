@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   }
   if (file.size > MAX_PDF_BYTES) {
     return bad(
-      "ファイルが大きすぎます（4MBまで）。大きいPDFはMielbaの「現場を修正」から登録してください。",
+      "ファイルが大きすぎます（4MBまで）。大きいPDFはアプリの「現場を修正」から登録してください。",
     );
   }
 

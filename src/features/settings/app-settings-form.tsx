@@ -32,7 +32,7 @@ export function AppSettingsForm({ settings }: { settings: Settings }) {
       <div className="space-y-4">
         <p className="section-label">会社情報</p>
         <Field label="会社名" htmlFor="companyName">
-          <Input id="companyName" name="companyName" defaultValue={settings.companyName ?? ""} placeholder="例：株式会社ミエルバ建設" />
+          <Input id="companyName" name="companyName" defaultValue={settings.companyName ?? ""} placeholder="例：株式会社シゲ電気" />
         </Field>
         <Field label="住所" htmlFor="companyAddress">
           <Input id="companyAddress" name="companyAddress" defaultValue={settings.companyAddress ?? ""} placeholder="例：東京都〇〇区…" />

@@ -4,10 +4,10 @@ import { ServiceWorkerRegister } from "@/components/pwa";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mielba（ミエルバ）| 建設業 現場管理",
+  title: "シゲ電気 | 現場管理",
   description:
-    "建設業向け現場管理アプリ。顧客・現場・カレンダー・日報を現場中心に一元管理。",
-  applicationName: "Mielba",
+    "現場管理アプリ。顧客・現場・カレンダー・日報を現場中心に一元管理。",
+  applicationName: "シゲ電気",
   // PWA: ホーム画面追加用の manifest とアイコン（public/ 配下）
   manifest: "/manifest.webmanifest",
   icons: {
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Mielba",
+    title: "シゲ電気",
   },
   formatDetection: { telephone: false },
 };

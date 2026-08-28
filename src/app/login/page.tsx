@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { LoginForm } from "@/features/auth/login-form";
 
-export const metadata: Metadata = { title: "ログイン | Mielba" };
+export const metadata: Metadata = { title: "ログイン | シゲ電気" };
 
 export default function LoginPage() {
   return (
@@ -14,13 +14,13 @@ export default function LoginPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
-              alt="シゲ電気 Mielba"
+              alt="シゲ電気"
               width={80}
               height={80}
               className="h-full w-full object-cover"
             />
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-white">Mielba</h1>
+          <h1 className="text-3xl font-black tracking-tight text-white">シゲ電気</h1>
           <p className="mt-1 text-sm font-medium text-brand-100">
             建設業の現場を、見える化する。
           </p>
@@ -42,7 +42,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-brand-200/80">
-          © 2026 Mielba — 建設業向け現場管理アプリ v0.4
+          © 2026 株式会社シゲ電気
         </p>
       </div>
     </main>

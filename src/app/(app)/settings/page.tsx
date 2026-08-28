@@ -125,8 +125,8 @@ export default async function SettingsPage() {
                 <Info className="h-5 w-5" />
               </span>
               <div className="text-sm">
-                <p className="font-bold text-ink">Mielba（ミエルバ）</p>
-                <p className="text-xs text-ink-muted">建設業向け 現場管理アプリ ・ バージョン 0.3</p>
+                <p className="font-bold text-ink">シゲ電気 現場管理</p>
+                <p className="text-xs text-ink-muted">現場管理アプリ ・ バージョン 0.3</p>
               </div>
             </div>
           </section>

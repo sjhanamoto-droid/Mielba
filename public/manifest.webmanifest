@@ -1,7 +1,7 @@
 {
-  "name": "Mielba（ミエルバ）",
-  "short_name": "Mielba",
-  "description": "建設業向け現場管理アプリ。顧客・現場・カレンダー・日報を現場中心に一元管理。",
+  "name": "シゲ電気 現場管理",
+  "short_name": "シゲ電気",
+  "description": "現場管理アプリ。顧客・現場・カレンダー・日報を現場中心に一元管理。",
   "id": "/",
   "start_url": "/",
   "scope": "/",

@@ -8,7 +8,7 @@
  * - /api/（写真配信・Server Action 等）は一切キャッシュしない
  * - CACHE_VERSION を上げると古いキャッシュは activate 時に破棄される
  */
-const CACHE_VERSION = "mielba-v0.5.1";
+const CACHE_VERSION = "mielba-v0.5.2";
 const OFFLINE_URL = "/offline";
 
 // プリキャッシュ対象（/offline は未ログイン時に取得できないことがあるため個別に best-effort）
@@ -54,7 +54,7 @@ self.addEventListener("activate", (event) => {
 const FALLBACK_HTML = `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>オフライン | Mielba</title>
+<title>オフライン | シゲ電気</title>
 <style>
   body{font-family:system-ui,sans-serif;margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#f4f5f7;color:#1c1f26;text-align:center;padding:24px}
   .card{max-width:22rem}
@@ -105,7 +105,7 @@ self.addEventListener("push", (event) => {
     payload = { title: event.data ? event.data.text() : "" };
   }
 
-  const title = payload.title || "Mielba";
+  const title = payload.title || "シゲ電気";
   const url = payload.url || "/";
   const options = {
     body: payload.body || "",
