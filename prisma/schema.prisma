@@ -43,6 +43,7 @@ model User {
   role         String   @default("STAFF") // ADMIN | STAFF
   department   String?
   avatarColor  String   @default("#2f63f5")
+  avatarImage  String? // プロフィール画像（任意）。data URL（軽量JPEG）。未設定なら色＋イニシャル表示。
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

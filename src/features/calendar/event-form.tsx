@@ -16,7 +16,7 @@ import {
 import { cn, toDateInputValue } from "@/lib/utils";
 
 type SiteOption = { id: string; name: string; address?: string | null };
-type UserOption = { id: string; name: string; avatarColor?: string };
+type UserOption = { id: string; name: string; avatarColor?: string; avatarImage?: string | null };
 
 // 編集対象の予定（CalendarEventData と構造互換。参加者は id を含む）
 type EditEvent = {
@@ -249,7 +249,7 @@ export function EventForm({
                       className="hidden"
                     />
                     <span className="relative">
-                      <Avatar name={u.name} color={u.avatarColor} size="sm" />
+                      <Avatar name={u.name} color={u.avatarColor} image={u.avatarImage} size="sm" />
                       {on && (
                         <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white">
                           <Check className="h-2.5 w-2.5 text-brand-600" strokeWidth={4} />

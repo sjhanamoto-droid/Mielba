@@ -12,6 +12,7 @@ export type CurrentUser = {
   role: string;
   department: string | null;
   avatarColor: string;
+  avatarImage: string | null;
 };
 
 // リクエスト単位でキャッシュ（同一レンダリング中の重複クエリを防ぐ）
@@ -32,6 +33,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       role: true,
       department: true,
       avatarColor: true,
+      avatarImage: true,
       active: true,
     },
   });

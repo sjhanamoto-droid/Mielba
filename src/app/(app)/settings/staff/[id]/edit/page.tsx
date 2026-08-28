@@ -15,7 +15,7 @@ export default async function EditStaffPage({
   const { id } = await params;
   const user = await db.user.findUnique({
     where: { id },
-    select: { id: true, name: true, email: true, role: true, department: true, avatarColor: true },
+    select: { id: true, name: true, email: true, role: true, department: true, avatarColor: true, avatarImage: true },
   });
   if (!user) notFound();
 

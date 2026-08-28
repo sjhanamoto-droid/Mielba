@@ -19,6 +19,7 @@ export function AppFrame({
     email: string;
     role: string;
     avatarColor: string;
+    avatarImage: string | null;
     department: string | null;
   };
   initialCollapsed: boolean;

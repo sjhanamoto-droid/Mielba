@@ -31,7 +31,7 @@ export default async function ReportDetailPage({
     where: { id },
     include: {
       site: { select: { id: true, name: true } },
-      user: { select: { id: true, name: true, avatarColor: true } },
+      user: { select: { id: true, name: true, avatarColor: true, avatarImage: true } },
       materials: true,
       stockUses: true,
       expenses: { orderBy: { sortOrder: "asc" } },
@@ -43,7 +43,7 @@ export default async function ReportDetailPage({
         orderBy: { createdAt: "asc" },
       },
       comments: {
-        include: { user: { select: { name: true, avatarColor: true } } },
+        include: { user: { select: { name: true, avatarColor: true, avatarImage: true } } },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -93,7 +93,7 @@ export default async function ReportDetailPage({
         {/* ヘッダーカード */}
         <Card className="space-y-3 p-4">
           <div className="flex items-center gap-3">
-            <Avatar name={report.user.name} color={report.user.avatarColor} size="lg" />
+            <Avatar name={report.user.name} color={report.user.avatarColor} image={report.user.avatarImage} size="lg" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="truncate text-base font-bold text-ink">{report.user.name}</span>
@@ -380,7 +380,7 @@ export default async function ReportDetailPage({
             <div className="space-y-2.5">
               {report.comments.map((c) => (
                 <div key={c.id} className="flex items-start gap-2.5">
-                  <Avatar name={c.user.name} color={c.user.avatarColor} size="sm" />
+                  <Avatar name={c.user.name} color={c.user.avatarColor} image={c.user.avatarImage} size="sm" />
                   <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm border border-line bg-surface px-3 py-2">
                     <div className="flex items-baseline gap-2">
                       <span className="truncate text-xs font-bold text-ink">{c.user.name}</span>

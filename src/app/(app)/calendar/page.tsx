@@ -80,9 +80,9 @@ export default async function CalendarPage({
       where: { date: { gte: rangeStart, lt: rangeEnd } },
       include: {
         site: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true, avatarColor: true } },
-        createdBy: { select: { id: true, name: true, avatarColor: true } },
-        participants: { include: { user: { select: { id: true, name: true, avatarColor: true } } } },
+        owner: { select: { id: true, name: true, avatarColor: true, avatarImage: true} },
+        createdBy: { select: { id: true, name: true, avatarColor: true, avatarImage: true} },
+        participants: { include: { user: { select: { id: true, name: true, avatarColor: true, avatarImage: true} } } },
       },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
     }),
@@ -92,7 +92,7 @@ export default async function CalendarPage({
       where: { date: { gte: rangeStart, lt: rangeEnd } },
       include: {
         site: { select: { id: true, name: true } },
-        user: { select: { id: true, name: true, avatarColor: true } },
+        user: { select: { id: true, name: true, avatarColor: true, avatarImage: true} },
       },
       orderBy: { date: "asc" },
     }),
@@ -104,7 +104,7 @@ export default async function CalendarPage({
     // 担当（現場に行く人）候補：有効なユーザー一覧
     db.user.findMany({
       where: { active: true },
-      select: { id: true, name: true, avatarColor: true },
+      select: { id: true, name: true, avatarColor: true, avatarImage: true},
       orderBy: { name: "asc" },
     }),
   ]);
@@ -148,7 +148,7 @@ export default async function CalendarPage({
       id: string;
       date: string;
       site: { id: string; name: string };
-      visitors: { id: string; name: string; avatarColor: string }[];
+      visitors: { id: string; name: string; avatarColor: string; avatarImage: string | null }[];
     }
   >();
   for (const v of allVisits) {

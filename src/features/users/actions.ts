@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin, isSuperAdmin } from "@/lib/session";
 import { hashPassword } from "@/lib/password";
+import { validateAvatarDataUrl } from "@/lib/photos";
 import { DEFAULT_AVATAR_COLOR } from "@/lib/constants";
 
 export type UserFormState = { error?: string; ok?: boolean };
@@ -55,6 +56,10 @@ export async function createUser(
     return { error: "最高管理者を付与できるのは最高管理者のみです" };
   }
 
+  const avatarResult = validateAvatarDataUrl(formData.get("avatarImage")?.toString());
+  if (avatarResult && typeof avatarResult === "object") return { error: avatarResult.error };
+  const avatarImage = avatarResult as string | null;
+
   const exists = await db.user.findUnique({ where: { email: d.email } });
   if (exists) return { error: "このメールアドレスは既に登録されています" };
 
@@ -65,6 +70,7 @@ export async function createUser(
       role: d.role,
       department: d.department ?? null,
       avatarColor: d.avatarColor ?? DEFAULT_AVATAR_COLOR,
+      avatarImage,
       passwordHash: await hashPassword(d.password),
     },
   });
@@ -127,6 +133,10 @@ export async function updateUser(
     }
   }
 
+  const avatarResult = validateAvatarDataUrl(formData.get("avatarImage")?.toString());
+  if (avatarResult && typeof avatarResult === "object") return { error: avatarResult.error };
+  const avatarImage = avatarResult as string | null;
+
   const passwordHash = d.password ? await hashPassword(d.password) : undefined;
 
   await db.user.update({
@@ -137,6 +147,7 @@ export async function updateUser(
       role: d.role,
       department: d.department ?? null,
       avatarColor: d.avatarColor ?? target.avatarColor,
+      avatarImage,
       ...(passwordHash ? { passwordHash } : {}),
     },
   });

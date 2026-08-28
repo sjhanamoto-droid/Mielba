@@ -29,7 +29,7 @@ export default async function SiteReportsPage({
   const reports = await db.dailyReport.findMany({
     where: { siteId: id },
     include: {
-      user: { select: { name: true, avatarColor: true } },
+      user: { select: { name: true, avatarColor: true, avatarImage: true } },
       _count: { select: { photos: true, comments: true, materials: true } },
     },
     orderBy: [{ workDate: "desc" }, { createdAt: "asc" }],

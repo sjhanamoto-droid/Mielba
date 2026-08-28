@@ -40,7 +40,7 @@ export default async function StaffListPage() {
                 key={u.id}
                 className={`card flex flex-wrap items-center gap-3 p-3.5 sm:flex-nowrap ${!u.active ? "opacity-60" : ""}`}
               >
-                <Avatar name={u.name} color={u.avatarColor} size="lg" />
+                <Avatar name={u.name} color={u.avatarColor} image={u.avatarImage} size="lg" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate text-[15px] font-bold text-ink">{u.name}</span>

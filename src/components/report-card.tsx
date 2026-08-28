@@ -12,7 +12,7 @@ export type ReportCardData = {
   endTime: string;
   detail: string | null;
   status: string;
-  user: { name: string; avatarColor: string };
+  user: { name: string; avatarColor: string; avatarImage?: string | null };
   site?: { id: string; name: string } | null;
   _count?: { photos: number; comments: number; materials: number };
 };
@@ -33,7 +33,7 @@ export function ReportCard({
       className="card tap-row block p-4 transition-all hover:border-line-strong hover:shadow-float"
     >
       <div className="flex items-center gap-2.5">
-        <Avatar name={report.user.name} color={report.user.avatarColor} size="md" />
+        <Avatar name={report.user.name} color={report.user.avatarColor} image={report.user.avatarImage} size="md" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-sm font-bold text-ink">{report.user.name}</span>

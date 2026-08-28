@@ -37,7 +37,7 @@ import { cn, fmtDateWithDay } from "@/lib/utils";
 
 export type CalendarViewMode = "day" | "week" | "month";
 
-type PersonRef = { id: string; name: string; avatarColor: string };
+type PersonRef = { id: string; name: string; avatarColor: string; avatarImage?: string | null };
 
 export type CalendarEventData = {
   id: string;
@@ -65,7 +65,7 @@ export type CalendarVisitData = {
 };
 
 type SiteOption = { id: string; name: string; address?: string | null };
-type UserOption = { id: string; name: string; avatarColor: string };
+type UserOption = { id: string; name: string; avatarColor: string; avatarImage?: string | null };
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const SOURCE_BADGE_TONE: Record<EventSource, "brand" | "accent" | "active" | "info" | "neutral"> = {
@@ -134,6 +134,7 @@ function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compa
               key={p.id}
               name={p.name}
               color={p.avatarColor}
+              image={p.avatarImage}
               size="sm"
               className="h-4 w-4 text-[8px] ring-1 ring-white"
             />
@@ -167,6 +168,7 @@ function VisitRow({ visit }: { visit: CalendarVisitData }) {
                   key={p.id}
                   name={p.name}
                   color={p.avatarColor}
+                  image={p.avatarImage}
                   size="sm"
                   className="h-5 w-5 text-[9px] ring-1 ring-white"
                 />
@@ -237,7 +239,7 @@ function EventRow({
         {people.length > 0 && (
           <div className="mt-1.5 flex items-center -space-x-1.5">
             {people.slice(0, 6).map((p) => (
-              <Avatar key={p.id} name={p.name} color={p.avatarColor} size="sm" className="h-5 w-5 text-[9px] ring-1 ring-white" />
+              <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-5 w-5 text-[9px] ring-1 ring-white" />
             ))}
           </div>
         )}
@@ -336,7 +338,7 @@ function EventDetailModal({
               <dd className="flex flex-wrap gap-1.5">
                 {people.map((p) => (
                   <span key={p.id} className="flex items-center gap-1.5 rounded-full bg-surface-sunken py-1 pl-1 pr-3">
-                    <Avatar name={p.name} color={p.avatarColor} size="sm" />
+                    <Avatar name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" />
                     <span className="text-sm font-semibold text-ink">{p.name}</span>
                   </span>
                 ))}
@@ -415,6 +417,7 @@ function MonthEventChip({
               key={p.id}
               name={p.name}
               color={p.avatarColor}
+              image={p.avatarImage}
               size="sm"
               className="h-4 w-4 text-[8px] ring-1 ring-white"
             />
@@ -429,6 +432,7 @@ function MonthEventChip({
         <Avatar
           name={ev.owner.name}
           color={ev.owner.avatarColor}
+          image={ev.owner.avatarImage}
           size="sm"
           className="ml-auto h-4 w-4 shrink-0 text-[8px]"
         />
@@ -931,7 +935,7 @@ function WeekEventChip({
       {people.length > 0 && (
         <div className="mt-1 flex items-center -space-x-1.5">
           {people.slice(0, 4).map((p) => (
-            <Avatar key={p.id} name={p.name} color={p.avatarColor} size="sm" className="h-4 w-4 text-[8px] ring-1 ring-white" />
+            <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-4 w-4 text-[8px] ring-1 ring-white" />
           ))}
           {people.length > 4 && (
             <span className="pl-2 text-[9px] font-bold text-ink-muted">+{people.length - 4}</span>
@@ -1220,7 +1224,7 @@ function DayTimeline({
                   {people.length > 0 && height > 58 && (
                     <div className="mt-1 flex items-center -space-x-1.5">
                       {people.slice(0, 5).map((p) => (
-                        <Avatar key={p.id} name={p.name} color={p.avatarColor} size="sm" className="h-4 w-4 text-[8px] ring-1 ring-white" />
+                        <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-4 w-4 text-[8px] ring-1 ring-white" />
                       ))}
                     </div>
                   )}

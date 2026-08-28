@@ -44,7 +44,7 @@ export default async function MenuPage() {
         <div className="space-y-5">
           {/* プロフィール */}
           <div className="card flex items-center gap-3.5 p-4">
-            <Avatar name={user.name} color={user.avatarColor} size="lg" />
+            <Avatar name={user.name} color={user.avatarColor} image={user.avatarImage} size="lg" />
             <div className="min-w-0">
               <p className="truncate text-[15px] font-bold text-ink">{user.name}</p>
               <p className="truncate text-xs text-ink-muted">{user.email}</p>

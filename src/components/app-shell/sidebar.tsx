@@ -20,7 +20,7 @@ export function Sidebar({
   onToggle,
   unreadCount = 0,
 }: {
-  user: { name: string; email: string; role: string; avatarColor: string; department: string | null };
+  user: { name: string; email: string; role: string; avatarColor: string; avatarImage: string | null; department: string | null };
   collapsed: boolean;
   onToggle: () => void;
   unreadCount?: number;
@@ -165,7 +165,7 @@ export function Sidebar({
       {collapsed ? (
         <div className="flex flex-col items-center gap-2 border-t border-line p-2">
           <Link href="/settings/account" title={user.name}>
-            <Avatar name={user.name} color={user.avatarColor} size="md" />
+            <Avatar name={user.name} color={user.avatarColor} image={user.avatarImage} size="md" />
           </Link>
           <form action={logoutAction}>
             <button
@@ -181,7 +181,7 @@ export function Sidebar({
       ) : (
         <div className="border-t border-line p-3">
           <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
-            <Avatar name={user.name} color={user.avatarColor} size="md" />
+            <Avatar name={user.name} color={user.avatarColor} image={user.avatarImage} size="md" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-ink">{user.name}</p>
               <p className="truncate text-[11px] text-ink-muted">

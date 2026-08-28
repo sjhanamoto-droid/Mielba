@@ -62,7 +62,7 @@ export default async function SiteDetailPage({
       partners: true,
       reports: {
         include: {
-          user: { select: { name: true, avatarColor: true } },
+          user: { select: { name: true, avatarColor: true, avatarImage: true } },
           _count: { select: { photos: true, comments: true, materials: true } },
         },
         orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],

@@ -57,7 +57,7 @@ export default async function ReportsHubPage({
       db.dailyReport.findMany({
         where: { userId: user.id },
         include: {
-          user: { select: { name: true, avatarColor: true } },
+          user: { select: { name: true, avatarColor: true, avatarImage: true } },
           site: { select: { id: true, name: true } },
           _count: { select: { photos: true, comments: true, materials: true } },
         },
@@ -163,7 +163,7 @@ export default async function ReportsHubPage({
   // 1件多く取得して「さらに表示」の有無を判定する
   const fetched = await db.dailyReport.findMany({
     include: {
-      user: { select: { name: true, avatarColor: true } },
+      user: { select: { name: true, avatarColor: true, avatarImage: true } },
       site: { select: { id: true, name: true } },
       _count: { select: { photos: true, comments: true, materials: true } },
     },

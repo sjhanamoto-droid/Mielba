@@ -14,8 +14,8 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-type Staff = { id: string; name: string; avatarColor: string };
-type DispatchUser = { id: string; name: string; avatarColor: string; role: string };
+type Staff = { id: string; name: string; avatarColor: string; avatarImage?: string | null };
+type DispatchUser = { id: string; name: string; avatarColor: string; avatarImage?: string | null; role: string };
 // 当日の日報状況: none=未打刻 / draft=下書き / submitted=提出済
 export type ReportStatus = "none" | "draft" | "submitted";
 type SiteRow = {
@@ -184,7 +184,7 @@ export function DispatchBoard({
 
   // pill 表示用: userId → 表示情報（allUsers を基本に、当日訪問者の情報も補完）
   const userById = new Map<string, Staff>();
-  for (const u of allUsers) userById.set(u.id, { id: u.id, name: u.name, avatarColor: u.avatarColor });
+  for (const u of allUsers) userById.set(u.id, { id: u.id, name: u.name, avatarColor: u.avatarColor, avatarImage: u.avatarImage });
   for (const s of sites) for (const u of s.staff) if (!userById.has(u.id)) userById.set(u.id, u);
 
   const totalGoing = sites.reduce((acc, s) => acc + (visited[s.id]?.size ?? 0), 0);
@@ -243,7 +243,7 @@ export function DispatchBoard({
                         )}
                       >
                         <span className="relative">
-                          <Avatar name={u.name} color={u.avatarColor} size="sm" />
+                          <Avatar name={u.name} color={u.avatarColor} image={u.avatarImage} size="sm" />
                           {/* 現場入り中の人に、当日の日報状況をドットで表示 */}
                           {!cellPending && <StatusDot status={reportStatus} />}
                         </span>
@@ -470,7 +470,7 @@ function VisitSheet({
                     : "border-line-strong bg-surface",
                 )}
               >
-                <Avatar name={u.name} color={u.avatarColor} size="sm" />
+                <Avatar name={u.name} color={u.avatarColor} image={u.avatarImage} size="sm" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold text-ink">{u.name}</span>
                   <span className="block text-xs text-ink-muted">

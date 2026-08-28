@@ -55,6 +55,32 @@ function approxBytes(dataUrl: string): number {
   return Math.floor((body.length * 3) / 4);
 }
 
+// アバター画像の検証。クライアントで小さく圧縮（最大256px）してから送る前提だが、
+// サーバー側でも形式（画像のみ）とサイズ（デコード後1MBまで）を必ず検証する。
+const AVATAR_MAX_BYTES = 1024 * 1024; // 1MB
+const AVATAR_ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/**
+ * アバター画像用 data URL の検証。
+ * - "" / undefined → null（画像なし＝色＋イニシャル表示）
+ * - 正しい画像 data URL → その文字列
+ * - それ以外 → { error }
+ */
+export function validateAvatarDataUrl(
+  value: string | null | undefined,
+): string | null | { error: string } {
+  const v = (value ?? "").trim();
+  if (v === "") return null;
+  const mime = mimeOf(v);
+  if (!mime || !AVATAR_ALLOWED_MIMES.has(mime)) {
+    return { error: "画像はJPEG / PNG / WebP形式のみ対応しています。" };
+  }
+  if (approxBytes(v) > AVATAR_MAX_BYTES) {
+    return { error: "画像サイズが大きすぎます。別の画像でお試しください。" };
+  }
+  return v;
+}
+
 /**
  * hidden input の JSON 配列を検証してパースする。
  * 要素は {id} （既存写真を維持）または {dataUrl, thumbUrl?, caption, kind, isVideo, width?, height?}（新規）。

@@ -48,7 +48,7 @@ export default async function AttendanceUserPage({
   const isCurrent = ym === jstMonthKey();
 
   const [target, reports, officeEvents] = await Promise.all([
-    db.user.findUnique({ where: { id: userId }, select: { name: true, avatarColor: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { name: true, avatarColor: true, avatarImage: true } }),
     // 下書き(DRAFT)は勤怠に計上しない（提出して初めて稼働になる）
     db.dailyReport.findMany({
       where: { userId, workDate: range, status: "SUBMITTED" },
@@ -141,7 +141,7 @@ export default async function AttendanceUserPage({
 
           {/* 本人サマリー */}
           <Card className="flex items-center gap-3 p-4">
-            <Avatar name={target.name} color={target.avatarColor} size="md" />
+            <Avatar name={target.name} color={target.avatarColor} image={target.avatarImage} size="md" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-ink">{target.name}</p>
               <p className="text-xs text-ink-muted">{monthLabel} の稼働</p>

@@ -7,6 +7,7 @@ import { createUser, updateUser, type UserFormState } from "./actions";
 import { Field, Input, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { ColorPicker } from "@/features/settings/color-picker";
+import { AvatarImageField } from "./avatar-image-field";
 import { ROLE_OPTIONS, ROLE_OPTIONS_SUPER_ADMIN, ROLE_LABEL } from "@/lib/constants";
 
 type UserData = {
@@ -16,6 +17,7 @@ type UserData = {
   role: string;
   department: string | null;
   avatarColor: string;
+  avatarImage?: string | null;
 };
 
 function SubmitButton({ isEdit }: { isEdit: boolean }) {
@@ -73,7 +75,15 @@ export function UserForm({
         </Field>
       </div>
 
-      <Field label="アバター色">
+      <Field label="プロフィール画像" hint="任意">
+        <AvatarImageField
+          personName={user?.name ?? "スタッフ"}
+          color={user?.avatarColor}
+          defaultImage={user?.avatarImage ?? null}
+        />
+      </Field>
+
+      <Field label="アバター色" hint="画像未設定のときの色">
         <ColorPicker name="avatarColor" defaultValue={user?.avatarColor} />
       </Field>
 

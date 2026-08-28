@@ -33,7 +33,7 @@ export default async function DispatchPage({
         customer: { select: { name: true } },
         visits: {
           where: { date: range },
-          include: { user: { select: { id: true, name: true, avatarColor: true, active: true } } },
+          include: { user: { select: { id: true, name: true, avatarColor: true, avatarImage: true, active: true } } },
         },
       },
       orderBy: { updatedAt: "desc" },
@@ -46,7 +46,7 @@ export default async function DispatchPage({
     // 配員編集シートの候補（管理者・スタッフ両方。有効ユーザーのみ）
     db.user.findMany({
       where: { active: true },
-      select: { id: true, name: true, avatarColor: true, role: true },
+      select: { id: true, name: true, avatarColor: true, avatarImage: true, role: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -65,6 +65,7 @@ export default async function DispatchPage({
       id: v.user.id,
       name: v.user.name,
       avatarColor: v.user.avatarColor,
+      avatarImage: v.user.avatarImage,
     }));
     // メインの人（全員一致投票）の確定状況。管理者の代理確定UIに使う。
     const firstVote = activeVisits[0]?.mainVote ?? null;

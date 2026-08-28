@@ -24,6 +24,7 @@ type Row = {
   userId: string;
   name: string;
   avatarColor: string;
+  avatarImage: string | null;
   minutes: number;
   days: number;
 };
@@ -51,7 +52,7 @@ export default async function AttendancePage({
         userId: true,
         startTime: true,
         endTime: true,
-        user: { select: { name: true, avatarColor: true } },
+        user: { select: { name: true, avatarColor: true, avatarImage: true } },
       },
     }),
     db.calendarEvent.findMany({
@@ -61,7 +62,7 @@ export default async function AttendancePage({
         startTime: true,
         endTime: true,
         allDay: true,
-        owner: { select: { name: true, avatarColor: true } },
+        owner: { select: { name: true, avatarColor: true, avatarImage: true } },
       },
     }),
   ]);
@@ -74,6 +75,7 @@ export default async function AttendancePage({
         userId: r.userId,
         name: r.user.name,
         avatarColor: r.user.avatarColor,
+        avatarImage: r.user.avatarImage,
         minutes: 0,
         days: 0,
       };
@@ -91,6 +93,7 @@ export default async function AttendancePage({
         userId: uid,
         name: e.owner?.name ?? "—",
         avatarColor: e.owner?.avatarColor ?? "#64748b",
+        avatarImage: e.owner?.avatarImage ?? null,
         minutes: 0,
         days: 0,
       };
@@ -172,7 +175,7 @@ export default async function AttendancePage({
                     href={`/attendance/${r.userId}?ym=${ym}`}
                     className="flex items-center gap-3 px-4 py-3 tap-row"
                   >
-                    <Avatar name={r.name} color={r.avatarColor} size="md" />
+                    <Avatar name={r.name} color={r.avatarColor} image={r.avatarImage} size="md" />
                     <p className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{r.name}</p>
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-bold text-ink tnum">{fmtWorkMinutes(r.minutes)}</p>
