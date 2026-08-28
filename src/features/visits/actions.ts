@@ -18,8 +18,87 @@ function parseDateKey(s: string): Date | null {
 function revalidateVisit(siteId: string) {
   revalidatePath("/dispatch");
   revalidatePath("/reports");
+  revalidatePath("/calendar");
   revalidatePath("/");
   revalidatePath(`/sites/${siteId}`);
+}
+
+// ── 配員（現場入り）⇔ カレンダーの「作業」予定 を同期 ──
+// 現場×日ごとに1件の「作業」予定（手動・08:00〜17:00・カテゴリーWORK）を正本として維持し、
+// 参加者＝その日の現場入り者にそろえる。カレンダーで作った作業予定があればそれに合流する
+// （＝配員とカレンダーで二重の作業予定を作らない）。
+const WORK_EVENT_TITLE = "作業";
+const WORK_EVENT_START = "08:00";
+const WORK_EVENT_END = "17:00";
+
+async function addToWorkEvent(
+  siteId: string,
+  userId: string,
+  date: Date,
+  createdById: string,
+): Promise<void> {
+  const existing = await db.calendarEvent.findFirst({
+    where: { siteId, date, category: "WORK" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, ownerId: true },
+  });
+  const event =
+    existing ??
+    (await db.calendarEvent.create({
+      data: {
+        title: WORK_EVENT_TITLE,
+        date,
+        siteId,
+        category: "WORK",
+        ownerId: userId,
+        startTime: WORK_EVENT_START,
+        endTime: WORK_EVENT_END,
+        allDay: false,
+        source: "MANUAL",
+        createdById,
+      },
+      select: { id: true, ownerId: true },
+    }));
+  // 参加者を冪等に追加
+  await db.eventParticipant.upsert({
+    where: { eventId_userId: { eventId: event.id, userId } },
+    update: {},
+    create: { eventId: event.id, userId },
+  });
+  // 既存予定で所有者が未設定なら補完
+  if (existing && !event.ownerId) {
+    await db.calendarEvent.update({ where: { id: event.id }, data: { ownerId: userId } });
+  }
+}
+
+async function removeFromWorkEvent(
+  siteId: string,
+  userId: string,
+  date: Date,
+): Promise<void> {
+  const event = await db.calendarEvent.findFirst({
+    where: { siteId, date, category: "WORK" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, note: true, ownerId: true },
+  });
+  if (!event) return;
+  await db.eventParticipant.deleteMany({ where: { eventId: event.id, userId } });
+  const remaining = await db.eventParticipant.count({ where: { eventId: event.id } });
+  if (remaining === 0) {
+    // 自動生成の空予定（メモ無し）は掃除する。手入力のメモがあれば残す。
+    if (!event.note) await db.calendarEvent.delete({ where: { id: event.id } });
+    return;
+  }
+  // 所有者が抜けたら、残りの参加者を所有者に繰り上げる
+  if (event.ownerId === userId) {
+    const next = await db.eventParticipant.findFirst({
+      where: { eventId: event.id },
+      select: { userId: true },
+    });
+    if (next) {
+      await db.calendarEvent.update({ where: { id: event.id }, data: { ownerId: next.userId } });
+    }
+  }
 }
 
 // 配員ボード（管理者）／スタッフの自己申告 共通：現場入りを追加・取消
@@ -62,8 +141,12 @@ export async function toggleVisit(
         await db.dailyReport.delete({ where: { id: report.id } });
       }
       await db.siteVisit.delete({ where: { id: existing.id } });
+      // カレンダーの「作業」予定からも外す（空になった自動予定は掃除）
+      await removeFromWorkEvent(siteId, userId, date);
     } else {
       await db.siteVisit.create({ data: { siteId, userId, date, createdById: me.id } });
+      // カレンダーに「作業」予定（08:00〜17:00）として反映する
+      await addToWorkEvent(siteId, userId, date, me.id);
     }
 
     revalidateVisit(siteId);
@@ -101,6 +184,8 @@ export async function addMyVisit(
       update: {},
       create: { siteId, userId: me.id, date, createdById: me.id },
     });
+    // カレンダーに「作業」予定（08:00〜17:00）として反映する（配員と同じ扱い）
+    await addToWorkEvent(siteId, me.id, date, me.id);
     revalidateVisit(siteId);
     return { ok: true };
   } catch (e) {
