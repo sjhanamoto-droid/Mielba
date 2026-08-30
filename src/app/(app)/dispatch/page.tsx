@@ -7,6 +7,11 @@ import { DispatchBoard, DispatchDateNav, type ReportStatus } from "@/features/vi
 import { fmtDateWithDay } from "@/lib/utils";
 import { isNonWorkEventCategory } from "@/lib/constants";
 
+// 「現場未指定の予定」を配員に出すのは “既存の取り残し救済” のみ。
+// 「現場の作業＝現場必須」を導入した時点より前に作られた現場なし予定だけを対象にし、
+// これ以降に作られる現場なし予定（＝個人予定）は配員に出さない。
+const UNTETHERED_LEGACY_BEFORE = new Date("2026-08-30T06:10:00.000Z");
+
 // ?d=YYYY-MM-DD を解釈。不正なら「今日」（日本時間の暦日）。
 function parseDayKey(s: string | undefined): string {
   if (s && /^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
@@ -50,9 +55,15 @@ export default async function DispatchPage({
       select: { id: true, name: true, avatarColor: true, avatarImage: true, role: true },
       orderBy: { name: "asc" },
     }),
-    // 現場未指定の予定（カレンダーで現場を選ばず登録された予定）。参加者つきのみ。
+    // 現場未指定の予定（カレンダーで現場を選ばず登録された予定）。参加者つき・かつ
+    // 「現場必須」導入前に作られた既存分のみ（以降の現場なし予定＝個人予定は出さない）。
     db.calendarEvent.findMany({
-      where: { siteId: null, date: range, participants: { some: {} } },
+      where: {
+        siteId: null,
+        date: range,
+        participants: { some: {} },
+        createdAt: { lt: UNTETHERED_LEGACY_BEFORE },
+      },
       select: {
         id: true, title: true, category: true, allDay: true, startTime: true, endTime: true,
         participants: {
