@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
-import { X, AlertCircle, CalendarPlus, Check, Save } from "lucide-react";
+import { X, AlertCircle, CalendarPlus, Check, Save, Plus, Loader2 } from "lucide-react";
 import { createEvent, updateEvent } from "./actions";
+import { quickCreateSite } from "@/features/sites/actions";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -73,6 +74,31 @@ export function EventForm({
   const [participants, setParticipants] = useState<Set<string>>(
     new Set(event?.participants.map((p) => p.id) ?? []),
   );
+  // 現場をその場で追加（登録の手間を減らす簡易導線）
+  const [siteList, setSiteList] = useState<SiteOption[]>(sites);
+  const [addingSite, setAddingSite] = useState(false);
+  const [newSiteName, setNewSiteName] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  async function handleAddSite() {
+    const name = newSiteName.trim();
+    if (!name || addBusy) return;
+    setAddBusy(true);
+    setAddError(null);
+    const r = await quickCreateSite(name);
+    setAddBusy(false);
+    if ("error" in r) {
+      setAddError(r.error);
+      return;
+    }
+    // 追加した現場を候補の先頭に入れて選択状態にする
+    setSiteList((prev) => [{ id: r.id, name: r.name }, ...prev]);
+    setSiteId(r.id);
+    if (category === "OFFICE") setCategory("");
+    setNewSiteName("");
+    setAddingSite(false);
+  }
 
   // 個人予定（現場なし）のときは「事務所作業」をカテゴリー先頭に出す。現場予定では出さない。
   const categoryOptions: EventCategory[] = siteId
@@ -139,10 +165,63 @@ export function EventForm({
           <Field label="現場" htmlFor="siteId" hint="選ぶと参加者は現場入り＝日報に連動">
             <Select id="siteId" name="siteId" value={siteId} onChange={onSiteChange}>
               <option value="">現場を選択しない（個人予定）</option>
-              {sites.map((s) => (
+              {siteList.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </Select>
+
+            {/* 現場をその場で追加（登録の手間を減らす簡易導線） */}
+            {addingSite ? (
+              <div className="mt-2 space-y-1.5">
+                <div className="flex gap-2">
+                  <input
+                    value={newSiteName}
+                    onChange={(e) => setNewSiteName(e.target.value)}
+                    placeholder="現場名（例：草加アパート）"
+                    aria-label="追加する現場名"
+                    className="min-w-0 flex-1 rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddSite();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddSite}
+                    disabled={addBusy || !newSiteName.trim()}
+                    className="flex shrink-0 items-center gap-1 rounded-xl bg-brand-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {addBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                    追加
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingSite(false);
+                      setAddError(null);
+                      setNewSiteName("");
+                    }}
+                    className="shrink-0 rounded-xl border border-line-strong px-3 py-2 text-sm font-semibold text-ink-soft"
+                  >
+                    やめる
+                  </button>
+                </div>
+                {addError && <p className="text-[11px] font-medium text-red-600">{addError}</p>}
+                <p className="text-[11px] text-ink-faint">
+                  名前だけで仮登録します。住所・キーBOX等は後から「現場」で追記できます。
+                </p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAddingSite(true)}
+                className="mt-2 flex items-center gap-1 text-sm font-bold text-brand-600 active:scale-95"
+              >
+                <Plus className="h-4 w-4" /> 現場を追加
+              </button>
+            )}
           </Field>
 
           {/* 日時 */}

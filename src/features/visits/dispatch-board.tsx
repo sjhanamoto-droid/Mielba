@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Check, HardHat, Loader2, ChevronLeft, ChevronRight, Users, X, Crown,
+  Check, HardHat, Loader2, ChevronLeft, ChevronRight, Users, X, Crown, CalendarClock,
 } from "lucide-react";
 import Link from "next/link";
 import { toggleVisit } from "./actions";
@@ -11,11 +11,21 @@ import { adminSetMain } from "@/features/reports/main-vote-actions";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/modal";
-import { ROLE_LABEL, type Role } from "@/lib/constants";
+import { ROLE_LABEL, EVENT_CATEGORY_LABEL, type Role, type EventCategory } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type Staff = { id: string; name: string; avatarColor: string; avatarImage?: string | null };
 type DispatchUser = { id: string; name: string; avatarColor: string; avatarImage?: string | null; role: string };
+// 現場未指定の予定（カレンダーで現場を選ばず登録された予定）。配員に読み取り専用で表示する。
+export type UntetheredEvent = {
+  id: string;
+  title: string;
+  category: string | null;
+  allDay: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  people: Staff[];
+};
 // 当日の日報状況: none=未打刻 / draft=下書き / submitted=提出済
 export type ReportStatus = "none" | "draft" | "submitted";
 type SiteRow = {
@@ -116,10 +126,12 @@ export function DispatchBoard({
   sites,
   dateStr,
   allUsers,
+  untethered = [],
 }: {
   sites: SiteRow[];
   dateStr: string;
   allUsers: DispatchUser[];
+  untethered?: UntetheredEvent[];
 }) {
   const toast = useToast();
   const [, start] = useTransition();
@@ -289,6 +301,47 @@ export function DispatchBoard({
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line-strong py-12 text-center text-ink-muted">
           <HardHat className="h-7 w-7" />
           <p className="text-sm">進行中の現場がありません</p>
+        </div>
+      )}
+
+      {/* 現場未指定の予定（カレンダーで現場を選ばず登録された予定）。読み取り専用で表示。 */}
+      {untethered.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 px-1">
+            <CalendarClock className="h-4 w-4 text-ink-muted" aria-hidden />
+            <h2 className="text-sm font-bold text-ink-soft">現場未指定の予定（カレンダー）</h2>
+          </div>
+          {untethered.map((e) => (
+            <div key={e.id} className="card p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="min-w-0 truncate text-[15px] font-bold text-ink">{e.title}</p>
+                  {e.category && (
+                    <span className="shrink-0 rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] font-bold text-ink-muted">
+                      {EVENT_CATEGORY_LABEL[e.category as EventCategory] ?? e.category}
+                    </span>
+                  )}
+                </div>
+                <span className="shrink-0 text-xs font-bold tnum text-ink-muted">
+                  {e.allDay ? "終日" : `${e.startTime ?? ""}${e.endTime ? `〜${e.endTime}` : ""}`}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {e.people.map((u) => (
+                  <span
+                    key={u.id}
+                    className="flex items-center gap-1.5 rounded-full bg-surface-sunken py-1 pl-1 pr-3 text-sm font-semibold text-ink"
+                  >
+                    <Avatar name={u.name} color={u.avatarColor} image={u.avatarImage} size="sm" />
+                    {u.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="px-1 text-xs text-ink-faint">
+            現場が選ばれていないカレンダー予定です。現場入り（日報連動）にするには、カレンダーで予定を開いて「現場」を選んでください。
+          </p>
         </div>
       )}
 

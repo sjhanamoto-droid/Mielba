@@ -282,6 +282,49 @@ export async function createSite(formData: FormData) {
   redirect(`/sites/${siteId}?toast=${encodeURIComponent("保存しました")}`);
 }
 
+// ── 現場のクイック作成（カレンダー/配員からの簡易登録） ──
+// 現場登録は項目が多く手間なので、名前だけで「仮登録(provisional)」の現場を即作成する導線。
+// 受け皿の顧客は既定顧客「その他」。作成後は現場詳細から必要項目を追記できる。
+export async function quickCreateSite(
+  name: string,
+): Promise<{ id: string; name: string } | { error: string }> {
+  const user = await requireUser();
+  const n = (name ?? "").trim();
+  if (!n) return { error: "現場名を入力してください" };
+  if (n.length > 100) return { error: "現場名が長すぎます" };
+  try {
+    // 既定顧客「その他」を受け皿にする（無ければ作成）
+    let customer = await db.customer.findFirst({
+      where: { name: "その他" },
+      select: { id: true },
+    });
+    if (!customer) {
+      customer = await db.customer.create({
+        data: { name: "その他", memo: "顧客登録に該当しない現場の受け皿（デフォルト）" },
+        select: { id: true },
+      });
+    }
+    const site = await db.site.create({
+      data: {
+        name: n,
+        customerId: customer.id,
+        siteStatus: "ACTIVE", // すぐ配員/予定に使えるよう進行中で作成
+        projectStatus: "ESTIMATING",
+        provisional: true, // 仮登録（詳細は後から追記）
+        createdById: user.id,
+      },
+      select: { id: true, name: true },
+    });
+    revalidatePath("/calendar");
+    revalidatePath("/dispatch");
+    revalidatePath("/sites");
+    revalidatePath("/");
+    return { id: site.id, name: site.name };
+  } catch {
+    return { error: "現場の作成に失敗しました。時間をおいて再度お試しください" };
+  }
+}
+
 export async function updateSite(siteId: string, formData: FormData) {
   // 編集は全ログインユーザー可（現場情報は全員で最新に保つ運用。作成は元々全員可）
   await requireUser();

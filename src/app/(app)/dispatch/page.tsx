@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { DispatchBoard, DispatchDateNav, type ReportStatus } from "@/features/visits/dispatch-board";
 import { fmtDateWithDay } from "@/lib/utils";
+import { isNonWorkEventCategory } from "@/lib/constants";
 
 // ?d=YYYY-MM-DD を解釈。不正なら「今日」（日本時間の暦日）。
 function parseDayKey(s: string | undefined): string {
@@ -26,7 +27,7 @@ export default async function DispatchPage({
   const range = dayRangeForKey(dateStr);
   const todayStr = jstDateKey();
 
-  const [sites, reports, allUsers] = await Promise.all([
+  const [sites, reports, allUsers, siteless] = await Promise.all([
     db.site.findMany({
       where: { siteStatus: "ACTIVE" },
       include: {
@@ -48,6 +49,19 @@ export default async function DispatchPage({
       where: { active: true },
       select: { id: true, name: true, avatarColor: true, avatarImage: true, role: true },
       orderBy: { name: "asc" },
+    }),
+    // 現場未指定の予定（カレンダーで現場を選ばず登録された予定）。参加者つきのみ。
+    db.calendarEvent.findMany({
+      where: { siteId: null, date: range, participants: { some: {} } },
+      select: {
+        id: true, title: true, category: true, allDay: true, startTime: true, endTime: true,
+        participants: {
+          select: {
+            user: { select: { id: true, name: true, avatarColor: true, avatarImage: true, active: true } },
+          },
+        },
+      },
+      orderBy: [{ startTime: "asc" }],
     }),
   ]);
 
@@ -92,6 +106,23 @@ export default async function DispatchPage({
     (a, b) => Number(b.visitedIds.length > 0) - Number(a.visitedIds.length > 0),
   );
 
+  // 現場未指定の予定（休み/その他/事務所作業は除外・有効な参加者のみ）を配員にも表示する。
+  const untethered = siteless
+    .filter((e) => !isNonWorkEventCategory(e.category))
+    .map((e) => ({
+      id: e.id,
+      title: e.title,
+      category: e.category,
+      allDay: e.allDay,
+      startTime: e.startTime,
+      endTime: e.endTime,
+      people: e.participants
+        .map((p) => p.user)
+        .filter((u) => u.active)
+        .map((u) => ({ id: u.id, name: u.name, avatarColor: u.avatarColor, avatarImage: u.avatarImage })),
+    }))
+    .filter((e) => e.people.length > 0);
+
   return (
     <div>
       <PageHeader title="配員（現場入り）" subtitle="その日に誰がどの現場へ行くか" backHref="/" />
@@ -104,7 +135,7 @@ export default async function DispatchPage({
           label={fmtDateWithDay(dateFromKey(dateStr))}
         />
 
-        <DispatchBoard key={dateStr} sites={rows} dateStr={dateStr} allUsers={allUsers} />
+        <DispatchBoard key={dateStr} sites={rows} dateStr={dateStr} allUsers={allUsers} untethered={untethered} />
       </PageContainer>
     </div>
   );
