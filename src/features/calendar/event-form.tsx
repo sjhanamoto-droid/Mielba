@@ -130,8 +130,6 @@ export function EventForm({
     }
   }
 
-  // 作業系カテゴリー（休み/その他/事務所作業 以外）が選ばれているか
-  const isWorkCategory = !!category && !isNonWorkEventCategory(category);
   // 件名から既存現場をサジェスト（現場作業モードで未選択時）
   const norm = (s: string) => s.replace(/\s/g, "");
   const suggestions =
@@ -156,6 +154,11 @@ export function EventForm({
 
   async function action(formData: FormData) {
     setError(null);
+    // 現場作業モードは現場が必須（個人予定は上部タブで登録する）
+    if (mode === "site" && !siteId) {
+      setError("現場を選択してください。無ければ「現場を追加」で登録できます。");
+      return;
+    }
     const res = await (isEdit ? updateEvent : createEvent)(formData);
     if (res?.error) {
       setError(res.error);
@@ -211,7 +214,7 @@ export function EventForm({
           {mode === "site" && (
           <Field label="現場" htmlFor="siteId" hint="選ぶと参加者は現場入り＝日報に連動">
             <Select id="siteId" name="siteId" value={siteId} onChange={onSiteChange}>
-              <option value="">現場を選択しない（個人予定）</option>
+              <option value="" disabled>現場を選択してください</option>
               {siteList.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
@@ -289,11 +292,11 @@ export function EventForm({
               </div>
             )}
 
-            {/* 作業系カテゴリーなのに現場未選択のときの警告 */}
-            {!siteId && isWorkCategory && (
+            {/* 現場作業は現場が必須。未選択のとき案内を出す。 */}
+            {!siteId && (
               <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>作業の予定です。現場を選ぶ／追加すると、配員・日報に自動で反映されます。</span>
+                <span>現場を選択してください。無ければ「現場を追加」で登録できます（個人の予定は上の「個人予定」へ）。</span>
               </div>
             )}
           </Field>
