@@ -262,10 +262,8 @@ export function DispatchBoard({
             aria-label="追加する現場名"
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleQuickAddSite();
-              }
+              // 誤作動防止: Enter では追加しない（追加は「追加」ボタンのみ）。
+              if (e.key === "Enter") e.preventDefault();
             }}
             className="min-w-0 flex-1 rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
           />

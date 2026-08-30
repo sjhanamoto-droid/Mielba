@@ -231,10 +231,9 @@ export function EventForm({
                     aria-label="追加する現場名"
                     className="min-w-0 flex-1 rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddSite();
-                      }
+                      // 誤作動防止: Enter では追加しない（追加は「追加」ボタンのみ）。
+                      // フォーム自体の送信も抑止する。
+                      if (e.key === "Enter") e.preventDefault();
                     }}
                   />
                   <button
