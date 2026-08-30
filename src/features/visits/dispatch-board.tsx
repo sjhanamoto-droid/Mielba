@@ -3,10 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Check, HardHat, Loader2, ChevronLeft, ChevronRight, Users, X, Crown, CalendarClock,
+  Check, HardHat, Loader2, ChevronLeft, ChevronRight, Users, X, Crown, CalendarClock, Plus, ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
 import { toggleVisit } from "./actions";
+import { quickCreateSite, convertEventToSite } from "@/features/sites/actions";
 import { adminSetMain } from "@/features/reports/main-vote-actions";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/components/ui/toast";
@@ -134,7 +135,14 @@ export function DispatchBoard({
   untethered?: UntetheredEvent[];
 }) {
   const toast = useToast();
+  const router = useRouter();
   const [, start] = useTransition();
+  // 現場のクイック追加（配員から直接）
+  const [siteAddOpen, setSiteAddOpen] = useState(false);
+  const [siteAddName, setSiteAddName] = useState("");
+  const [siteAddBusy, setSiteAddBusy] = useState(false);
+  // 現場未指定の予定を現場化中の予定ID
+  const [convertingId, setConvertingId] = useState<string | null>(null);
   // 配員編集シートを開いている現場ID（null=閉）
   const [editSiteId, setEditSiteId] = useState<string | null>(null);
   // セル単位の pending（`${siteId}_${userId}`）。1タップで全ボタンをロックしない。
@@ -194,6 +202,41 @@ export function DispatchBoard({
     });
   }
 
+  // 配員から現場をその場で仮登録して一覧に反映（再読込）
+  function handleQuickAddSite() {
+    const name = siteAddName.trim();
+    if (!name || siteAddBusy) return;
+    setSiteAddBusy(true);
+    start(async () => {
+      const r = await quickCreateSite(name);
+      setSiteAddBusy(false);
+      if ("error" in r) {
+        toast(r.error, { type: "error" });
+        return;
+      }
+      setSiteAddName("");
+      setSiteAddOpen(false);
+      toast("現場を追加しました");
+      router.refresh();
+    });
+  }
+
+  // 現場未指定の予定を現場化（件名で仮現場を作成＋参加者を現場入りに）
+  function handleConvert(eventId: string) {
+    if (convertingId) return;
+    setConvertingId(eventId);
+    start(async () => {
+      const r = await convertEventToSite(eventId);
+      setConvertingId(null);
+      if ("error" in r) {
+        toast(r.error, { type: "error" });
+        return;
+      }
+      toast("現場として登録しました");
+      router.refresh();
+    });
+  }
+
   // pill 表示用: userId → 表示情報（allUsers を基本に、当日訪問者の情報も補完）
   const userById = new Map<string, Staff>();
   for (const u of allUsers) userById.set(u.id, { id: u.id, name: u.name, avatarColor: u.avatarColor, avatarImage: u.avatarImage });
@@ -208,6 +251,50 @@ export function DispatchBoard({
         <span className="text-sm font-semibold text-brand-700">この日の現場入り 合計</span>
         <span className="text-lg font-bold tnum text-brand-700">{totalGoing}名</span>
       </div>
+
+      {/* 現場をその場で追加（配員から直接。登録の手間を減らす） */}
+      {siteAddOpen ? (
+        <div className="flex gap-2">
+          <input
+            value={siteAddName}
+            onChange={(e) => setSiteAddName(e.target.value)}
+            placeholder="現場名（例：草加アパート）"
+            aria-label="追加する現場名"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleQuickAddSite();
+              }
+            }}
+            className="min-w-0 flex-1 rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={handleQuickAddSite}
+            disabled={siteAddBusy || !siteAddName.trim()}
+            className="flex shrink-0 items-center gap-1 rounded-xl bg-brand-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {siteAddBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            追加
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSiteAddOpen(false); setSiteAddName(""); }}
+            className="shrink-0 rounded-xl border border-line-strong px-3 py-2 text-sm font-semibold text-ink-soft"
+          >
+            やめる
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setSiteAddOpen(true)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong py-2.5 text-sm font-bold text-brand-600 active:scale-[0.99]"
+        >
+          <Plus className="h-4 w-4" /> 現場を追加
+        </button>
+      )}
 
       <div className="space-y-3">
         {sites.map((s) => {
@@ -337,10 +424,24 @@ export function DispatchBoard({
                   </span>
                 ))}
               </div>
+              {/* 現場化: この件名で仮の現場を作成し、参加者を現場入りに変換する */}
+              <button
+                type="button"
+                onClick={() => handleConvert(e.id)}
+                disabled={convertingId === e.id}
+                className="mt-3 flex items-center gap-1.5 rounded-full border border-brand-600 bg-surface px-3 py-1.5 text-xs font-bold text-brand-600 active:scale-95 disabled:opacity-60"
+              >
+                {convertingId === e.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <ArrowRight className="h-4 w-4" aria-hidden />
+                )}
+                現場として登録
+              </button>
             </div>
           ))}
           <p className="px-1 text-xs text-ink-faint">
-            現場が選ばれていないカレンダー予定です。現場入り（日報連動）にするには、カレンダーで予定を開いて「現場」を選んでください。
+            現場が選ばれていないカレンダー予定です。「現場として登録」すると、その件名で仮の現場を作成し、参加者を現場入り（日報連動）に変換できます。
           </p>
         </div>
       )}

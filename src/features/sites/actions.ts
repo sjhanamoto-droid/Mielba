@@ -7,6 +7,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin, requireUser } from "@/lib/session";
 import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
+import { isNonWorkEventCategory } from "@/lib/constants";
 
 // ── 区分の許容値（@/lib/constants の型に対応） ──
 const PROJECT_TYPES = ["REFORM", "RENOVATION", "NEWBUILD", "MAINTENANCE"] as const;
@@ -322,6 +323,81 @@ export async function quickCreateSite(
     return { id: site.id, name: site.name };
   } catch {
     return { error: "現場の作成に失敗しました。時間をおいて再度お試しください" };
+  }
+}
+
+// ── 現場未指定の予定を「現場化」する（配員のワンタップ変換） ──
+// 件名だけで登録された予定を、その件名で仮登録の現場に紐づけ、参加者を現場入りに変換する。
+export async function convertEventToSite(
+  eventId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const user = await requireUser();
+  if (!eventId) return { error: "予定が指定されていません" };
+  const event = await db.calendarEvent.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      title: true,
+      siteId: true,
+      date: true,
+      category: true,
+      participants: { select: { userId: true } },
+    },
+  });
+  if (!event) return { error: "予定が見つかりません" };
+  if (event.siteId) return { error: "この予定は既に現場が設定されています" };
+  try {
+    let customer = await db.customer.findFirst({
+      where: { name: "その他" },
+      select: { id: true },
+    });
+    if (!customer) {
+      customer = await db.customer.create({
+        data: { name: "その他", memo: "顧客登録に該当しない現場の受け皿（デフォルト）" },
+        select: { id: true },
+      });
+    }
+    const name = (event.title || "現場").trim().slice(0, 100) || "現場";
+    const site = await db.site.create({
+      data: {
+        name,
+        customerId: customer.id,
+        siteStatus: "ACTIVE",
+        projectStatus: "ESTIMATING",
+        provisional: true,
+        createdById: user.id,
+      },
+      select: { id: true },
+    });
+    // 予定を現場に紐づける
+    await db.calendarEvent.update({ where: { id: event.id }, data: { siteId: site.id } });
+    // 現場作業なら参加者を現場入りに（休み/その他/事務所作業は作らない）
+    const participantIds = event.participants.map((p) => p.userId);
+    if (participantIds.length > 0 && !isNonWorkEventCategory(event.category)) {
+      const existing = await db.siteVisit.findMany({
+        where: { siteId: site.id, date: event.date, userId: { in: participantIds } },
+        select: { userId: true },
+      });
+      const have = new Set(existing.map((v) => v.userId));
+      const missing = participantIds.filter((u) => !have.has(u));
+      if (missing.length > 0) {
+        await db.siteVisit.createMany({
+          data: missing.map((uid) => ({
+            siteId: site.id,
+            userId: uid,
+            date: event.date,
+            createdById: user.id,
+          })),
+        });
+      }
+    }
+    revalidatePath("/dispatch");
+    revalidatePath("/calendar");
+    revalidatePath("/sites");
+    revalidatePath("/");
+    return { ok: true };
+  } catch {
+    return { error: "現場化に失敗しました。時間をおいて再度お試しください" };
   }
 }
 

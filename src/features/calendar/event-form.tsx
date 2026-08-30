@@ -80,6 +80,11 @@ export function EventForm({
   const [newSiteName, setNewSiteName] = useState("");
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  // 予定の種類（現場作業/個人予定）と件名（サジェスト用に制御）
+  const [mode, setMode] = useState<"site" | "personal">(
+    isEdit ? (event?.site?.id ? "site" : "personal") : "site",
+  );
+  const [title, setTitle] = useState(event?.title ?? "");
 
   async function handleAddSite() {
     const name = newSiteName.trim();
@@ -105,16 +110,40 @@ export function EventForm({
     ? EVENT_CATEGORY_OPTIONS
     : ["OFFICE", ...EVENT_CATEGORY_OPTIONS];
 
-  function onSiteChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const id = e.target.value;
+  function selectSite(id: string) {
     setSiteId(id);
     // 現場を選んだら「事務所作業」は対象外なので選択を解除する
     if (id && category === "OFFICE") setCategory("");
     if (!locationTouched) {
-      const site = sites.find((s) => s.id === id);
+      const site = siteList.find((s) => s.id === id);
       setLocation(site?.address ?? "");
     }
   }
+  function onSiteChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    selectSite(e.target.value);
+  }
+  function selectMode(m: "site" | "personal") {
+    setMode(m);
+    if (m === "personal") {
+      setSiteId("");
+      setAddingSite(false);
+    }
+  }
+
+  // 作業系カテゴリー（休み/その他/事務所作業 以外）が選ばれているか
+  const isWorkCategory = !!category && !isNonWorkEventCategory(category);
+  // 件名から既存現場をサジェスト（現場作業モードで未選択時）
+  const norm = (s: string) => s.replace(/\s/g, "");
+  const suggestions =
+    mode === "site" && !siteId && title.trim().length >= 1
+      ? siteList
+          .filter((s) => {
+            const t = norm(title);
+            const n = norm(s.name);
+            return n.includes(t) || t.includes(n) || (t.length >= 2 && n.slice(0, 2) === t.slice(0, 2));
+          })
+          .slice(0, 4)
+      : [];
 
   function toggleParticipant(id: string) {
     setParticipants((prev) => {
@@ -161,7 +190,25 @@ export function EventForm({
         <form action={action} className="space-y-4">
           {isEdit && <input type="hidden" name="id" value={event.id} />}
 
-          {/* 現場 */}
+          {/* 予定の種類を先に選ぶ（現場作業/個人予定）。件名だけの現場作業が混ざるのを防ぐ。 */}
+          <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-sunken p-1">
+            {([["site", "現場の作業"], ["personal", "個人予定"]] as const).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => selectMode(m)}
+                className={cn(
+                  "flex h-9 items-center justify-center rounded-full text-sm font-bold transition-colors",
+                  mode === m ? "bg-surface text-ink shadow-sm" : "text-ink-muted active:bg-surface-subtle",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* 現場（現場作業のときだけ表示） */}
+          {mode === "site" && (
           <Field label="現場" htmlFor="siteId" hint="選ぶと参加者は現場入り＝日報に連動">
             <Select id="siteId" name="siteId" value={siteId} onChange={onSiteChange}>
               <option value="">現場を選択しない（個人予定）</option>
@@ -222,7 +269,35 @@ export function EventForm({
                 <Plus className="h-4 w-4" /> 現場を追加
               </button>
             )}
+
+            {/* 件名から既存現場をサジェスト（未選択時） */}
+            {!siteId && !addingSite && suggestions.length > 0 && (
+              <div className="mt-2">
+                <p className="mb-1 text-[11px] font-semibold text-ink-muted">もしかして この現場？</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => selectSite(s.id)}
+                      className="rounded-full border border-brand-300 bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700 active:scale-95 dark:bg-brand-950/30"
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 作業系カテゴリーなのに現場未選択のときの警告 */}
+            {!siteId && isWorkCategory && (
+              <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>作業の予定です。現場を選ぶ／追加すると、配員・日報に自動で反映されます。</span>
+              </div>
+            )}
           </Field>
+          )}
 
           {/* 日時 */}
           <Field label="日付" htmlFor="date" required>
@@ -279,7 +354,7 @@ export function EventForm({
 
           {/* 件名（任意） */}
           <Field label="件名" htmlFor="title" hint="任意・未入力ならカテゴリー名">
-            <Input id="title" name="title" defaultValue={event?.title ?? ""} placeholder="例：ユニットバス据付" />
+            <Input id="title" name="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例：ユニットバス据付" />
           </Field>
 
           {/* 場所 */}
