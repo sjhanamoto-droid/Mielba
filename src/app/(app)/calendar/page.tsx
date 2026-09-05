@@ -79,7 +79,8 @@ export default async function CalendarPage({
       // 担当という区別は廃止。全員が全現場の予定を見られる。
       where: { date: { gte: rangeStart, lt: rangeEnd } },
       include: {
-        site: { select: { id: true, name: true } },
+        // 一覧では現場名の下に顧客名を出すため、顧客も一緒に取る
+        site: { select: { id: true, name: true, customer: { select: { name: true } } } },
         owner: { select: { id: true, name: true, avatarColor: true, avatarImage: true} },
         createdBy: { select: { id: true, name: true, avatarColor: true, avatarImage: true} },
         participants: { include: { user: { select: { id: true, name: true, avatarColor: true, avatarImage: true} } } },

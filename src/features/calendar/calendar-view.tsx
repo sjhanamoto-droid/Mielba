@@ -15,6 +15,8 @@ import {
   Pencil,
   HardHat,
   Loader2,
+  Building2,
+  User,
 } from "lucide-react";
 import { EventForm } from "./event-form";
 import { deleteEvent } from "./actions";
@@ -50,7 +52,7 @@ export type CalendarEventData = {
   source: string;
   category: string | null;
   location: string | null;
-  site: { id: string; name: string } | null;
+  site: { id: string; name: string; customer?: { name: string } | null } | null;
   owner: PersonRef | null; // この予定で現場に行く人（担当）
   createdBy: PersonRef | null; // 入力した人
   participants: PersonRef[]; // 参加者（現場に行く人・複数）
@@ -78,6 +80,13 @@ const SOURCE_BADGE_TONE: Record<EventSource, "brand" | "accent" | "active" | "in
 
 function pad(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
+}
+
+// 一覧の緑ラベル：現場の予定は顧客名（顧客が無ければ現場名）、現場なしは「個人予定」。
+// 件名が現場名になったため、同じ現場名を2行並べず「誰の仕事か」を出す。
+function ownerLabel(ev: CalendarEventData): string {
+  if (!ev.site) return "個人予定";
+  return ev.site.customer?.name?.trim() || ev.site.name;
 }
 
 // "YYYY-MM-DD"（暦日キー。クライアントは日本のユーザー前提だが、
@@ -230,12 +239,14 @@ function EventRow({
         <p className="mt-1 text-sm font-semibold leading-snug text-ink">
           {ev.title}
         </p>
-        {ev.site && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-brand-600">
+        <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-brand-600">
+          {ev.site ? (
             <MapPin className="h-3 w-3 shrink-0" />
-            <span className="truncate">{ev.site.name}</span>
-          </p>
-        )}
+          ) : (
+            <User className="h-3 w-3 shrink-0" />
+          )}
+          <span className="truncate">{ownerLabel(ev)}</span>
+        </p>
         {people.length > 0 && (
           <div className="mt-1.5 flex items-center -space-x-1.5">
             {people.slice(0, 6).map((p) => (
@@ -321,6 +332,14 @@ function EventDetailModal({
               <dd className="font-semibold text-brand-600">{ev.site.name}</dd>
             </div>
           )}
+          <div className="flex items-start gap-2">
+            {ev.site ? (
+              <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
+            ) : (
+              <User className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
+            )}
+            <dd className="font-semibold text-brand-600">{ownerLabel(ev)}</dd>
+          </div>
           {ev.location && (
             <div className="flex items-start gap-2">
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-faint" />
@@ -929,9 +948,7 @@ function WeekEventChip({
         {!ev.allDay && ev.startTime ? `${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ""}` : "終日"}
       </p>
       <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-ink">{ev.title}</p>
-      {ev.site && (
-        <p className="mt-0.5 truncate text-[10px] font-medium text-brand-600">{ev.site.name}</p>
-      )}
+      <p className="mt-0.5 truncate text-[10px] font-medium text-brand-600">{ownerLabel(ev)}</p>
       {people.length > 0 && (
         <div className="mt-1 flex items-center -space-x-1.5">
           {people.slice(0, 4).map((p) => (
@@ -1218,9 +1235,7 @@ function DayTimeline({
                     {ev.endTime ? `–${ev.endTime}` : ""}
                   </p>
                   <p className="truncate text-xs font-bold leading-tight text-ink">{ev.title}</p>
-                  {ev.site && (
-                    <p className="truncate text-[10px] font-medium text-brand-600">{ev.site.name}</p>
-                  )}
+                  <p className="truncate text-[10px] font-medium text-brand-600">{ownerLabel(ev)}</p>
                   {people.length > 0 && height > 58 && (
                     <div className="mt-1 flex items-center -space-x-1.5">
                       {people.slice(0, 5).map((p) => (
