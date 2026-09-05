@@ -130,13 +130,13 @@ export function EventForm({
     }
   }
 
-  // 件名から既存現場をサジェスト（現場作業モードで未選択時）
+  // 「現場を追加」に打ち込んだ名前から、似た既存現場をサジェスト（重複登録の防止）
   const norm = (s: string) => s.replace(/\s/g, "");
   const suggestions =
-    mode === "site" && !siteId && title.trim().length >= 1
+    mode === "site" && !siteId && newSiteName.trim().length >= 1
       ? siteList
           .filter((s) => {
-            const t = norm(title);
+            const t = norm(newSiteName);
             const n = norm(s.name);
             return n.includes(t) || t.includes(n) || (t.length >= 2 && n.slice(0, 2) === t.slice(0, 2));
           })
@@ -272,8 +272,8 @@ export function EventForm({
               </button>
             )}
 
-            {/* 件名から既存現場をサジェスト（未選択時） */}
-            {!siteId && !addingSite && suggestions.length > 0 && (
+            {/* 入力した現場名から、似た既存現場をサジェスト（同じ現場を二重登録しないため） */}
+            {!siteId && suggestions.length > 0 && (
               <div className="mt-2">
                 <p className="mb-1 text-[11px] font-semibold text-ink-muted">もしかして この現場？</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -354,10 +354,16 @@ export function EventForm({
             )}
           </Field>
 
-          {/* 件名（任意） */}
-          <Field label="件名" htmlFor="title" hint="任意・未入力ならカテゴリー名">
-            <Input id="title" name="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例：ユニットバス据付" />
-          </Field>
+          {/* 件名は個人予定のみ。現場の予定は件名＝現場名に固定する
+              （一覧でどの現場か一目で分かるように。作業内容は下の「内容」へ） */}
+          {/* 現場の予定の編集時：もとの件名（作業内容）を捨てないよう送る。
+              サーバー側で現場名と違えば「内容」の先頭へ移す。 */}
+          {mode === "site" && <input type="hidden" name="title" value={title} />}
+          {mode === "personal" && (
+            <Field label="件名" htmlFor="title" hint="任意・未入力ならカテゴリー名">
+              <Input id="title" name="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例：健康診断" />
+            </Field>
+          )}
 
           {/* 場所 */}
           <Field label="場所" htmlFor="location" hint="現場を選ぶと住所を自動入力">
@@ -370,9 +376,22 @@ export function EventForm({
             />
           </Field>
 
-          {/* 内容 */}
-          <Field label="内容" htmlFor="note" hint="任意">
-            <Textarea id="note" name="note" defaultValue={event?.note ?? ""} placeholder="作業内容・持ち物・注意点など" />
+          {/* 内容（現場の予定では作業内容の記入欄） */}
+          <Field
+            label={mode === "site" ? "作業内容・メモ" : "内容"}
+            htmlFor="note"
+            hint={mode === "site" ? "任意・一覧の見出しは現場名になります" : "任意"}
+          >
+            <Textarea
+              id="note"
+              name="note"
+              defaultValue={event?.note ?? ""}
+              placeholder={
+                mode === "site"
+                  ? "例：開口、ベースライト交換、持ち物・注意点など"
+                  : "内容・持ち物・注意点など"
+              }
+            />
           </Field>
 
           {/* 参加者（現場に行く人・複数選択） */}

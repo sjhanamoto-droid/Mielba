@@ -32,17 +32,34 @@ const eventSchema = z.object({
 });
 
 /**
- * 件名が未入力のときの補完。
- * 現場を選んでいれば「現場名」を件名にする（カテゴリー名だけだと、一覧で
- * 「作業」が並んでどの現場か分からないため）。現場が無ければカテゴリー名。
+ * 件名と内容を決める。
+ *
+ * 現場を選んだ予定は、一覧でどの現場か一目で分かるよう「件名＝現場名」に統一する。
+ * 件名に作業内容（例：開口）が手入力されていた場合は捨てずに内容(note)の先頭へ移す。
+ * 現場なしの個人予定は、従来どおり入力された件名（未入力ならカテゴリー名）を使う。
  */
-async function fallbackTitle(siteId: string | null, category?: string | null): Promise<string> {
+async function resolveTitleAndNote(
+  siteId: string | null,
+  rawTitle: string,
+  rawNote: string,
+  category?: string | null,
+): Promise<{ title: string; note: string }> {
+  const typed = rawTitle.trim();
+  const note = rawNote.trim();
+
   if (siteId) {
     const site = await db.site.findUnique({ where: { id: siteId }, select: { name: true } });
-    const name = site?.name?.trim();
-    if (name) return name;
+    const siteName = site?.name?.trim();
+    if (siteName) {
+      // 現場名と違う件名が入っていたら、作業内容として内容欄の先頭に残す
+      const keep = typed && typed !== siteName && !note.includes(typed);
+      return { title: siteName, note: keep ? [typed, note].filter(Boolean).join("\n") : note };
+    }
   }
-  return category ? EVENT_CATEGORY_LABEL[category as EventCategory] ?? "予定" : "予定";
+
+  if (typed) return { title: typed, note };
+  const label = category ? EVENT_CATEGORY_LABEL[category as EventCategory] ?? "予定" : "予定";
+  return { title: label, note };
 }
 
 function revalidateCalendar(siteId?: string | null) {
@@ -144,9 +161,13 @@ export async function createEvent(
       ...new Set(formData.getAll("participants").map(String).filter(Boolean)),
     ];
 
-    // 件名が未入力なら 現場名（無ければカテゴリー名）で補完
-    let title = (d.title ?? "").trim();
-    if (!title) title = await fallbackTitle(siteId, d.category);
+    // 現場つきは件名＝現場名。個人予定は入力された件名（未入力ならカテゴリー名）。
+    const { title, note } = await resolveTitleAndNote(
+      siteId,
+      d.title ?? "",
+      d.note ?? "",
+      d.category,
+    );
 
     // 個人予定（現場なし）は本人が所有者。現場予定は参加者が主役。
     const ownerId = siteId ? participantIds[0] ?? null : user.id;
@@ -162,7 +183,7 @@ export async function createEvent(
         startTime: d.allDay ? null : d.startTime || null,
         endTime: d.allDay ? null : d.endTime || null,
         allDay: d.allDay,
-        note: d.note || null,
+        note: note || null,
         source: "MANUAL",
         createdById: user.id,
       },
@@ -225,8 +246,12 @@ export async function updateEvent(
       ...new Set(formData.getAll("participants").map(String).filter(Boolean)),
     ];
 
-    let title = (d.title ?? "").trim();
-    if (!title) title = await fallbackTitle(siteId, d.category);
+    const { title, note } = await resolveTitleAndNote(
+      siteId,
+      d.title ?? "",
+      d.note ?? "",
+      d.category,
+    );
 
     const ownerId = siteId ? participantIds[0] ?? null : existing.ownerId;
 
@@ -242,7 +267,7 @@ export async function updateEvent(
         startTime: d.allDay ? null : d.startTime || null,
         endTime: d.allDay ? null : d.endTime || null,
         allDay: d.allDay,
-        note: d.note || null,
+        note: note || null,
       },
     });
 
