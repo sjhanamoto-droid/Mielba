@@ -18,8 +18,10 @@
 
 import { PrismaClient } from "@prisma/client";
 
-// 件名として意味を持たない（カテゴリー名そのままの）文字列
-const GENERIC_TITLES = ["作業", ""];
+// 件名として意味を持たない（未入力時の自動補完そのままの）文字列。
+// 「作業」= カテゴリーWORKの既定、「予定」= カテゴリー未選択の既定。
+// 「打合せ」「その他」等は手入力の可能性があるため対象にしない。
+const GENERIC_TITLES = ["作業", "予定", ""];
 
 const confirmed = process.env.RENAME_CONFIRM === "YES";
 const prisma = new PrismaClient();
