@@ -17,6 +17,8 @@ export function PdfViewer({ photoId }: { photoId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [pageCount, setPageCount] = useState(0);
+  // 1ページ目が横長なら、ブラウザのメニューから印刷したときも横向き用紙にする
+  const [landscape, setLandscape] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,13 +48,21 @@ export function PdfViewer({ photoId }: { photoId: string }) {
           const page = await doc.getPage(i);
           if (cancelled) return;
           const base = page.getViewport({ scale: 1 });
+          if (i === 1) setLandscape(base.width > base.height);
           const viewport = page.getViewport({ scale: (width / base.width) * dpr });
           const canvas = document.createElement("canvas");
           canvas.width = Math.floor(viewport.width);
           canvas.height = Math.floor(viewport.height);
           canvas.style.width = "100%";
           canvas.style.height = "auto";
-          canvas.className = "block rounded-lg bg-white shadow-sm";
+          // 印刷時は用紙いっぱいに1ページずつ（枠線・影・余白なし）。
+          // 最後のページに改ページを付けると白紙が1枚増えるので付けない。
+          canvas.className = [
+            "block rounded-lg bg-white shadow-sm print:rounded-none print:shadow-none",
+            i < doc.numPages ? "print:break-after-page" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
           container.appendChild(canvas);
           await page.render({ canvas, viewport }).promise;
         }
@@ -91,15 +101,18 @@ export function PdfViewer({ photoId }: { photoId: string }) {
 
   return (
     <div>
+      {landscape && <style>{"@page { size: landscape; }"}</style>}
       {status === "loading" && (
-        <div className="flex items-center justify-center gap-2 py-16 text-ink-muted">
+        <div className="flex items-center justify-center gap-2 py-16 text-ink-muted print:hidden">
           <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
           <span className="text-sm font-medium">PDFを読み込んでいます…</span>
         </div>
       )}
-      <div ref={containerRef} className="space-y-3" />
+      <div ref={containerRef} className="space-y-3 print:space-y-0" />
       {status === "ready" && pageCount > 1 && (
-        <p className="mt-3 text-center text-xs text-ink-faint">全{pageCount}ページ</p>
+        <p className="mt-3 text-center text-xs text-ink-faint print:hidden">
+          全{pageCount}ページ
+        </p>
       )}
     </div>
   );
