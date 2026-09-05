@@ -31,6 +31,20 @@ const eventSchema = z.object({
   note: z.string().optional(),
 });
 
+/**
+ * 件名が未入力のときの補完。
+ * 現場を選んでいれば「現場名」を件名にする（カテゴリー名だけだと、一覧で
+ * 「作業」が並んでどの現場か分からないため）。現場が無ければカテゴリー名。
+ */
+async function fallbackTitle(siteId: string | null, category?: string | null): Promise<string> {
+  if (siteId) {
+    const site = await db.site.findUnique({ where: { id: siteId }, select: { name: true } });
+    const name = site?.name?.trim();
+    if (name) return name;
+  }
+  return category ? EVENT_CATEGORY_LABEL[category as EventCategory] ?? "予定" : "予定";
+}
+
 function revalidateCalendar(siteId?: string | null) {
   revalidatePath("/calendar");
   revalidatePath("/");
@@ -130,13 +144,9 @@ export async function createEvent(
       ...new Set(formData.getAll("participants").map(String).filter(Boolean)),
     ];
 
-    // 件名が未入力なら カテゴリー名で補完
+    // 件名が未入力なら 現場名（無ければカテゴリー名）で補完
     let title = (d.title ?? "").trim();
-    if (!title) {
-      title = d.category
-        ? EVENT_CATEGORY_LABEL[d.category as EventCategory] ?? "予定"
-        : "予定";
-    }
+    if (!title) title = await fallbackTitle(siteId, d.category);
 
     // 個人予定（現場なし）は本人が所有者。現場予定は参加者が主役。
     const ownerId = siteId ? participantIds[0] ?? null : user.id;
@@ -216,11 +226,7 @@ export async function updateEvent(
     ];
 
     let title = (d.title ?? "").trim();
-    if (!title) {
-      title = d.category
-        ? EVENT_CATEGORY_LABEL[d.category as EventCategory] ?? "予定"
-        : "予定";
-    }
+    if (!title) title = await fallbackTitle(siteId, d.category);
 
     const ownerId = siteId ? participantIds[0] ?? null : existing.ownerId;
 

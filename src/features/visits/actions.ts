@@ -24,9 +24,10 @@ function revalidateVisit(siteId: string) {
 }
 
 // ── 配員（現場入り）⇔ カレンダーの「作業」予定 を同期 ──
-// 現場×日ごとに1件の「作業」予定（手動・08:00〜17:00・カテゴリーWORK）を正本として維持し、
+// 現場×日ごとに1件の作業予定（件名＝現場名・手動・08:00〜17:00・カテゴリーWORK）を正本として維持し、
 // 参加者＝その日の現場入り者にそろえる。カレンダーで作った作業予定があればそれに合流する
 // （＝配員とカレンダーで二重の作業予定を作らない）。
+// 現場名が取れなかったときだけ使う予備の件名
 const WORK_EVENT_TITLE = "作業";
 const WORK_EVENT_START = "08:00";
 const WORK_EVENT_END = "17:00";
@@ -42,11 +43,17 @@ async function addToWorkEvent(
     orderBy: { createdAt: "asc" },
     select: { id: true, ownerId: true },
   });
+  // 件名は現場名にする（「作業」だけだと一覧でどの現場か分からないため）
+  let title = WORK_EVENT_TITLE;
+  if (!existing) {
+    const site = await db.site.findUnique({ where: { id: siteId }, select: { name: true } });
+    title = site?.name?.trim() || WORK_EVENT_TITLE;
+  }
   const event =
     existing ??
     (await db.calendarEvent.create({
       data: {
-        title: WORK_EVENT_TITLE,
+        title,
         date,
         siteId,
         category: "WORK",

@@ -18,6 +18,7 @@
 
 import { PrismaClient } from "@prisma/client";
 
+// 件名は現場名を使う（現場名が取れないときだけ「作業」）
 const WORK_EVENT_TITLE = "作業";
 const WORK_EVENT_START = "08:00";
 const WORK_EVENT_END = "17:00";
@@ -72,9 +73,13 @@ try {
     if (!eventId) {
       eventsToCreate++;
       if (confirmed) {
+        const site = await prisma.site.findUnique({
+          where: { id: g.siteId },
+          select: { name: true },
+        });
         const created = await prisma.calendarEvent.create({
           data: {
-            title: WORK_EVENT_TITLE,
+            title: site?.name?.trim() || WORK_EVENT_TITLE,
             date: g.date,
             siteId: g.siteId,
             category: "WORK",
