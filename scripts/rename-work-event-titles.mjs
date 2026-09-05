@@ -25,17 +25,34 @@ const confirmed = process.env.RENAME_CONFIRM === "YES";
 const prisma = new PrismaClient();
 
 try {
-  const targets = await prisma.calendarEvent.findMany({
-    where: { siteId: { not: null }, title: { in: GENERIC_TITLES } },
-    select: { id: true, title: true, date: true, site: { select: { name: true } } },
+  console.log(`[rename-work-event-titles] モード: ${confirmed ? "本実行（書き込みます）" : "ドライラン（書き込みません）"}`);
+
+  // 現場つきの予定を全件見て、件名を突き合わせる（前後の空白・全角空白も許容するため
+  // SQL の完全一致ではなく、取得後に trim して判定する）。
+  const events = await prisma.calendarEvent.findMany({
+    where: { siteId: { not: null } },
+    select: { id: true, title: true, date: true, category: true, site: { select: { name: true } } },
     orderBy: { date: "asc" },
   });
+  const totalEvents = await prisma.calendarEvent.count();
+  console.log(
+    `[rename-work-event-titles] 予定 総数: ${totalEvents} / 現場つき: ${events.length}`,
+  );
 
-  console.log(`[rename-work-event-titles] モード: ${confirmed ? "本実行（書き込みます）" : "ドライラン（書き込みません）"}`);
-  console.log(`[rename-work-event-titles] 対象: ${targets.length} 件`);
+  // 何が入っているかを把握するため、現場つき予定の件名を集計して出す
+  const counts = new Map();
+  for (const ev of events) {
+    const t = (ev.title ?? "").trim() || "(空)";
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
+  console.log("[rename-work-event-titles] 現場つき予定の件名（多い順・最大30）:");
+  for (const [t, n] of top) console.log(`    ${n} 件  「${t}」`);
 
   let renamed = 0;
-  for (const ev of targets) {
+  for (const ev of events) {
+    const title = (ev.title ?? "").replace(/[\s\u3000]+/g, "");
+    if (!GENERIC_TITLES.includes(title)) continue;
     const name = ev.site?.name?.trim();
     if (!name) continue; // 現場名が空なら触らない
     const day = ev.date.toISOString().slice(0, 10);
