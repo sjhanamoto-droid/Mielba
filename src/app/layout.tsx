@@ -28,15 +28,8 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#067a54" },
-    { media: "(prefers-color-scheme: dark)", color: "#14161c" },
-  ],
+  themeColor: "#067a54",
 };
-
-// FOUC 回避：ペイント前に localStorage 'mielba-theme' を解決して
-// html[data-theme] に 'light' / 'dark' を必ずセットする（'system'/未設定は matchMedia で解決）
-const themeInitScript = `(function(){try{var t=localStorage.getItem("mielba-theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="light"}})();`;
 
 export default function RootLayout({
   children,
@@ -44,10 +37,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // data-theme はインラインスクリプトが書き換えるため suppressHydrationWarning
-    <html lang="ja" suppressHydrationWarning>
+    // ダークモード（ナイトモード）は廃止。端末の設定に関係なく常にライト表示にする。
+    <html lang="ja" data-theme="light">
       <body className="font-sans">
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <ToastProvider>{children}</ToastProvider>
         <ServiceWorkerRegister />
       </body>

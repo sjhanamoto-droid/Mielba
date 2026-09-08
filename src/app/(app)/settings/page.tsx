@@ -5,7 +5,6 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { SectionTitle } from "@/components/ui/card";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { MaterialsManager } from "@/features/settings/materials-manager";
 
 function SettingRow({
@@ -105,17 +104,6 @@ export default async function SettingsPage() {
               title="通知センター"
               desc="現場・日報のお知らせを確認"
             />
-          </section>
-
-          {/* 画面の明るさ（テーマ切替） */}
-          <section className="space-y-2.5">
-            <SectionTitle>画面の明るさ</SectionTitle>
-            <div className="card p-4">
-              <ThemeToggle />
-              <p className="mt-2 text-xs text-ink-muted">
-                「端末に合わせる」を選ぶと、スマホ・PCの設定に合わせて自動で切り替わります。
-              </p>
-            </div>
           </section>
 
           <section className="space-y-2.5">

@@ -15,10 +15,7 @@ export const viewport: Viewport = {
   maximumScale: 5,
   userScalable: true,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#067a54" },
-    { media: "(prefers-color-scheme: dark)", color: "#14161c" },
-  ],
+  themeColor: "#067a54",
 };
 
 // 現場に登録されたPDF（図面・工程表）のアプリ内ビューア。
