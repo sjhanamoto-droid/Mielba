@@ -87,6 +87,48 @@ export default async function ReportDetailPage({
       <SearchParamToast />
 
       <PageContainer>
+        {/* 引き継ぎ事項（次に入る人への申し送り）。日報を開いたとき必ず一番上に出す。
+            内容が無くても枠は出す（「無い」のか「見落とし」なのかを判断できるように）。 */}
+        <section className="mb-4 space-y-2.5">
+          <SectionTitle
+            action={
+              canEdit ? (
+                <Link
+                  href={`/reports/${report.id}/edit#handover`}
+                  className="text-xs font-semibold text-brand-600"
+                >
+                  {report.handover ? "編集" : "追加"}
+                </Link>
+              ) : undefined
+            }
+          >
+            <span className="flex items-center gap-1.5">
+              <ArrowRightLeft className="h-4 w-4" />
+              引き継ぎ事項
+            </span>
+          </SectionTitle>
+
+          {report.handover ? (
+            <div className="alert-warn rounded-2xl p-4">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{report.handover}</p>
+              <p className="mt-1.5 text-xs opacity-80">
+                提出時に現場の引き継ぎとして起票され、次の担当者が確認するまで表示されます。
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-line-strong px-4 py-5 text-center">
+              <p className="text-sm font-medium text-ink-muted">
+                {report.handoverNone ? "引き継ぎなし" : "引き継ぎ事項はありません"}
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">
+                {report.handoverNone
+                  ? "担当者が「引き継ぎなし」と記録しています。"
+                  : "次に入る人への申し送りは記録されていません。"}
+              </p>
+            </div>
+          )}
+        </section>
+
         <div className="space-y-4 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
           {/* 右レール（メタ・メモ・コメント）。デスクトップは右、モバイルは従来通り上→下の順を維持 */}
           <aside className="space-y-4 lg:order-2 lg:col-span-1">
@@ -334,30 +376,6 @@ export default async function ReportDetailPage({
             </div>
           </section>
         )}
-
-        {/* 引き継ぎ事項（次に入る人への申し送り。handoverNone のとき「なし」表示） */}
-        {report.handover ? (
-          <section className="space-y-2">
-            <SectionTitle>
-              <span className="flex items-center gap-1.5"><ArrowRightLeft className="h-4 w-4" />引き継ぎ事項</span>
-            </SectionTitle>
-            <div className="alert-warn rounded-2xl p-4">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed">{report.handover}</p>
-              <p className="mt-1.5 text-xs opacity-80">
-                提出時に現場の引き継ぎとして起票され、次の担当者が確認するまで表示されます。
-              </p>
-            </div>
-          </section>
-        ) : report.handoverNone ? (
-          <section className="space-y-2">
-            <SectionTitle>
-              <span className="flex items-center gap-1.5"><ArrowRightLeft className="h-4 w-4" />引き継ぎ事項</span>
-            </SectionTitle>
-            <Card className="p-4">
-              <p className="text-sm text-ink-muted">引き継ぎなし</p>
-            </Card>
-          </section>
-        ) : null}
 
         {/* 写真 */}
         {report.photos.length > 0 && (
