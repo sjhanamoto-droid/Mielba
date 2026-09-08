@@ -210,8 +210,48 @@ export default async function SiteDetailPage({
       <PageContainer>
        <SearchParamToast />
        <div className="space-y-5">
-        {/* 未解決の引き継ぎ事項（最優先で表示） */}
-        {openHandovers.length > 0 && <HandoverAlert handovers={openHandovers} />}
+        {/* 引き継ぎ事項（現場を開いたとき必ず一番上。内容が無くても枠は出す）。
+            現場に行く前に読む情報なので、未解決の申し送りもここにまとめる。 */}
+        <section className="space-y-2.5">
+          <SectionTitle
+            action={
+              <Link
+                href={`/sites/${site.id}/edit#handoverNote`}
+                className="text-xs font-semibold text-brand-600"
+              >
+                {site.handoverNote ? "編集" : "追加"}
+              </Link>
+            }
+          >
+            引き継ぎ事項
+          </SectionTitle>
+
+          {/* 未解決の申し送り（「確認して停止」でその場で解決できる） */}
+          {openHandovers.length > 0 && <HandoverAlert handovers={openHandovers} />}
+
+          {site.handoverNote ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/40">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-300">
+                <ClipboardCheck className="h-4 w-4" />
+                前回状況・注意点・残作業
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900 dark:text-amber-100">
+                {site.handoverNote}
+              </p>
+            </div>
+          ) : (
+            openHandovers.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-line-strong px-4 py-5 text-center">
+                <p className="text-sm font-medium text-ink-muted">
+                  引き継ぎ事項はありません
+                </p>
+                <p className="mt-1 text-xs text-ink-faint">
+                  前回状況・注意点・残作業は「追加」から書けます。
+                </p>
+              </div>
+            )
+          )}
+        </section>
 
         {/* 仮登録の警告バナー（本登録に必要な項目が未入力） */}
         {site.provisional && (
@@ -593,22 +633,6 @@ export default async function SiteDetailPage({
           )}
 
         </section>
-
-        {/* ⑥ 引き継ぎ事項 */}
-        {site.handoverNote && (
-          <section className="space-y-2.5">
-            <SectionTitle>引き継ぎ事項</SectionTitle>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-amber-800">
-                <ClipboardCheck className="h-4 w-4" />
-                前回状況・注意点・残作業
-              </div>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900">
-                {site.handoverNote}
-              </p>
-            </div>
-          </section>
-        )}
 
         {/* ⑦ この現場の日報 */}
         <section className="space-y-2.5">
