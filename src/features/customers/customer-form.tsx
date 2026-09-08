@@ -108,7 +108,7 @@ export function CustomerForm({ customer }: { customer?: CustomerFormValues }) {
           <ChevronDown className="h-5 w-5 shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>
         <div className="space-y-4 border-t border-line p-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="法人番号" hint="13桁" htmlFor="corporateNumber">
               <Input
                 id="corporateNumber"
@@ -201,7 +201,7 @@ export function CustomerForm({ customer }: { customer?: CustomerFormValues }) {
             />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="締め日" htmlFor="closingDay">
               <Input
                 id="closingDay"

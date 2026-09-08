@@ -224,7 +224,7 @@ export function SiteForm({
       {/* 基本 */}
       <div className="space-y-3">
         <SectionTitle>基本</SectionTitle>
-        <Card className="grid gap-3 p-4 sm:grid-cols-2">
+        <Card className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           <Field label="元請企業" required htmlFor="customerId" className="sm:col-span-2">
             <Select id="customerId" name="customerId" defaultValue={site?.customerId ?? ""} required>
               <option value="" disabled>
@@ -262,7 +262,7 @@ export function SiteForm({
       {/* 現場入り情報 */}
       <div className="space-y-3">
         <SectionTitle>現場入り情報</SectionTitle>
-        <Card className="grid gap-3 p-4 sm:grid-cols-2">
+        <Card className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           {/* キーBOX あり/なし の切替（あり→番号・場所、なし→理由） */}
           <div className="sm:col-span-2">
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
@@ -457,7 +457,7 @@ export function SiteForm({
       {/* 管理 */}
       <div className="space-y-3">
         <SectionTitle>管理</SectionTitle>
-        <Card className="grid gap-3 p-4 sm:grid-cols-2">
+        <Card className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           <Field label="目標人工" htmlFor="targetManDays" hint="（延べ人数）" className="sm:col-span-2">
             <Input
               id="targetManDays"
@@ -480,7 +480,7 @@ export function SiteForm({
           詳細設定
           <ChevronDown className="h-5 w-5 shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>
-        <div className="grid gap-3 border-t border-line p-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 border-t border-line p-4 sm:grid-cols-2">
           <Field label="案件コード" htmlFor="projectCode">
             <Input id="projectCode" name="projectCode" defaultValue={site?.projectCode ?? ""} />
           </Field>

@@ -806,7 +806,7 @@ export default async function HomePage() {
                   action={<LinkButton href="/sites/new" size="sm"><Plus className="h-4 w-4" />現場を作成</LinkButton>}
                 />
               ) : (
-                <div className="grid gap-2.5 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                   {activeSites.slice(0, 6).map((s) => (
                     <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
                   ))}

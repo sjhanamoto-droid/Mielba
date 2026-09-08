@@ -138,7 +138,7 @@ export default async function SitesPage({
           />
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
               {sites.map((s) => (
                 <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
               ))}

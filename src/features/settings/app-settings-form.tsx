@@ -37,7 +37,7 @@ export function AppSettingsForm({ settings }: { settings: Settings }) {
         <Field label="住所" htmlFor="companyAddress">
           <Input id="companyAddress" name="companyAddress" defaultValue={settings.companyAddress ?? ""} placeholder="例：東京都〇〇区…" />
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="電話番号" htmlFor="companyPhone">
             <Input id="companyPhone" name="companyPhone" defaultValue={settings.companyPhone ?? ""} placeholder="03-0000-0000" />
           </Field>

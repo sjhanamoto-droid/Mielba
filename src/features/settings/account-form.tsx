@@ -46,7 +46,7 @@ export function AccountForm({ user }: { user: AccountUser }) {
       <Field label="メールアドレス">
         <Input defaultValue={user.email} disabled />
       </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="氏名" htmlFor="acc-name" required>
           <Input id="acc-name" name="name" defaultValue={user.name} required />
         </Field>

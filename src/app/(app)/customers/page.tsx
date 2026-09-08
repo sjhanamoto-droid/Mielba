@@ -75,7 +75,7 @@ export default async function CustomersPage({
           />
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {customers.map((c) => (
                 <CardLink key={c.id} href={`/customers/${c.id}`} className="h-full p-4">
                   <div className="flex items-start justify-between gap-2">

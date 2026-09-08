@@ -92,7 +92,7 @@ export default async function ReportsHubPage({
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                     {todayVisits.map((v) => {
                       const r = byId.get(v.siteId);
                       const status = r?.status; // undefined | "DRAFT" | "SUBMITTED"
@@ -139,7 +139,7 @@ export default async function ReportsHubPage({
               {myRecent.length === 0 ? (
                 <EmptyState icon={<FileText className="h-6 w-6" />} title="まだ日報がありません" />
               ) : (
-                <div className="grid gap-2.5 lg:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
                   {myRecent.map((r) => (
                     <ReportCard key={r.id} report={r} showSite />
                   ))}
@@ -209,7 +209,7 @@ export default async function ReportsHubPage({
                   <h2 className="text-sm font-bold text-ink-soft">{fmtDateWithDay(g.date)}</h2>
                   <Badge tone="neutral">{g.items.length}件</Badge>
                 </div>
-                <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                   {g.items.map((r) => (
                     <ReportCard key={r.id} report={r} showSite showDate={false} />
                   ))}
