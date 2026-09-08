@@ -35,7 +35,11 @@ export function SiteStageStepper({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-stretch gap-1", className)} aria-label="進捗ステータス">
+    // 幅の狭い端末では横スクロールに逃がす（ラベルは縮まないため、はみ出させない）
+    <div
+      className={cn("flex items-stretch gap-1 overflow-x-auto", className)}
+      aria-label="進捗ステータス"
+    >
       {SITE_STAGES.map((label, i) => {
         const active = i === index;
         return (
@@ -125,7 +129,7 @@ export function SiteCard({
                     window.open(mapSearchUrl(site.address!), "_blank", "noopener,noreferrer");
                   }
                 }}
-                className="truncate underline decoration-line-strong underline-offset-2 hover:text-brand-600"
+                className="min-w-0 truncate underline decoration-line-strong underline-offset-2 hover:text-brand-600"
               >
                 {site.address}
               </span>

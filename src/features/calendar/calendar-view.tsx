@@ -135,7 +135,7 @@ function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compa
       )}
     >
       <HardHat className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"} aria-hidden />
-      <span className="truncate">{visit.site.name}</span>
+      <span className="min-w-0 truncate">{visit.site.name}</span>
       {!compact && visit.visitors.length > 0 && (
         <span className="ml-auto flex shrink-0 items-center -space-x-1.5">
           {visit.visitors.slice(0, 3).map((p) => (
@@ -183,7 +183,7 @@ function VisitRow({ visit }: { visit: CalendarVisitData }) {
                 />
               ))}
             </span>
-            <span className="truncate text-xs font-medium text-ink-muted">
+            <span className="min-w-0 truncate text-xs font-medium text-ink-muted">
               {visit.visitors.map((p) => p.name).join("・")}
             </span>
           </div>
@@ -245,7 +245,7 @@ function EventRow({
           ) : (
             <User className="h-3 w-3 shrink-0" />
           )}
-          <span className="truncate">{ownerLabel(ev)}</span>
+          <span className="min-w-0 truncate">{ownerLabel(ev)}</span>
         </p>
         {people.length > 0 && (
           <div className="mt-1.5 flex items-center -space-x-1.5">

@@ -64,7 +64,7 @@ function AddressLink({ address }: { address: string }) {
       className="mt-1 flex items-center gap-1 text-xs font-medium text-brand-600"
     >
       <MapPin className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate underline underline-offset-2">{address}</span>
+      <span className="min-w-0 truncate underline underline-offset-2">{address}</span>
     </a>
   );
 }

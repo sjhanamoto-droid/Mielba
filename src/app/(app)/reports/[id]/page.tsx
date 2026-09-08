@@ -117,7 +117,7 @@ export default async function ReportDetailPage({
             href={`/sites/${report.site.id}`}
             className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5 active:bg-surface-subtle"
           >
-            <span className="truncate text-sm font-semibold text-brand-600">{report.site.name}</span>
+            <span className="min-w-0 truncate text-sm font-semibold text-brand-600">{report.site.name}</span>
             <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
           </Link>
         </Card>

@@ -758,7 +758,7 @@ export default async function HomePage() {
                               className="mt-0.5 flex items-center gap-1 text-xs font-medium text-brand-600"
                             >
                               <MapPin className="h-3 w-3 shrink-0" />
-                              <span className="truncate underline underline-offset-2">{v.site.address}</span>
+                              <span className="min-w-0 truncate underline underline-offset-2">{v.site.address}</span>
                             </a>
                           )}
                         </div>

@@ -86,7 +86,7 @@ export default async function CustomersPage({
                       {c.headOfficeAddress && (
                         <p className="mt-1 flex items-center gap-1 truncate text-xs text-ink-muted">
                           <MapPin className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{c.headOfficeAddress}</span>
+                          <span className="min-w-0 truncate">{c.headOfficeAddress}</span>
                         </p>
                       )}
                       {c.memo && (

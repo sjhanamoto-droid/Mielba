@@ -38,7 +38,8 @@ export function SiteStageControl({
 
   return (
     <div className={cn(pending && "opacity-70")}>
-      <div className="flex items-stretch gap-1">
+      {/* 幅の狭い端末では横スクロールに逃がす（ラベルは縮まないため、はみ出させない） */}
+      <div className="flex items-stretch gap-1 overflow-x-auto">
         {SITE_STAGES.map((label, i) => {
           const active = i === current;
           return (
