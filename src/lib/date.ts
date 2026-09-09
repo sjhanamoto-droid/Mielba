@@ -85,3 +85,21 @@ export function addMonthsKey(ym: string, n: number): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${yy}-${mm}`;
 }
+
+/**
+ * 投稿日時などの「いつ」を Asia/Tokyo で 'M/d HH:mm' に整形する。
+ * サーバー（UTC）とクライアント（JST）で同じ文字列になるため、ハイドレーション差分が出ない。
+ */
+export function jstDateTimeLabel(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("month")}/${get("day")} ${get("hour")}:${get("minute")}`;
+}

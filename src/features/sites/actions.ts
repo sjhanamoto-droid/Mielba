@@ -68,7 +68,6 @@ const siteSchema = z.object({
   actualStartDate: optionalDate,
   actualEndDate: optionalDate,
   handoverNote: optionalText,
-  memo: optionalText,
 });
 
 function toDate(v?: string): Date | null {
@@ -104,7 +103,6 @@ function parseSiteForm(formData: FormData) {
     actualStartDate: formData.get("actualStartDate"),
     actualEndDate: formData.get("actualEndDate"),
     handoverNote: formData.get("handoverNote"),
-    memo: formData.get("memo"),
   });
 }
 
@@ -138,7 +136,6 @@ function toData(d: z.infer<typeof siteSchema>) {
     actualStartDate: toDate(d.actualStartDate),
     actualEndDate: toDate(d.actualEndDate),
     handoverNote: d.handoverNote ?? null,
-    memo: d.memo ?? null,
   };
 }
 

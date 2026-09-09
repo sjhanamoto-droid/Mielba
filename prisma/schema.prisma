@@ -60,6 +60,7 @@ model User {
   createdSites   Site[]          @relation("SiteCreator")
   notifications     Notification[]     @relation("UserNotifications")
   pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
+  siteMemos         SiteMemo[]         @relation("SiteMemoAuthor")
 }
 
 // ─────────────────────── Customer（顧客／元請企業マスター） ───────────────────────
@@ -166,7 +167,7 @@ model Site {
   scheduleNoneReason String? // 工程表が無い理由（工程表なし時に必須）
   provisional      Boolean @default(false) // 仮登録（必須項目が未入力）
 
-  memo             String?
+  memo             String? // 旧メモ（0015 で SiteMemo へ移行済み・フォームからは更新しない）
 
   // ── AI分析（人工超過・工事完了）。再分析で上書き（最新のみ保持） ──
   overrunAnalysis      String?   // 人工超過のAI分析
@@ -210,6 +211,7 @@ model Site {
   photos      Photo[] // 現場に直接紐づく写真（図面・工程表・キーBOX等）
   handovers   Handover[]
   siteMaterials SiteMaterial[] // 現場に登録した材料（納品書/発注書のOCR登録・最高管理者のみ）
+  memos         SiteMemo[] // 現場メモ（日報以外の気づき・連絡を時系列で残す）
 
   // 関連現場リンク（同一住所）— 双方向に検索する
   relationsA SiteRelation[] @relation("SiteRelationA")
@@ -218,6 +220,23 @@ model Site {
   @@index([customerId])
   @@index([siteStatus])
   @@index([provisional])
+}
+
+// ──────────────────────── SiteMemo（現場メモ・時系列） ────────────────────────
+// 日報以外の「現場に関する気づき・連絡・覚え書き」を現場詳細の先頭から誰でも残せる。
+// 上書き型の旧 Site.memo と違い、投稿者・日時つきで積み上げ、全員が同じ形で読める。
+model SiteMemo {
+  id          String   @id @default(cuid())
+  siteId      String
+  content     String // 本文（改行そのまま表示）
+  createdById String? // 投稿者（退職などで削除されても本文は残す）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  site      Site  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("SiteMemoAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([siteId, createdAt])
 }
 
 // 協力会社（下請）情報

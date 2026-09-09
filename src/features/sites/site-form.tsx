@@ -54,7 +54,6 @@ export type SiteFormData = {
   actualStartDate: Date | string | null;
   actualEndDate: Date | string | null;
   handoverNote: string | null;
-  memo: string | null;
 };
 
 /** 現場に直付けされた既存写真（kind ごとにアップローダーへ渡す） */
@@ -524,9 +523,6 @@ export function SiteForm({
           </div>
           <Field label="引き継ぎ事項" htmlFor="handoverNote" hint="（前回状況・注意点・残作業）" className="sm:col-span-2">
             <Textarea id="handoverNote" name="handoverNote" defaultValue={site?.handoverNote ?? ""} />
-          </Field>
-          <Field label="メモ" htmlFor="memo" className="sm:col-span-2">
-            <Textarea id="memo" name="memo" defaultValue={site?.memo ?? ""} />
           </Field>
           <Field label="請求ステータス" htmlFor="billingStatus" hint="（将来フェーズ）" className="sm:col-span-2">
             <Select id="billingStatus" name="billingStatus" defaultValue={site?.billingStatus ?? ""}>
