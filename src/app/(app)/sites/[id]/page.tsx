@@ -210,9 +210,6 @@ export default async function SiteDetailPage({
     manDaysCount > site.targetManDays;
   const isCompleted = site.siteStatus === "PAST";
 
-  // 現場を開いたとき最初に見せるもの（連絡・メモ）があるか
-  const hasNotes = openHandovers.length > 0 || !!site.handoverNote || memoCount > 0;
-
   // 仮登録の警告は「連絡・メモ」「現場情報」のどちらを開いていても見えるようにする
   const provisionalBanner = site.provisional ? (
     <div className="alert-warn flex items-start gap-2">
@@ -918,18 +915,26 @@ export default async function SiteDetailPage({
       />
       <SearchParamToast />
 
+      {/* 現場を開いたら必ず「連絡・メモ」から。基本情報は上部タブか横スワイプで見る */}
       <SiteDetailTabs
-        defaultId={hasNotes ? "notes" : "info"}
+        defaultId="notes"
         tabs={[
           {
             id: "notes",
             label: "連絡・メモ",
+            icon: <StickyNote className="h-4 w-4" />,
             count: openHandovers.length || memoCount,
             alert: openHandovers.length > 0,
             content: notesPanel,
           },
-          { id: "info", label: "現場情報", content: infoPanel },
-          { id: "reports", label: "日報", count: reportCount, content: reportsPanel },
+          { id: "info", label: "現場情報", icon: <Building2 className="h-4 w-4" />, content: infoPanel },
+          {
+            id: "reports",
+            label: "日報",
+            icon: <FileText className="h-4 w-4" />,
+            count: reportCount,
+            content: reportsPanel,
+          },
         ]}
       />
     </div>

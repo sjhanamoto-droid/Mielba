@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 export type SiteDetailTab = {
   id: string;
   label: string;
+  /** タブのアイコン（PC・タブレットのみ表示。スマホは文字だけで幅を確保する） */
+  icon?: ReactNode;
   /** バッジの数字（0 や未指定なら非表示） */
   count?: number;
   /** バッジを注意色にする（未確認の引き継ぎがあるときなど） */
@@ -85,51 +87,58 @@ export function SiteDetailTabs({
   return (
     <div ref={wrapRef}>
       <div className="sticky-under-header border-b border-line bg-surface/95 backdrop-blur-md">
-        <div
-          role="tablist"
-          aria-label="現場詳細の表示切替"
-          aria-orientation="horizontal"
-          onKeyDown={onKeyDown}
-          className="mx-auto flex w-full max-w-7xl px-2 md:px-6"
-        >
-          {tabs.map((t) => {
-            const selected = t.id === active.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                id={`${baseId}-tab-${t.id}`}
-                aria-selected={selected}
-                aria-controls={`${baseId}-panel-${t.id}`}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => select(t.id)}
-                className={cn(
-                  "relative flex min-h-[48px] flex-1 items-center justify-center gap-1.5 px-2 text-[15px] font-bold transition-colors",
-                  selected ? "text-brand-700" : "text-ink-muted hover:text-ink-soft",
-                )}
-              >
-                <span className="truncate">{t.label}</span>
-                {t.count ? (
-                  <span
-                    className={cn(
-                      "rounded-full px-1.5 text-xs font-bold tnum",
-                      t.alert
-                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200"
-                        : selected
-                          ? "bg-brand-50 text-brand-700"
-                          : "bg-surface-sunken text-ink-muted",
-                    )}
-                  >
-                    {t.count}
-                  </span>
-                ) : null}
-                {selected && (
-                  <span className="absolute inset-x-2 bottom-0 h-[3px] rounded-full bg-brand-600" />
-                )}
-              </button>
-            );
-          })}
+        <div className="mx-auto w-full max-w-7xl px-3 py-2 md:px-8 md:py-2.5">
+          {/* セグメント型：3つのタブを常に並べて見せ、開いている場所は塗りつぶしで示す */}
+          <div
+            role="tablist"
+            aria-label="現場詳細の表示切替"
+            aria-orientation="horizontal"
+            onKeyDown={onKeyDown}
+            className="flex gap-1 rounded-2xl bg-surface-sunken p-1"
+          >
+            {tabs.map((t) => {
+              const selected = t.id === active.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  id={`${baseId}-tab-${t.id}`}
+                  aria-selected={selected}
+                  aria-controls={`${baseId}-panel-${t.id}`}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => select(t.id)}
+                  className={cn(
+                    "flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl px-1.5 text-[15px] font-bold transition-all",
+                    selected
+                      ? "bg-brand-600 text-white shadow-card"
+                      : "text-ink-soft active:scale-[0.98] hover:bg-surface/70",
+                  )}
+                >
+                  {t.icon && (
+                    <span className="hidden shrink-0 md:inline-flex" aria-hidden>
+                      {t.icon}
+                    </span>
+                  )}
+                  <span className="truncate">{t.label}</span>
+                  {t.count ? (
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-1.5 text-xs font-bold tnum",
+                        t.alert
+                          ? "bg-amber-400 text-amber-950"
+                          : selected
+                            ? "bg-white/25 text-white"
+                            : "bg-surface text-ink-muted",
+                      )}
+                    >
+                      {t.count}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
