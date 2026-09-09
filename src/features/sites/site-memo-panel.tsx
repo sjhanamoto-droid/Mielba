@@ -187,14 +187,12 @@ export function SiteMemoPanel({
           className="min-h-[72px] bg-surface"
           aria-invalid={error ? true : undefined}
         />
-        <div className="flex items-center justify-between gap-2">
-          <p className="min-w-0 text-[11px] text-ink-faint">
-            {error ? (
-              <span role="alert" className="font-semibold text-status-danger">{error}</span>
-            ) : (
-              "全員に表示されます。日報に書くほどでない連絡・覚え書きに。"
-            )}
-          </p>
+        <div className="flex items-center justify-end gap-2">
+          {error && (
+            <p role="alert" className="mr-auto min-w-0 text-[11px] font-semibold text-status-danger">
+              {error}
+            </p>
+          )}
           <button
             type="button"
             onClick={submit}
