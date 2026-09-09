@@ -9,7 +9,6 @@ import {
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
-import { PageContainer } from "@/components/app-shell/page-container";
 import { Card, CardLink, SectionTitle, DataList, DataRow } from "@/components/ui/card";
 import { Badge, SiteStatusBadge } from "@/components/ui/badge";
 import { LinkButton, buttonClass } from "@/components/ui/button";
@@ -18,15 +17,16 @@ import { ReportCard } from "@/components/report-card";
 import { EmptyState } from "@/components/ui/misc";
 import { PhotoGrid, type PhotoData } from "@/components/photo-grid";
 import { PdfRow } from "@/components/pdf-row";
-import { HandoverAlert } from "@/components/handover-alert";
 import { SearchParamToast } from "@/components/ui/toast";
-import { getOpenHandovers } from "@/features/handovers/actions";
+import { getOpenHandovers, getResolvedHandovers } from "@/features/handovers/actions";
+import { HandoverPanel } from "@/features/handovers/handover-panel";
 import { SiteStageControl } from "@/features/sites/site-stage-control";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
 import { SiteMaterialSummary } from "@/features/materials/site-material-summary";
 import { SiteAnalysisCard } from "@/features/sites/site-analysis-card";
 import { SiteMemoPanel, type SiteMemoAuthor, type SiteMemoRow } from "@/features/sites/site-memo-panel";
+import { SiteDetailTabs } from "@/features/sites/site-detail-tabs";
 import { Tabs } from "@/components/ui/tabs";
 import { todayRange } from "@/lib/date";
 import { fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
@@ -99,6 +99,7 @@ export default async function SiteDetailPage({
     reportCount,
     manDaysCount,
     openHandovers,
+    resolvedHandovers,
     sitePhotos,
     parkingAgg,
     siteMaterials,
@@ -116,6 +117,8 @@ export default async function SiteDetailPage({
         })
       : Promise.resolve(0),
     getOpenHandovers(site.id),
+    // 確認済みの引き継ぎ（誤って停止しても戻せるよう履歴として表示する）
+    getResolvedHandovers(site.id),
     db.photo.findMany({
       where: { siteId: site.id },
       select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
@@ -207,6 +210,693 @@ export default async function SiteDetailPage({
     manDaysCount > site.targetManDays;
   const isCompleted = site.siteStatus === "PAST";
 
+  // 現場を開いたとき最初に見せるもの（連絡・メモ）があるか
+  const hasNotes = openHandovers.length > 0 || !!site.handoverNote || memoCount > 0;
+
+  // 仮登録の警告は「連絡・メモ」「現場情報」のどちらを開いていても見えるようにする
+  const provisionalBanner = site.provisional ? (
+    <div className="alert-warn flex items-start gap-2">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <span>
+        この現場は<b className="font-bold">仮登録</b>です。本登録には
+        住所・キーBOX・キーBOX写真・図面/工程表 が必要です。
+      </span>
+    </div>
+  ) : null;
+
+  // ───────────────── タブ①「連絡・メモ」: 現場を開いたら最初に目に入る ─────────────────
+  const notesPanel = (
+    <div className="space-y-5">
+      {provisionalBanner}
+
+      {/* 引き継ぎ事項（未確認 → 現場の常設メモ → 確認済みの履歴） */}
+      <section className="space-y-2.5">
+        <SectionTitle
+          action={
+            <Link
+              href={`/sites/${site.id}/edit#handoverNote`}
+              className="text-xs font-semibold text-brand-600"
+            >
+              {site.handoverNote ? "編集" : "追加"}
+            </Link>
+          }
+        >
+          引き継ぎ事項
+        </SectionTitle>
+
+        <HandoverPanel open={openHandovers} resolved={resolvedHandovers}>
+          {site.handoverNote ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/40">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-300">
+                <ClipboardCheck className="h-4 w-4" />
+                前回状況・注意点・残作業
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900 dark:text-amber-100">
+                {site.handoverNote}
+              </p>
+            </div>
+          ) : (
+            openHandovers.length === 0 &&
+            resolvedHandovers.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-line-strong px-4 py-5 text-center">
+                <p className="text-sm font-medium text-ink-muted">引き継ぎ事項はありません</p>
+                <p className="mt-1 text-xs text-ink-faint">
+                  前回状況・注意点・残作業は「追加」から書けます。
+                </p>
+              </div>
+            )
+          )}
+        </HandoverPanel>
+      </section>
+
+      {/* 現場メモ（日報に書くほどでない気づき・連絡をその場で残す） */}
+      <section className="space-y-2.5">
+        <SectionTitle
+          action={
+            memoCount > 0 ? (
+              <span className="text-xs font-semibold text-ink-muted tnum">{memoCount}件</span>
+            ) : undefined
+          }
+        >
+          <span className="flex items-center gap-1.5">
+            <StickyNote className="h-4 w-4 text-brand-600" />
+            現場メモ
+          </span>
+        </SectionTitle>
+        <SiteMemoPanel
+          siteId={site.id}
+          memos={memoRows}
+          authors={memoAuthors}
+          totalCount={memoCount}
+          currentUser={{
+            id: user.id,
+            name: user.name,
+            avatarColor: user.avatarColor,
+            avatarImage: user.avatarImage,
+          }}
+          canManageAll={admin}
+        />
+      </section>
+    </div>
+  );
+
+  // ───────────────── タブ②「現場情報」 ─────────────────
+  const infoPanel = (
+    <div className="space-y-5">
+      {provisionalBanner}
+
+      {/* ステータス */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <SiteStatusBadge status={site.siteStatus} />
+        {site.provisional && (
+          <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
+            <AlertTriangle className="h-3 w-3" />
+            仮登録
+          </Badge>
+        )}
+        <Badge tone="neutral">{projectType}</Badge>
+      </div>
+
+      {/* PC: 左メイン(2/3) + 右レール(1/3)。スマホは縦積み */}
+      <div className="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
+        {/* ===== メイン列 ===== */}
+        <div className="space-y-5 lg:col-span-2">
+          {/* 工程（進捗・工期） */}
+          <section className="space-y-2.5">
+            <SectionTitle>工程</SectionTitle>
+            <Card className="space-y-3 p-4">
+              <DataList>
+                <DataRow
+                  label="着工"
+                  value={`予定 ${fmtDate(site.plannedStartDate)} ／ 実績 ${fmtDate(site.actualStartDate)}`}
+                />
+                <DataRow
+                  label="完工"
+                  value={`予定 ${fmtDate(site.plannedEndDate)} ／ 実績 ${fmtDate(site.actualEndDate)}`}
+                />
+              </DataList>
+              <div>
+                <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
+                {admin ? (
+                  <SiteStageControl
+                    siteId={site.id}
+                    siteStatus={site.siteStatus}
+                    projectStatus={site.projectStatus}
+                  />
+                ) : (
+                  <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
+                )}
+              </div>
+            </Card>
+
+            {/* 工事完了のAI分析（管理者のみ・完了＝過去の現場に表示） */}
+            {admin && aiEnabled && isCompleted && (
+              <SiteAnalysisCard
+                siteId={site.id}
+                type="COMPLETION"
+                initialAnalysis={site.completionAnalysis}
+                initialAnalyzedAt={site.completionAnalyzedAt?.toISOString() ?? null}
+              />
+            )}
+          </section>
+
+          {/* 現場入り情報（ぱっと見で分かる） */}
+          <section className="space-y-2.5">
+            <SectionTitle>現場入り情報</SectionTitle>
+            <Card className="space-y-4 p-4">
+              {/* キーBOX（なし＝理由を表示 / あり＝番号を大きく表示） */}
+              {site.keyboxStatus === "NONE" ? (
+                <div className="rounded-xl bg-surface-sunken p-3.5">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                    <KeyRound className="h-4 w-4" />
+                    キーBOX
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-ink">なし</p>
+                  {site.keyboxNoneReason && (
+                    <p className="mt-1 text-sm font-medium text-ink-soft">
+                      理由: {site.keyboxNoneReason}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-xl bg-surface-sunken p-3.5">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                    <KeyRound className="h-4 w-4" />
+                    キーBOX番号
+                  </p>
+                  <p className="mt-1 text-3xl font-bold tracking-wider text-ink tnum">
+                    {site.keyboxNumber || "—"}
+                  </p>
+                  {site.keyboxPlace && (
+                    <p className="mt-1.5 text-sm font-medium text-ink-soft">
+                      場所: {site.keyboxPlace}
+                    </p>
+                  )}
+                  {!site.keyboxNumber && site.keybox && (
+                    <p className="mt-1.5 text-xs text-ink-muted">旧キーBOXメモ: {site.keybox}</p>
+                  )}
+                </div>
+              )}
+
+              {/* キーBOXの写真（タップで拡大）。無い場合は「撮れない理由」を表示 */}
+              {keyboxPhotos.length > 0 ? (
+                <PhotoGrid photos={keyboxPhotos} />
+              ) : site.keyboxPhotoNoneReason ? (
+                <div className="rounded-xl bg-surface-sunken p-3.5">
+                  <p className="text-xs font-semibold text-ink-muted">キーBOX写真が無い理由</p>
+                  <p className="mt-1 text-sm font-medium text-ink-soft">
+                    {site.keyboxPhotoNoneReason}
+                  </p>
+                </div>
+              ) : null}
+
+              {/* 住所・現場担当者 */}
+              <DataList>
+                <DataRow label="住所" value={site.address} />
+                <DataRow
+                  label="現場担当者"
+                  value={
+                    site.siteContactName ? (
+                      <span className="inline-flex items-center gap-1">
+                        <UserRound className="h-3.5 w-3.5 text-ink-muted" />
+                        {site.siteContactName}
+                      </span>
+                    ) : null
+                  }
+                />
+              </DataList>
+
+              {/* 大きなアクションボタン（44px以上） */}
+              {(mapsUrl || site.siteContactPhone) && (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {mapsUrl && (
+                    <a
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={buttonClass({ variant: "outline", size: "md", className: "w-full" })}
+                    >
+                      <Map className="h-5 w-5" />
+                      地図を開く
+                    </a>
+                  )}
+                  {site.siteContactPhone && (
+                    <a
+                      href={`tel:${site.siteContactPhone}`}
+                      className={buttonClass({ size: "md", className: "w-full" })}
+                    >
+                      <Phone className="h-5 w-5" />
+                      {site.siteContactName ? `${site.siteContactName}さんに電話` : "現場担当に電話"}
+                    </a>
+                  )}
+                </div>
+              )}
+            </Card>
+          </section>
+
+          {/* 場所 */}
+          <section className="space-y-2.5">
+            <SectionTitle>場所</SectionTitle>
+            <Card className="px-4">
+              <DataList>
+                <DataRow
+                  label="住所"
+                  value={
+                    site.address ? (
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 text-ink-muted" />
+                        {site.address}
+                      </span>
+                    ) : null
+                  }
+                />
+                <DataRow label="作業場所名" value={site.locationName} />
+                <DataRow
+                  label="キーBOX"
+                  value={
+                    site.keybox ? (
+                      <span className="inline-flex items-center gap-1">
+                        <KeyRound className="h-3.5 w-3.5 text-ink-muted" />
+                        {site.keybox}
+                      </span>
+                    ) : null
+                  }
+                />
+                <DataRow label="現場側担当" value={site.siteContactName} />
+              </DataList>
+            </Card>
+          </section>
+
+          {/* 人工（最終=着工実績日以降の日報累計 / 目標） */}
+          <section className="space-y-2.5">
+            <SectionTitle>人工</SectionTitle>
+            <Card className="space-y-3 p-4">
+              <div className="flex items-end justify-between">
+                <span className="text-xs font-semibold text-ink-muted">最終 / 目標</span>
+                {hasStarted ? (
+                  <span className="text-2xl font-bold text-ink tnum">
+                    {manDaysCount}
+                    <span className="text-sm font-semibold text-ink-muted">
+                      {" "}
+                      / {site.targetManDays ?? "—"} 人工
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-sm font-semibold text-ink-muted">着工前（0）</span>
+                )}
+              </div>
+              {manDaysPercent !== null && (
+                <div>
+                  <ProgressBar value={manDaysPercent} />
+                  <p className="mt-1 text-right text-[11px] font-semibold text-ink-muted tnum">
+                    {manDaysPercent}%
+                  </p>
+                </div>
+              )}
+              <p className="text-[11px] text-ink-faint">
+                {hasStarted
+                  ? "最終人工は着工実績日以降に提出された日報の累計です（1日報＝1人工）。"
+                  : "着工実績日が未設定のため、まだ人工はカウントされません（着工実績日以降でカウント）。"}
+              </p>
+              <DataList>
+                <DataRow
+                  label="駐車場代 累計"
+                  value={
+                    parkingTotal > 0 ? (
+                      <span className="inline-flex items-center gap-1">
+                        <CircleParking className="h-3.5 w-3.5 text-ink-muted" />
+                        {fmtYen(parkingTotal)}
+                      </span>
+                    ) : null
+                  }
+                />
+              </DataList>
+            </Card>
+
+            {/* 人工超過のAI分析（管理者のみ・超過中の現場に表示） */}
+            {admin && aiEnabled && isOverrun && (
+              <SiteAnalysisCard
+                siteId={site.id}
+                type="OVERRUN"
+                initialAnalysis={site.overrunAnalysis}
+                initialAnalyzedAt={site.overrunAnalyzedAt?.toISOString() ?? null}
+              />
+            )}
+          </section>
+
+          {/* 図面・工程表 */}
+          {(hasDocuments || !!site.drawingNoneReason || !!site.scheduleNoneReason) && (
+            <section className="space-y-2.5">
+              <SectionTitle>図面・工程表</SectionTitle>
+              <Card className="space-y-4 p-4">
+                {drawingImages.length === 0 && drawingPdfs.length === 0 && site.drawingNoneReason && (
+                  <div className="rounded-xl bg-surface-sunken p-3.5">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                      <FileText className="h-4 w-4" />
+                      図面が無い理由
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-ink-soft">{site.drawingNoneReason}</p>
+                  </div>
+                )}
+                {(drawingImages.length > 0 || drawingPdfs.length > 0) && (
+                  <div className="space-y-2">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                      <FileText className="h-4 w-4" />
+                      図面
+                    </p>
+                    {drawingImages.length > 0 && <PhotoGrid photos={drawingImages} />}
+                    {drawingPdfs.map((p) => (
+                      <PdfRow key={p.id} photoId={p.id} label={p.caption || "図面PDF"} />
+                    ))}
+                  </div>
+                )}
+                {(scheduleImages.length > 0 || schedulePdfs.length > 0) && (
+                  <div className="space-y-2">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                      <CalendarRange className="h-4 w-4" />
+                      工程表
+                    </p>
+                    {scheduleImages.length > 0 && <PhotoGrid photos={scheduleImages} />}
+                    {schedulePdfs.map((p) => (
+                      <PdfRow key={p.id} photoId={p.id} label={p.caption || "工程表PDF"} />
+                    ))}
+                  </div>
+                )}
+                {scheduleImages.length === 0 && schedulePdfs.length === 0 && site.scheduleNoneReason && (
+                  <div className="rounded-xl bg-surface-sunken p-3.5">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                      <CalendarRange className="h-4 w-4" />
+                      工程表が無い理由
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-ink-soft">{site.scheduleNoneReason}</p>
+                  </div>
+                )}
+              </Card>
+            </section>
+          )}
+
+          {/* 登録材料（種類・数量は全員／金額は最高管理者のみ） */}
+          <section className="space-y-2.5">
+            <SectionTitle>
+              <span className="flex items-center gap-1.5">登録材料</span>
+            </SectionTitle>
+            <SiteMaterialSummary
+              materials={siteMaterials}
+              usages={materialUses}
+              showAmount={superAdmin}
+            />
+            <p className="px-1 text-[11px] text-ink-faint">
+              残 ＝ 入荷（登録数量）− 使用（日報の使用材料）。
+              {superAdmin
+                ? "金額（原価）は最高管理者のみ表示されます。"
+                : "金額は最高管理者のみ閲覧できます。"}
+            </p>
+          </section>
+
+          {/* 基本情報（事務情報なので下の方） */}
+          <section className="space-y-2.5">
+            <SectionTitle>基本情報</SectionTitle>
+            <Card className="px-4">
+              <DataList>
+                <DataRow label="案件コード" value={site.projectCode} />
+                <DataRow label="工事コード" value={site.constructionCode} />
+                <DataRow label="種別" value={projectType} />
+                <DataRow label="受注日" value={fmtDate(site.receivedDate)} />
+                <DataRow label="契約書番号" value={site.contractNumber} />
+                <DataRow label="作成者" value={site.createdBy?.name} />
+              </DataList>
+            </Card>
+          </section>
+
+          {/* 元請企業 */}
+          <section className="space-y-2.5">
+            <SectionTitle>元請企業</SectionTitle>
+            <CardLink href={`/customers/${site.customer.id}`} className="flex items-center gap-3 p-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                <Building2 className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-ink">{site.customer.name}</p>
+                <p className="text-xs text-ink-muted">顧客情報を見る</p>
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0 text-ink-faint" />
+            </CardLink>
+          </section>
+        </div>
+        {/* ===== /メイン列 ===== */}
+
+        {/* ===== 右レール ===== */}
+        <div className="mt-5 space-y-5 lg:col-span-1 lg:mt-0">
+          {/* 予定 */}
+          <section className="space-y-2.5">
+            <SectionTitle>今後の予定</SectionTitle>
+            {site.events.length === 0 ? (
+              <div className="rounded-2xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
+                今後の予定はありません
+              </div>
+            ) : (
+              <Card className="divide-y divide-line">
+                {site.events.map((e) => {
+                  const color = EVENT_SOURCE_COLOR[e.source as EventSource];
+                  const Icon =
+                    e.source === "DELIVERY" ? Truck : e.source === "SUPPLY" ? PackageCheck : CalendarClock;
+                  const isAuto = e.source !== "MANUAL";
+                  return (
+                    <div key={e.id} className="flex items-center gap-3 px-4 py-3">
+                      <span
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                        style={{ backgroundColor: `${color}1a`, color }}
+                      >
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-ink">{e.title}</p>
+                        <p className="text-xs text-ink-muted">{fmtMonthDay(e.date)}</p>
+                      </div>
+                      <Badge tone={isAuto ? "info" : "neutral"}>
+                        {labelOf(EVENT_SOURCE_LABEL, e.source as EventSource)}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </Card>
+            )}
+          </section>
+
+          {/* 現調 */}
+          <section className="space-y-2.5">
+            <SectionTitle
+              action={
+                admin ? (
+                  <Link href={`/sites/${site.id}/survey`} className="text-xs font-semibold text-brand-600">
+                    {site.survey ? "編集" : "登録"}
+                  </Link>
+                ) : undefined
+              }
+            >
+              現調
+            </SectionTitle>
+            {site.survey ? (
+              <Card className="space-y-2 p-4">
+                {site.survey.surveyedAt && (
+                  <p className="text-xs text-ink-muted">調査日: {fmtDate(site.survey.surveyedAt)}</p>
+                )}
+                {site.survey.address && (
+                  <p className="flex items-center gap-1 text-sm text-ink">
+                    <MapPin className="h-3.5 w-3.5 text-ink-muted" />
+                    {site.survey.address}
+                  </p>
+                )}
+                {site.survey.situationMemo && (
+                  <p className="line-clamp-3 text-sm leading-relaxed text-ink-soft">
+                    {site.survey.situationMemo}
+                  </p>
+                )}
+                {admin && (
+                  <Link
+                    href={`/sites/${site.id}/survey`}
+                    className="flex items-center gap-1 text-xs font-semibold text-brand-600"
+                  >
+                    現調フォーマットを開く
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </Card>
+            ) : (
+              <div className="flex items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface/50 px-4 py-4 text-sm text-ink-muted">
+                <ClipboardList className="h-4 w-4 shrink-0" />
+                現調記録はまだありません
+              </div>
+            )}
+          </section>
+
+          {/* その他（優先度の低い情報はタブに畳む）: 協力会社 / 関連現場 / 将来フェーズ */}
+          <section className="space-y-2.5">
+            <SectionTitle>その他の情報</SectionTitle>
+            <Tabs
+              tabs={[
+                {
+                  id: "partners",
+                  label: "協力会社",
+                  count: site.partners.length,
+                  content: admin ? (
+                    <PartnerControl siteId={site.id} partners={site.partners} />
+                  ) : site.partners.length > 0 ? (
+                    <div className="space-y-2">
+                      {site.partners.map((p) => (
+                        <div key={p.id} className="flex items-center gap-2 text-sm">
+                          <HardHat className="h-4 w-4 shrink-0 text-ink-muted" />
+                          <span className="font-semibold text-ink">{p.name}</span>
+                          {p.role && <span className="text-xs text-ink-muted">{p.role}</span>}
+                          {p.contact && (
+                            <a
+                              href={`tel:${p.contact}`}
+                              className="ml-auto flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-xs font-semibold text-brand-600"
+                            >
+                              <Phone className="h-3.5 w-3.5" />
+                              {p.contact}
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-3 text-center text-sm text-ink-muted">協力会社の登録はありません</p>
+                  ),
+                },
+                {
+                  id: "related",
+                  label: "関連現場",
+                  count: related.length,
+                  content: admin ? (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-ink-faint">同一住所・同一顧客の現場を紐づけます。</p>
+                      <RelationControl siteId={site.id} related={related} candidates={relationCandidates} />
+                    </div>
+                  ) : related.length > 0 ? (
+                    <div className="space-y-2">
+                      {related.map((r) => (
+                        <CardLink
+                          key={r.relationId}
+                          href={`/sites/${r.other.id}`}
+                          className="flex items-center gap-3 p-3.5"
+                        >
+                          <SiteStatusBadge status={r.other.siteStatus} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-ink">{r.other.name}</p>
+                            {r.other.address && (
+                              <p className="truncate text-xs text-ink-muted">{r.other.address}</p>
+                            )}
+                            {r.note && <p className="truncate text-xs text-ink-faint">{r.note}</p>}
+                          </div>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-ink-faint" />
+                        </CardLink>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="flex items-center justify-center gap-1.5 py-3 text-sm text-ink-muted">
+                      <Link2 className="h-4 w-4" />
+                      関連現場はありません
+                    </p>
+                  ),
+                },
+                {
+                  id: "future",
+                  label: "将来フェーズ",
+                  content: (
+                    <div className="space-y-3">
+                      {/* 金額・収支は会計情報のため最高管理者のみ閲覧できる */}
+                      {superAdmin && (
+                        <>
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-ink-muted">
+                            <Wallet className="h-4 w-4" />
+                            金額・収支
+                          </div>
+                          <DataList>
+                            <DataRow
+                              label="請求ステータス"
+                              value={
+                                site.billingStatus
+                                  ? labelOf(BILLING_STATUS_LABEL, site.billingStatus as BillingStatus)
+                                  : null
+                              }
+                            />
+                            <DataRow label="契約金額" value={null} />
+                            <DataRow label="実行予算" value={null} />
+                            <DataRow label="粗利" value={null} />
+                          </DataList>
+                        </>
+                      )}
+                      <div className="flex items-center gap-1.5 pt-1 text-xs font-bold text-ink-muted">
+                        <ScrollText className="h-4 w-4" />
+                        法令・書類
+                      </div>
+                      <DataList>
+                        <DataRow label="建設業許可番号" value={site.constructionPermitNumber} />
+                        <DataRow label="施工体制台帳" value={null} />
+                        <DataRow label="安全書類" value={null} />
+                      </DataList>
+                      <p className="text-xs text-ink-faint">
+                        ※ これらは将来フェーズで入力・集計を有効化します（項目定義のみ）。
+                      </p>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </section>
+        </div>
+        {/* ===== /右レール ===== */}
+      </div>
+    </div>
+  );
+
+  // ───────────────── タブ③「日報」 ─────────────────
+  const reportsPanel = (
+    <section className="space-y-2.5">
+      <SectionTitle
+        action={
+          reportCount > 0 ? (
+            <Link href={`/sites/${site.id}/reports`} className="text-xs font-semibold text-brand-600">
+              すべて見る（{reportCount}）
+            </Link>
+          ) : undefined
+        }
+      >
+        この現場の日報
+      </SectionTitle>
+      {site.reports.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="h-6 w-6" />}
+          title="まだ日報がありません"
+          action={
+            <LinkButton href={`/reports/new?siteId=${site.id}`} size="sm">
+              <Plus className="h-4 w-4" />
+              日報を書く
+            </LinkButton>
+          }
+        />
+      ) : (
+        <>
+          <div className="space-y-2.5">
+            {site.reports.map((r) => (
+              <ReportCard key={r.id} report={r} showSite={false} />
+            ))}
+          </div>
+          <LinkButton
+            href={`/reports/new?siteId=${site.id}`}
+            variant="outline"
+            size="md"
+            className="w-full"
+          >
+            <Plus className="h-4 w-4" />
+            日報を書く
+          </LinkButton>
+        </>
+      )}
+    </section>
+  );
+
   return (
     <div>
       <PageHeader
@@ -222,675 +912,26 @@ export default async function SiteDetailPage({
             aria-label="現場を修正"
           >
             <Pencil className="h-4 w-4" />
-            <span>現場を修正</span>
+            <span className="hidden sm:inline">現場を修正</span>
           </LinkButton>
         }
       />
+      <SearchParamToast />
 
-      <PageContainer>
-       <SearchParamToast />
-       <div className="space-y-5">
-        {/* 引き継ぎ事項（現場を開いたとき必ず一番上。内容が無くても枠は出す）。
-            現場に行く前に読む情報なので、未解決の申し送りもここにまとめる。 */}
-        <section className="space-y-2.5">
-          <SectionTitle
-            action={
-              <Link
-                href={`/sites/${site.id}/edit#handoverNote`}
-                className="text-xs font-semibold text-brand-600"
-              >
-                {site.handoverNote ? "編集" : "追加"}
-              </Link>
-            }
-          >
-            引き継ぎ事項
-          </SectionTitle>
-
-          {/* 未解決の申し送り（「確認して停止」でその場で解決できる） */}
-          {openHandovers.length > 0 && <HandoverAlert handovers={openHandovers} />}
-
-          {site.handoverNote ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/40">
-              <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-300">
-                <ClipboardCheck className="h-4 w-4" />
-                前回状況・注意点・残作業
-              </div>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900 dark:text-amber-100">
-                {site.handoverNote}
-              </p>
-            </div>
-          ) : (
-            openHandovers.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-line-strong px-4 py-5 text-center">
-                <p className="text-sm font-medium text-ink-muted">
-                  引き継ぎ事項はありません
-                </p>
-                <p className="mt-1 text-xs text-ink-faint">
-                  前回状況・注意点・残作業は「追加」から書けます。
-                </p>
-              </div>
-            )
-          )}
-        </section>
-
-        {/* 現場メモ（引き継ぎの直下＝開いてすぐ書ける位置）。
-            日報に書くほどでない気づき・連絡・覚え書きを、誰が・いつ書いたか分かる形で積み上げる。 */}
-        <section className="space-y-2.5">
-          <SectionTitle
-            action={
-              memoCount > 0 ? (
-                <span className="text-xs font-semibold text-ink-muted tnum">{memoCount}件</span>
-              ) : undefined
-            }
-          >
-            <span className="flex items-center gap-1.5">
-              <StickyNote className="h-4 w-4 text-brand-600" />
-              現場メモ
-            </span>
-          </SectionTitle>
-          <SiteMemoPanel
-            siteId={site.id}
-            memos={memoRows}
-            authors={memoAuthors}
-            totalCount={memoCount}
-            currentUser={{
-              id: user.id,
-              name: user.name,
-              avatarColor: user.avatarColor,
-              avatarImage: user.avatarImage,
-            }}
-            canManageAll={admin}
-          />
-        </section>
-
-        {/* 仮登録の警告バナー（本登録に必要な項目が未入力） */}
-        {site.provisional && (
-          <div className="alert-warn flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>
-              この現場は<b className="font-bold">仮登録</b>です。本登録には
-              住所・キーBOX・キーBOX写真・図面/工程表 が必要です。
-            </span>
-          </div>
-        )}
-
-        {/* ステータス */}
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <SiteStatusBadge status={site.siteStatus} />
-            {site.provisional && (
-              <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
-                <AlertTriangle className="h-3 w-3" />
-                仮登録
-              </Badge>
-            )}
-            <Badge tone="neutral">{projectType}</Badge>
-          </div>
-        </div>
-
-        {/* === PC: 左メイン(2/3) + 右レール(1/3) の2カラム。スマホは縦積み === */}
-        <div className="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
-         {/* ===== メイン列 =====
-             並び順（現場で見る優先度）: 工程 → 現場入り情報 → 場所 → 人工 → 図面・工程表 →
-             登録材料 → 日報 → 基本情報 → 元請企業（事務情報は下へ） */}
-         <div className="space-y-5 lg:col-span-2">
-
-        {/* 工程（進捗・工期）— メイン列の先頭に配置 */}
-        <section className="space-y-2.5">
-          <SectionTitle>工程</SectionTitle>
-          <Card className="space-y-3 p-4">
-            <DataList>
-              <DataRow
-                label="着工"
-                value={`予定 ${fmtDate(site.plannedStartDate)} ／ 実績 ${fmtDate(site.actualStartDate)}`}
-              />
-              <DataRow
-                label="完工"
-                value={`予定 ${fmtDate(site.plannedEndDate)} ／ 実績 ${fmtDate(site.actualEndDate)}`}
-              />
-            </DataList>
-            <div>
-              <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
-              {admin ? (
-                <SiteStageControl
-                  siteId={site.id}
-                  siteStatus={site.siteStatus}
-                  projectStatus={site.projectStatus}
-                />
-              ) : (
-                <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
-              )}
-            </div>
-          </Card>
-
-          {/* 工事完了のAI分析（管理者のみ・完了＝過去の現場に表示） */}
-          {admin && aiEnabled && isCompleted && (
-            <SiteAnalysisCard
-              siteId={site.id}
-              type="COMPLETION"
-              initialAnalysis={site.completionAnalysis}
-              initialAnalyzedAt={site.completionAnalyzedAt?.toISOString() ?? null}
-            />
-          )}
-        </section>
-
-        {/* 現場入り情報（ぱっと見で分かる） */}
-        <section className="space-y-2.5">
-          <SectionTitle>現場入り情報</SectionTitle>
-          <Card className="space-y-4 p-4">
-            {/* キーBOX（なし＝理由を表示 / あり＝番号を大きく表示） */}
-            {site.keyboxStatus === "NONE" ? (
-              <div className="rounded-xl bg-surface-sunken p-3.5">
-                <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                  <KeyRound className="h-4 w-4" />
-                  キーBOX
-                </p>
-                <p className="mt-1 text-lg font-bold text-ink">なし</p>
-                {site.keyboxNoneReason && (
-                  <p className="mt-1 text-sm font-medium text-ink-soft">理由: {site.keyboxNoneReason}</p>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-xl bg-surface-sunken p-3.5">
-                <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                  <KeyRound className="h-4 w-4" />
-                  キーBOX番号
-                </p>
-                <p className="mt-1 text-3xl font-bold tracking-wider text-ink tnum">
-                  {site.keyboxNumber || "—"}
-                </p>
-                {site.keyboxPlace && (
-                  <p className="mt-1.5 text-sm font-medium text-ink-soft">
-                    場所: {site.keyboxPlace}
-                  </p>
-                )}
-                {!site.keyboxNumber && site.keybox && (
-                  <p className="mt-1.5 text-xs text-ink-muted">旧キーBOXメモ: {site.keybox}</p>
-                )}
-              </div>
-            )}
-
-            {/* キーBOXの写真（タップで拡大）。無い場合は「撮れない理由」を表示 */}
-            {keyboxPhotos.length > 0 ? (
-              <PhotoGrid photos={keyboxPhotos} />
-            ) : site.keyboxPhotoNoneReason ? (
-              <div className="rounded-xl bg-surface-sunken p-3.5">
-                <p className="text-xs font-semibold text-ink-muted">キーBOX写真が無い理由</p>
-                <p className="mt-1 text-sm font-medium text-ink-soft">{site.keyboxPhotoNoneReason}</p>
-              </div>
-            ) : null}
-
-            {/* 住所・現場担当者 */}
-            <DataList>
-              <DataRow label="住所" value={site.address} />
-              <DataRow
-                label="現場担当者"
-                value={
-                  site.siteContactName ? (
-                    <span className="inline-flex items-center gap-1">
-                      <UserRound className="h-3.5 w-3.5 text-ink-muted" />
-                      {site.siteContactName}
-                    </span>
-                  ) : null
-                }
-              />
-            </DataList>
-
-            {/* 大きなアクションボタン（44px以上） */}
-            {(mapsUrl || site.siteContactPhone) && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {mapsUrl && (
-                  <a
-                    href={mapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonClass({ variant: "outline", size: "md", className: "w-full" })}
-                  >
-                    <Map className="h-5 w-5" />
-                    地図を開く
-                  </a>
-                )}
-                {site.siteContactPhone && (
-                  <a
-                    href={`tel:${site.siteContactPhone}`}
-                    className={buttonClass({ size: "md", className: "w-full" })}
-                  >
-                    <Phone className="h-5 w-5" />
-                    {site.siteContactName ? `${site.siteContactName}さんに電話` : "現場担当に電話"}
-                  </a>
-                )}
-              </div>
-            )}
-          </Card>
-        </section>
-
-        {/* 場所（現場入り情報の直下＝上の方に配置） */}
-        <section className="space-y-2.5">
-          <SectionTitle>場所</SectionTitle>
-          <Card className="px-4">
-            <DataList>
-              <DataRow
-                label="住所"
-                value={
-                  site.address ? (
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5 text-ink-muted" />
-                      {site.address}
-                    </span>
-                  ) : null
-                }
-              />
-              <DataRow label="作業場所名" value={site.locationName} />
-              <DataRow
-                label="キーBOX"
-                value={
-                  site.keybox ? (
-                    <span className="inline-flex items-center gap-1">
-                      <KeyRound className="h-3.5 w-3.5 text-ink-muted" />
-                      {site.keybox}
-                    </span>
-                  ) : null
-                }
-              />
-              <DataRow label="現場側担当" value={site.siteContactName} />
-            </DataList>
-          </Card>
-        </section>
-
-        {/* 人工（最終=着工実績日以降の日報累計 / 目標） */}
-        <section className="space-y-2.5">
-          <SectionTitle>人工</SectionTitle>
-          <Card className="space-y-3 p-4">
-            <div className="flex items-end justify-between">
-              <span className="text-xs font-semibold text-ink-muted">最終 / 目標</span>
-              {hasStarted ? (
-                <span className="text-2xl font-bold text-ink tnum">
-                  {manDaysCount}
-                  <span className="text-sm font-semibold text-ink-muted">
-                    {" "}
-                    / {site.targetManDays ?? "—"} 人工
-                  </span>
-                </span>
-              ) : (
-                <span className="text-sm font-semibold text-ink-muted">着工前（0）</span>
-              )}
-            </div>
-            {manDaysPercent !== null && (
-              <div>
-                <ProgressBar value={manDaysPercent} />
-                <p className="mt-1 text-right text-[11px] font-semibold text-ink-muted tnum">
-                  {manDaysPercent}%
-                </p>
-              </div>
-            )}
-            <p className="text-[11px] text-ink-faint">
-              {hasStarted
-                ? "最終人工は着工実績日以降に提出された日報の累計です（1日報＝1人工）。"
-                : "着工実績日が未設定のため、まだ人工はカウントされません（着工実績日以降でカウント）。"}
-            </p>
-            <DataList>
-              <DataRow
-                label="駐車場代 累計"
-                value={
-                  parkingTotal > 0 ? (
-                    <span className="inline-flex items-center gap-1">
-                      <CircleParking className="h-3.5 w-3.5 text-ink-muted" />
-                      {fmtYen(parkingTotal)}
-                    </span>
-                  ) : null
-                }
-              />
-            </DataList>
-          </Card>
-
-          {/* 人工超過のAI分析（管理者のみ・超過中の現場に表示） */}
-          {admin && aiEnabled && isOverrun && (
-            <SiteAnalysisCard
-              siteId={site.id}
-              type="OVERRUN"
-              initialAnalysis={site.overrunAnalysis}
-              initialAnalyzedAt={site.overrunAnalyzedAt?.toISOString() ?? null}
-            />
-          )}
-        </section>
-
-        {/* 図面・工程表（登録材料より上） */}
-        {(hasDocuments || !!site.drawingNoneReason || !!site.scheduleNoneReason) && (
-          <section className="space-y-2.5">
-            <SectionTitle>図面・工程表</SectionTitle>
-            <Card className="space-y-4 p-4">
-              {drawingImages.length === 0 && drawingPdfs.length === 0 && site.drawingNoneReason && (
-                <div className="rounded-xl bg-surface-sunken p-3.5">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                    <FileText className="h-4 w-4" />
-                    図面が無い理由
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-ink-soft">{site.drawingNoneReason}</p>
-                </div>
-              )}
-              {(drawingImages.length > 0 || drawingPdfs.length > 0) && (
-                <div className="space-y-2">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                    <FileText className="h-4 w-4" />
-                    図面
-                  </p>
-                  {drawingImages.length > 0 && <PhotoGrid photos={drawingImages} />}
-                  {drawingPdfs.map((p) => (
-                    <PdfRow key={p.id} photoId={p.id} label={p.caption || "図面PDF"} />
-                  ))}
-                </div>
-              )}
-              {(scheduleImages.length > 0 || schedulePdfs.length > 0) && (
-                <div className="space-y-2">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                    <CalendarRange className="h-4 w-4" />
-                    工程表
-                  </p>
-                  {scheduleImages.length > 0 && <PhotoGrid photos={scheduleImages} />}
-                  {schedulePdfs.map((p) => (
-                    <PdfRow key={p.id} photoId={p.id} label={p.caption || "工程表PDF"} />
-                  ))}
-                </div>
-              )}
-              {scheduleImages.length === 0 && schedulePdfs.length === 0 && site.scheduleNoneReason && (
-                <div className="rounded-xl bg-surface-sunken p-3.5">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                    <CalendarRange className="h-4 w-4" />
-                    工程表が無い理由
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-ink-soft">{site.scheduleNoneReason}</p>
-                </div>
-              )}
-            </Card>
-          </section>
-        )}
-
-        {/* 登録材料（種類・数量は全員／金額は最高管理者のみ） */}
-        <section className="space-y-2.5">
-          <SectionTitle>
-            <span className="flex items-center gap-1.5">登録材料</span>
-          </SectionTitle>
-          <SiteMaterialSummary
-            materials={siteMaterials}
-            usages={materialUses}
-            showAmount={superAdmin}
-          />
-          <p className="px-1 text-[11px] text-ink-faint">
-            残 ＝ 入荷（登録数量）− 使用（日報の使用材料）。
-            {superAdmin
-              ? "金額（原価）は最高管理者のみ表示されます。"
-              : "金額は最高管理者のみ閲覧できます。"}
-          </p>
-        </section>
-
-        {/* この現場の日報 */}
-        <section className="space-y-2.5">
-          <SectionTitle
-            action={
-              reportCount > 0 ? (
-                <Link href={`/sites/${site.id}/reports`} className="text-xs font-semibold text-brand-600">
-                  すべて見る（{reportCount}）
-                </Link>
-              ) : undefined
-            }
-          >
-            この現場の日報
-          </SectionTitle>
-          {site.reports.length === 0 ? (
-            <EmptyState
-              icon={<FileText className="h-6 w-6" />}
-              title="まだ日報がありません"
-              action={
-                <LinkButton href={`/reports/new?siteId=${site.id}`} size="sm">
-                  <Plus className="h-4 w-4" />日報を書く
-                </LinkButton>
-              }
-            />
-          ) : (
-            <>
-              <div className="space-y-2.5">
-                {site.reports.map((r) => (
-                  <ReportCard key={r.id} report={r} showSite={false} />
-                ))}
-              </div>
-              <LinkButton href={`/reports/new?siteId=${site.id}`} variant="outline" size="md" className="w-full">
-                <Plus className="h-4 w-4" />日報を書く
-              </LinkButton>
-            </>
-          )}
-        </section>
-
-        {/* 基本情報（事務情報なので下の方） */}
-        <section className="space-y-2.5">
-          <SectionTitle>基本情報</SectionTitle>
-          <Card className="px-4">
-            <DataList>
-              <DataRow label="案件コード" value={site.projectCode} />
-              <DataRow label="工事コード" value={site.constructionCode} />
-              <DataRow label="種別" value={projectType} />
-              <DataRow label="受注日" value={fmtDate(site.receivedDate)} />
-              <DataRow label="契約書番号" value={site.contractNumber} />
-              <DataRow label="作成者" value={site.createdBy?.name} />
-            </DataList>
-          </Card>
-        </section>
-
-        {/* 元請企業（事務情報なので下の方） */}
-        <section className="space-y-2.5">
-          <SectionTitle>元請企業</SectionTitle>
-          <CardLink href={`/customers/${site.customer.id}`} className="flex items-center gap-3 p-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-              <Building2 className="h-5 w-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-ink">{site.customer.name}</p>
-              <p className="text-xs text-ink-muted">顧客情報を見る</p>
-            </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-ink-faint" />
-          </CardLink>
-        </section>
-
-         </div>{/* ===== /メイン列 ===== */}
-
-         {/* ===== 右レール ===== */}
-         <div className="mt-5 space-y-5 lg:col-span-1 lg:mt-0">
-
-        {/* 予定 */}
-        <section className="space-y-2.5">
-          <SectionTitle>今後の予定</SectionTitle>
-          {site.events.length === 0 ? (
-            <div className="rounded-2xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
-              今後の予定はありません
-            </div>
-          ) : (
-            <Card className="divide-y divide-line">
-              {site.events.map((e) => {
-                const color = EVENT_SOURCE_COLOR[e.source as EventSource];
-                const Icon =
-                  e.source === "DELIVERY" ? Truck : e.source === "SUPPLY" ? PackageCheck : CalendarClock;
-                const isAuto = e.source !== "MANUAL";
-                return (
-                  <div key={e.id} className="flex items-center gap-3 px-4 py-3">
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                      style={{ backgroundColor: `${color}1a`, color }}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-ink">{e.title}</p>
-                      <p className="text-xs text-ink-muted">{fmtMonthDay(e.date)}</p>
-                    </div>
-                    <Badge tone={isAuto ? "info" : "neutral"}>
-                      {labelOf(EVENT_SOURCE_LABEL, e.source as EventSource)}
-                    </Badge>
-                  </div>
-                );
-              })}
-            </Card>
-          )}
-        </section>
-
-        {/* 現調 */}
-        <section className="space-y-2.5">
-          <SectionTitle
-            action={
-              admin ? (
-                <Link href={`/sites/${site.id}/survey`} className="text-xs font-semibold text-brand-600">
-                  {site.survey ? "編集" : "登録"}
-                </Link>
-              ) : undefined
-            }
-          >
-            現調
-          </SectionTitle>
-          {site.survey ? (
-            <Card className="space-y-2 p-4">
-              {site.survey.surveyedAt && (
-                <p className="text-xs text-ink-muted">調査日: {fmtDate(site.survey.surveyedAt)}</p>
-              )}
-              {site.survey.address && (
-                <p className="flex items-center gap-1 text-sm text-ink">
-                  <MapPin className="h-3.5 w-3.5 text-ink-muted" />
-                  {site.survey.address}
-                </p>
-              )}
-              {site.survey.situationMemo && (
-                <p className="line-clamp-3 text-sm leading-relaxed text-ink-soft">
-                  {site.survey.situationMemo}
-                </p>
-              )}
-              {admin && (
-                <Link
-                  href={`/sites/${site.id}/survey`}
-                  className="flex items-center gap-1 text-xs font-semibold text-brand-600"
-                >
-                  現調フォーマットを開く
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Link>
-              )}
-            </Card>
-          ) : (
-            <div className="flex items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface/50 px-4 py-4 text-sm text-ink-muted">
-              <ClipboardList className="h-4 w-4 shrink-0" />
-              現調記録はまだありません
-            </div>
-          )}
-        </section>
-
-        {/* その他（優先度の低い情報はタブに畳む）: 協力会社 / 関連現場 / 将来フェーズ */}
-        <section className="space-y-2.5">
-          <SectionTitle>その他の情報</SectionTitle>
-          <Tabs
-            tabs={[
-              {
-                id: "partners",
-                label: "協力会社",
-                count: site.partners.length,
-                content: admin ? (
-                  <PartnerControl siteId={site.id} partners={site.partners} />
-                ) : site.partners.length > 0 ? (
-                  <div className="space-y-2">
-                    {site.partners.map((p) => (
-                      <div key={p.id} className="flex items-center gap-2 text-sm">
-                        <HardHat className="h-4 w-4 shrink-0 text-ink-muted" />
-                        <span className="font-semibold text-ink">{p.name}</span>
-                        {p.role && <span className="text-xs text-ink-muted">{p.role}</span>}
-                        {p.contact && (
-                          <a
-                            href={`tel:${p.contact}`}
-                            className="ml-auto flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-xs font-semibold text-brand-600"
-                          >
-                            <Phone className="h-3.5 w-3.5" />
-                            {p.contact}
-                          </a>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="py-3 text-center text-sm text-ink-muted">協力会社の登録はありません</p>
-                ),
-              },
-              {
-                id: "related",
-                label: "関連現場",
-                count: related.length,
-                content: admin ? (
-                  <div className="space-y-2">
-                    <p className="text-[11px] text-ink-faint">同一住所・同一顧客の現場を紐づけます。</p>
-                    <RelationControl
-                      siteId={site.id}
-                      related={related}
-                      candidates={relationCandidates}
-                    />
-                  </div>
-                ) : related.length > 0 ? (
-                  <div className="space-y-2">
-                    {related.map((r) => (
-                      <CardLink key={r.relationId} href={`/sites/${r.other.id}`} className="flex items-center gap-3 p-3.5">
-                        <SiteStatusBadge status={r.other.siteStatus} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-ink">{r.other.name}</p>
-                          {r.other.address && (
-                            <p className="truncate text-xs text-ink-muted">{r.other.address}</p>
-                          )}
-                          {r.note && <p className="truncate text-xs text-ink-faint">{r.note}</p>}
-                        </div>
-                        <ArrowRight className="h-4 w-4 shrink-0 text-ink-faint" />
-                      </CardLink>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="flex items-center justify-center gap-1.5 py-3 text-sm text-ink-muted">
-                    <Link2 className="h-4 w-4" />
-                    関連現場はありません
-                  </p>
-                ),
-              },
-              {
-                id: "future",
-                label: "将来フェーズ",
-                content: (
-                  <div className="space-y-3">
-                    {/* 金額・収支は会計情報のため最高管理者のみ閲覧できる */}
-                    {superAdmin && (
-                      <>
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-ink-muted">
-                          <Wallet className="h-4 w-4" />
-                          金額・収支
-                        </div>
-                        <DataList>
-                          <DataRow label="請求ステータス" value={site.billingStatus ? labelOf(BILLING_STATUS_LABEL, site.billingStatus as BillingStatus) : null} />
-                          <DataRow label="契約金額" value={null} />
-                          <DataRow label="実行予算" value={null} />
-                          <DataRow label="粗利" value={null} />
-                        </DataList>
-                      </>
-                    )}
-                    <div className="flex items-center gap-1.5 pt-1 text-xs font-bold text-ink-muted">
-                      <ScrollText className="h-4 w-4" />
-                      法令・書類
-                    </div>
-                    <DataList>
-                      <DataRow label="建設業許可番号" value={site.constructionPermitNumber} />
-                      <DataRow label="施工体制台帳" value={null} />
-                      <DataRow label="安全書類" value={null} />
-                    </DataList>
-                    <p className="text-xs text-ink-faint">
-                      ※ これらは将来フェーズで入力・集計を有効化します（項目定義のみ）。
-                    </p>
-                  </div>
-                ),
-              },
-            ]}
-          />
-        </section>
-
-         </div>{/* ===== /右レール ===== */}
-        </div>{/* ===== /2カラムグリッド ===== */}
-       </div>{/* /space-y-5 */}
-      </PageContainer>
+      <SiteDetailTabs
+        defaultId={hasNotes ? "notes" : "info"}
+        tabs={[
+          {
+            id: "notes",
+            label: "連絡・メモ",
+            count: openHandovers.length || memoCount,
+            alert: openHandovers.length > 0,
+            content: notesPanel,
+          },
+          { id: "info", label: "現場情報", content: infoPanel },
+          { id: "reports", label: "日報", count: reportCount, content: reportsPanel },
+        ]}
+      />
     </div>
   );
 }

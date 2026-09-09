@@ -201,6 +201,18 @@
     padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
   }
 
+  /* PageHeader（h-14 / md:68px + セーフエリア）の直下に貼り付くタブバー */
+  .sticky-under-header {
+    position: sticky;
+    top: calc(3.5rem + env(safe-area-inset-top));
+    z-index: 20;
+  }
+  @media (min-width: 768px) {
+    .sticky-under-header {
+      top: calc(68px + env(safe-area-inset-top));
+    }
+  }
+
   /* カード */
   .card {
     @apply rounded-2xl bg-surface shadow-card border border-line;
