@@ -34,7 +34,9 @@ const JPEG_QUALITY = 0.7;
 const THUMB_DIM = 320;
 const THUMB_QUALITY = 0.6;
 const MAX_PDF_BYTES = 2.5 * 1024 * 1024; // サーバ側の画像系上限（2.5MB）に合わせる
-const MAX_TOTAL_BYTES = 11 * 1024 * 1024; // 新規追加分の合計（サーバ側の上限と揃える）
+// 新規追加分の合計（サーバ側の上限と揃える）。デコード後3MB = 送信時のbase64でおよそ4MB。
+// Vercel の関数はリクエスト本文が 4.5MB までで、超えると 413 になる。
+const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
 
 function approxBytes(dataUrl?: string): number {
   if (!dataUrl) return 0;
@@ -192,7 +194,7 @@ export function SitePhotoField({
         const bytes = itemBytes(item);
         if (total + bytes > MAX_TOTAL_BYTES) {
           nextErrors.push(
-            `${f.name} を追加すると合計サイズが上限(11MB)を超えるため追加できませんでした`,
+            `${f.name} を追加すると合計サイズが上限(3MB)を超えるため追加できませんでした。先に保存してから続けてください`,
           );
           continue;
         }

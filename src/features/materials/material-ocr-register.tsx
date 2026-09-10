@@ -62,7 +62,9 @@ function compress(file: File): Promise<{ dataUrl: string; thumbUrl: string; widt
 }
 
 // PDFはbase64化して未圧縮で送るため上限を設ける（Server Action の bodySizeLimit=12mb 内に収める）
-const MAX_PDF_BYTES = 8 * 1024 * 1024; // 8MB
+// PDFは base64 のまま Server Action に渡すため、送信時は約1.33倍になる。
+// Vercel の関数はリクエスト本文が 4.5MB までなので、生ファイルは3MBが上限。
+const MAX_PDF_BYTES = 3 * 1024 * 1024;
 
 /** ファイルを dataURL（base64）として読み込む（PDF用・無圧縮） */
 function readAsDataUrl(file: File): Promise<string> {
@@ -147,7 +149,7 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
       return;
     }
     if (isPdf && file.size > MAX_PDF_BYTES) {
-      toast("PDFのサイズが大きすぎます（8MBまで）。分割やページ指定でお試しください。", { type: "error" });
+      toast("PDFのサイズが大きすぎます（3MBまで）。分割やページ指定でお試しください。", { type: "error" });
       return;
     }
     setBusy(true);
