@@ -224,8 +224,12 @@ async function applySitePhotoSets(
         data: set.added.map((p) => ({
           siteId,
           kind: set.kind, // アップロード欄の kind に固定
-          dataUrl: p.dataUrl,
+          dataUrl: p.dataUrl ?? null,
           thumbUrl: p.thumbUrl ?? null,
+          blobPath: p.blobPath ?? null,
+          mimeType: p.mimeType ?? null,
+          sizeBytes: p.sizeBytes ?? null,
+          duration: p.duration ?? null,
           caption: p.caption.trim() === "" ? null : p.caption,
           isVideo: p.isVideo,
           width: p.width ?? null,
@@ -580,8 +584,12 @@ export async function saveSurvey(siteId: string, formData: FormData) {
           data: photos.added.map((p) => ({
             surveyId: survey.id,
             reportId: null,
-            dataUrl: p.dataUrl,
+            dataUrl: p.dataUrl ?? null,
             thumbUrl: p.thumbUrl ?? null,
+            blobPath: p.blobPath ?? null,
+            mimeType: p.mimeType ?? null,
+            sizeBytes: p.sizeBytes ?? null,
+            duration: p.duration ?? null,
             caption: clean(p.caption),
             kind: p.kind && p.kind !== "WORK" ? p.kind : "SURVEY",
             isVideo: p.isVideo,

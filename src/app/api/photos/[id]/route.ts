@@ -7,6 +7,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { db } from "@/lib/db";
+import { signedReadUrl } from "@/lib/media";
 
 /** 'data:<mime>;base64,<data>' をパースする（不正なら null） */
 function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null {
@@ -38,14 +39,38 @@ export async function GET(
 
   const photo = await db.photo.findUnique({
     where: { id },
-    select: { dataUrl: true, thumbUrl: wantThumb },
+    select: { dataUrl: true, thumbUrl: true, blobPath: true, isVideo: true },
   });
   if (!photo) {
     return NextResponse.json({ error: "写真が見つかりません" }, { status: 404 });
   }
 
+  // 動画のサムネイル要求で thumbUrl が無いときは、本体へフォールバックしない。
+  // 一覧の <img> が動画そのものを落としに行くのを防ぐ（呼び出し側は再生アイコンを出す）。
+  if (wantThumb && photo.isVideo && !photo.thumbUrl) {
+    return NextResponse.json({ error: "サムネイルがありません" }, { status: 404 });
+  }
+
+  // Blob 保存（動画）の本体は、署名付きURLへ転送してブラウザに直接読ませる。
+  // 関数を通すと 4.5MB のレスポンス上限に当たり、範囲リクエスト（シーク）も効かない。
+  if (photo.blobPath && !wantThumb) {
+    try {
+      const url = await signedReadUrl(photo.blobPath);
+      // 署名URLは短命なので、この転送自体はキャッシュさせない
+      return NextResponse.redirect(url, {
+        status: 307,
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    } catch {
+      return NextResponse.json({ error: "動画を取得できませんでした" }, { status: 502 });
+    }
+  }
+
   // サムネイル指定時は thumbUrl を優先し、無ければ dataUrl にフォールバック
   const source = (wantThumb && photo.thumbUrl) || photo.dataUrl;
+  if (!source) {
+    return NextResponse.json({ error: "写真データがありません" }, { status: 404 });
+  }
   const parsed = parseDataUrl(source);
   if (!parsed) {
     return NextResponse.json({ error: "写真データが不正です" }, { status: 404 });

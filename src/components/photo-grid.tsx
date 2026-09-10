@@ -20,8 +20,41 @@ export type PhotoData = {
   height?: number | null;
 };
 
+/**
+ * 動画のタイル。サムネイル（先頭フレーム）があれば出し、無ければ再生アイコンにする。
+ * サムネイルが無い動画に ?v=thumb を投げると API が 404 を返すので、本体を落とさずに済む。
+ */
+function VideoThumb({ photo }: { photo: PhotoData }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className="flex h-full w-full items-center justify-center text-ink-muted">
+        <Play className="h-8 w-8" />
+      </span>
+    );
+  }
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={photoSrc(photo.id, true)}
+        alt={photo.caption ?? ""}
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-cover"
+      />
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <Play className="h-7 w-7 text-white drop-shadow" />
+      </span>
+    </>
+  );
+}
+
 export function PhotoGrid({ photos }: { photos: PhotoData[] }) {
   const [active, setActive] = useState<PhotoData | null>(null);
+  // 端末が形式に対応していないと再生できない（iPhoneのHEVC動画をAndroidで開いた場合など）
+  const [playbackFailed, setPlaybackFailed] = useState(false);
 
   // ライトボックス表示中は Escape で閉じる
   useEffect(() => {
@@ -41,15 +74,16 @@ export function PhotoGrid({ photos }: { photos: PhotoData[] }) {
         {photos.map((p) => (
           <button
             key={p.id}
-            onClick={() => setActive(p)}
+            onClick={() => {
+              setPlaybackFailed(false);
+              setActive(p);
+            }}
             aria-label={p.caption || (p.isVideo ? "動画を再生" : "写真を拡大")}
             className="group relative aspect-square overflow-hidden rounded-xl bg-surface-sunken active:scale-95"
           >
             {p.isVideo ? (
               // 動画本体は一覧では読み込まない（タップでライトボックス再生）
-              <span className="flex h-full w-full items-center justify-center text-ink-muted">
-                <Play className="h-8 w-8" />
-              </span>
+              <VideoThumb photo={p} />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -92,13 +126,35 @@ export function PhotoGrid({ photos }: { photos: PhotoData[] }) {
             <X className="h-6 w-6" />
           </button>
           {active.isVideo ? (
-            <video
-              src={photoSrc(active.id)}
-              controls
-              preload="none"
-              className="max-h-[80vh] max-w-full rounded-xl"
-              onClick={(e) => e.stopPropagation()}
-            />
+            playbackFailed ? (
+              <div
+                className="max-w-sm rounded-xl bg-white p-5 text-center text-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="font-bold text-ink">この端末では再生できませんでした</p>
+                <p className="mt-1.5 text-[12px] text-ink-muted">
+                  iPhoneの「高効率」設定で撮った動画は、Androidやパソコンで再生できないことがあります。
+                </p>
+                <a
+                  href={photoSrc(active.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex rounded-lg bg-brand-500 px-4 py-2 font-bold text-white"
+                >
+                  ダウンロードして開く
+                </a>
+              </div>
+            ) : (
+              <video
+                src={photoSrc(active.id)}
+                controls
+                playsInline
+                preload="metadata"
+                onError={() => setPlaybackFailed(true)}
+                className="max-h-[80vh] max-w-full rounded-xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img

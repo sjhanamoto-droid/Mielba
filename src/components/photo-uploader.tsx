@@ -1,19 +1,35 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera, X, Loader2, Play } from "lucide-react";
+import { Camera, X, Loader2, Play, AlertTriangle } from "lucide-react";
 import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
+import {
+  formatMb,
+  looksLikeVideo,
+  videoMimeFromName,
+  VIDEO_ALLOWED_MIMES,
+  VIDEO_COMPAT_RISK_MIMES,
+  VIDEO_MAX_BYTES,
+  VIDEO_MAX_COUNT,
+  VIDEO_MAX_DURATION_SEC,
+  VIDEO_RECOMMENDED_DURATION_SEC,
+} from "@/lib/media-limits";
 
 /**
- * アップローダーが扱う写真。
- * - 既存写真（DB保存済み）: id のみ保持（base64 を再送しない。プレビューは photoSrc(id, true)）
- * - 新規写真: dataUrl（+ 画像は thumbUrl）を保持
+ * アップローダーが扱うファイル。
+ * - 既存（DB保存済み）: id のみ保持（本体を再送しない。プレビューは photoSrc(id, true)）
+ * - 新規の画像・PDF: dataUrl（+ thumbUrl）を保持し、フォーム送信で本文に乗せる
+ * - 新規の動画: 先に Vercel Blob へ直接アップロードし、blobPath だけを保持する
  */
 export type UploaderPhoto = {
   id?: string;
   dataUrl?: string;
   thumbUrl?: string;
+  blobPath?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  duration?: number;
   caption: string;
   kind: PhotoKind;
   isVideo: boolean;
@@ -28,8 +44,9 @@ const MAX_DIM = 1280;
 const JPEG_QUALITY = 0.7;
 const THUMB_DIM = 320;
 const THUMB_QUALITY = 0.6;
-const MAX_VIDEO_BYTES = 8 * 1024 * 1024; // 動画1本あたり 8MB
-const MAX_TOTAL_BYTES = 11 * 1024 * 1024; // 新規追加分の合計 11MB（サーバ側の上限と揃える）
+// Vercel の関数はリクエスト本文が 4.5MB までなので、base64 で送る分はここで頭打ちにする。
+// デコード後3MB = 送信時のbase64でおよそ4MB。動画はこの経路を通らない（Blob へ直接）。
+const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
 
 /** dataUrl のデコード後バイト数の概算（base64 は 4文字=3バイト） */
 function approxBytes(dataUrl?: string): number {
@@ -39,9 +56,16 @@ function approxBytes(dataUrl?: string): number {
   return Math.floor((body.length * 3) / 4);
 }
 
-/** 1枚あたりの送信ペイロード概算 */
+/** 1件あたりの送信ペイロード概算（動画は本文に乗らないのでサムネイルぶんだけ） */
 function photoBytes(p: UploaderPhoto): number {
   return approxBytes(p.dataUrl) + approxBytes(p.thumbUrl);
+}
+
+/** 秒を「0:08」形式にする */
+function formatDuration(sec?: number): string {
+  if (!sec || !Number.isFinite(sec)) return "";
+  const s = Math.round(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 function scaleDims(width: number, height: number, max: number): { width: number; height: number } {
@@ -54,13 +78,18 @@ function scaleDims(width: number, height: number, max: number): { width: number;
   return { width, height };
 }
 
-function drawJpeg(img: HTMLImageElement, width: number, height: number, quality: number): string {
+function drawJpeg(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  quality: number,
+): string {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas error");
-  ctx.drawImage(img, 0, 0, width, height);
+  ctx.drawImage(source, 0, 0, width, height);
   return canvas.toDataURL("image/jpeg", quality);
 }
 
@@ -97,32 +126,133 @@ function compressImage(file: File): Promise<UploaderPhoto> {
   });
 }
 
-function readVideo(file: File): Promise<UploaderPhoto> {
+type VideoMeta = {
+  duration: number;
+  width: number;
+  height: number;
+  /** 先頭フレームのサムネイル。端末が描画を許さない場合は undefined */
+  thumbUrl?: string;
+};
+
+/**
+ * 動画の長さ・寸法を読み、可能なら先頭フレームをサムネイルにする。
+ * サムネイルは一覧を軽くするためのもので、取れなくても投稿は続行する。
+ */
+function readVideoMeta(file: File): Promise<VideoMeta> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      resolve({ dataUrl: reader.result as string, caption: "", kind: "WORK", isVideo: true });
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    let settled = false;
+
+    const finish = (meta: VideoMeta) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(meta);
+    };
+
+    // 端末によっては seek/描画が終わらないことがあるので、待ちすぎない
+    const timer = setTimeout(() => {
+      finish({
+        duration: video.duration || 0,
+        width: video.videoWidth || 0,
+        height: video.videoHeight || 0,
+      });
+    }, 8000);
+
+    video.onloadedmetadata = () => {
+      const base: VideoMeta = {
+        duration: video.duration,
+        width: video.videoWidth,
+        height: video.videoHeight,
+      };
+      // 真っ黒になりにくい位置へ寄せる
+      const seekTo = Math.min(0.2, (video.duration || 1) / 2);
+      video.onseeked = () => {
+        clearTimeout(timer);
+        try {
+          const th = scaleDims(video.videoWidth, video.videoHeight, THUMB_DIM);
+          finish({ ...base, thumbUrl: drawJpeg(video, th.width, th.height, THUMB_QUALITY) });
+        } catch {
+          finish(base);
+        }
+      };
+      try {
+        video.currentTime = seekTo;
+      } catch {
+        clearTimeout(timer);
+        finish(base);
+      }
+    };
+
+    video.onerror = () => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      reject(new Error("video read error"));
+    };
+
+    video.src = url;
   });
 }
 
-/** hidden input に載せるJSON。既存={id}のみ、新規=dataUrl等（共有契約の形式） */
+/** 進捗つきで Blob へ直接 PUT する（fetch では進捗が取れないので XHR を使う） */
+function putWithProgress(
+  url: string,
+  file: File,
+  contentType: string,
+  onProgress: (ratio: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    // 署名に含めた形式と一致させる（ここがずれると CDN 側で弾かれる）
+    xhr.setRequestHeader("content-type", contentType);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`upload failed: ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("upload failed"));
+    xhr.send(file);
+  });
+}
+
+/** hidden input に載せるJSON。既存={id}のみ、新規は画像/動画で形が違う */
 function serialize(photos: UploaderPhoto[]): string {
   return JSON.stringify(
-    photos.map((p) =>
-      p.id
-        ? { id: p.id }
-        : {
-            dataUrl: p.dataUrl,
-            thumbUrl: p.thumbUrl,
-            caption: p.caption,
-            kind: p.kind,
-            isVideo: p.isVideo,
-            width: p.width,
-            height: p.height,
-          },
-    ),
+    photos.map((p) => {
+      if (p.id) return { id: p.id };
+      if (p.blobPath) {
+        return {
+          blobPath: p.blobPath,
+          mimeType: p.mimeType,
+          sizeBytes: p.sizeBytes,
+          duration: p.duration,
+          thumbUrl: p.thumbUrl,
+          caption: p.caption,
+          kind: p.kind,
+          isVideo: true,
+          width: p.width,
+          height: p.height,
+        };
+      }
+      return {
+        dataUrl: p.dataUrl,
+        thumbUrl: p.thumbUrl,
+        caption: p.caption,
+        kind: p.kind,
+        isVideo: false,
+        width: p.width,
+        height: p.height,
+      };
+    }),
   );
 }
 
@@ -138,6 +268,11 @@ export function PhotoUploader({
   const [photos, setPhotos] = useState<UploaderPhoto[]>(initial);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [notices, setNotices] = useState<string[]>([]);
+  // アップロード中の動画（完了した時点で photos に入る）
+  const [uploading, setUploading] = useState<{ name: string; ratio: number }[]>([]);
+  // サムネイルを出せなかったタイル（既存の動画でサムネ未生成のものなど）
+  const [thumbFailed, setThumbFailed] = useState<string[]>([]);
   // 削除の誤タップ対策: 1タップ目で確認状態、2タップ目で確定
   const [confirming, setConfirming] = useState<number | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,48 +284,134 @@ export function PhotoUploader({
     };
   }, []);
 
+  /** 動画1本を検証してBlobへ上げる。成功したら追加用の1件を返す */
+  async function processVideo(
+    file: File,
+    onProgress: (ratio: number) => void,
+  ): Promise<UploaderPhoto | { error: string } | { notice: string }> {
+    // Android の一部ブラウザは File.type を空で返すので拡張子で補う
+    const mime = (file.type || videoMimeFromName(file.name)).toLowerCase();
+    if (!VIDEO_ALLOWED_MIMES.includes(mime)) {
+      return { error: `${file.name} は対応していない動画形式です（MP4 / MOV / WebM のみ）` };
+    }
+    if (file.size > VIDEO_MAX_BYTES) {
+      return {
+        error: `${file.name} は${formatMb(file.size)}あり、上限の${formatMb(VIDEO_MAX_BYTES)}を超えます。${VIDEO_RECOMMENDED_DURATION_SEC}秒くらいで撮り直してください`,
+      };
+    }
+
+    let meta: VideoMeta;
+    try {
+      meta = await readVideoMeta(file);
+    } catch {
+      return { error: `${file.name} を読み込めませんでした。別の動画でお試しください` };
+    }
+    if (meta.duration > VIDEO_MAX_DURATION_SEC + 1) {
+      return {
+        error: `${file.name} は${Math.round(meta.duration)}秒あり、上限の${VIDEO_MAX_DURATION_SEC}秒を超えます。短く撮り直してください`,
+      };
+    }
+
+    const res = await fetch("/api/media/upload-url", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contentType: mime, sizeBytes: file.size }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      return { error: body?.error ?? `${file.name} のアップロードを開始できませんでした` };
+    }
+    const { uploadUrl, blobPath } = (await res.json()) as {
+      uploadUrl: string;
+      blobPath: string;
+    };
+
+    try {
+      await putWithProgress(uploadUrl, file, mime, onProgress);
+    } catch {
+      return { error: `${file.name} のアップロードに失敗しました。電波の良い場所で再度お試しください` };
+    }
+
+    return {
+      blobPath,
+      mimeType: mime,
+      sizeBytes: file.size,
+      duration: Math.round(meta.duration),
+      thumbUrl: meta.thumbUrl,
+      caption: "",
+      kind: defaultKind,
+      isVideo: true,
+      width: meta.width || undefined,
+      height: meta.height || undefined,
+    };
+  }
+
   async function onFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
+    if (inputRef.current) inputRef.current.value = "";
     if (files.length === 0) return;
     setBusy(true);
     setErrors([]);
+    setNotices([]);
     const nextErrors: string[] = [];
+    const nextNotices: string[] = [];
+
     try {
-      const processed: UploaderPhoto[] = [];
       // 既に保持している新規分の合計から積み上げる
       let total = photos.reduce((sum, p) => sum + photoBytes(p), 0);
+      let videoCount = photos.filter((p) => p.isVideo).length;
+
       for (const f of files) {
-        let item: UploaderPhoto | null = null;
-        if (f.type.startsWith("video/")) {
-          // 大きすぎる動画は追加せず、理由を明示する
-          if (f.size > MAX_VIDEO_BYTES) {
-            nextErrors.push(`${f.name} はサイズ上限(8MB)を超えるため追加できませんでした`);
+        if (looksLikeVideo(f)) {
+          if (videoCount >= VIDEO_MAX_COUNT) {
+            nextErrors.push(`動画は${VIDEO_MAX_COUNT}本までです（${f.name} は追加していません）`);
             continue;
           }
-          item = { ...(await readVideo(f)), kind: defaultKind };
-        } else if (f.type.startsWith("image/")) {
-          item = { ...(await compressImage(f)), kind: defaultKind };
-        } else {
+          // iPhone の「高効率」設定で撮った .mov は Android/PC で再生できないことがある
+          const risky = (f.type || videoMimeFromName(f.name)).toLowerCase();
+          if (VIDEO_COMPAT_RISK_MIMES.includes(risky)) {
+            nextNotices.push(
+              "この動画は形式の都合で、iPhone以外の端末で再生できないことがあります。iPhoneの「設定 > カメラ > フォーマット」を「互換性優先」にすると確実です",
+            );
+          }
+
+          const label = f.name;
+          setUploading((prev) => [...prev, { name: label, ratio: 0 }]);
+          const result = await processVideo(f, (ratio) => {
+            setUploading((prev) => prev.map((u) => (u.name === label ? { ...u, ratio } : u)));
+          });
+          setUploading((prev) => prev.filter((u) => u.name !== label));
+
+          if ("error" in result) {
+            nextErrors.push(result.error);
+            continue;
+          }
+          if ("notice" in result) continue;
+          videoCount += 1;
+          total += photoBytes(result);
+          setPhotos((prev) => [...prev, result]);
           continue;
         }
-        // 合計ペイロード概算が上限を超える追加はブロック
+
+        if (!f.type.startsWith("image/")) continue;
+
+        const item = { ...(await compressImage(f)), kind: defaultKind };
         const bytes = photoBytes(item);
         if (total + bytes > MAX_TOTAL_BYTES) {
           nextErrors.push(
-            `${f.name} を追加すると合計サイズが上限(11MB)を超えるため追加できませんでした。先に保存するか、他のファイルを削除してください`,
+            `${f.name} を追加すると合計サイズが上限(${formatMb(MAX_TOTAL_BYTES)})を超えます。先に保存するか、他のファイルを削除してください`,
           );
           continue;
         }
         total += bytes;
-        processed.push(item);
+        setPhotos((prev) => [...prev, item]);
       }
-      setPhotos((prev) => [...prev, ...processed]);
     } catch {
       nextErrors.push("ファイルの読み込みに失敗しました。再度お試しください");
     } finally {
       setErrors(nextErrors);
+      setNotices(nextNotices);
       setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
@@ -227,20 +448,18 @@ export function PhotoUploader({
 
       <div className="grid grid-cols-3 gap-2">
         {photos.map((p, i) => {
-          // 既存はAPIサムネイル、新規は生成済み thumbUrl（動画は dataUrl）
+          // 既存はAPIサムネイル、新規は生成済み thumbUrl
+          const key = p.id ?? p.blobPath ?? `new-${i}`;
           const previewSrc = p.id ? photoSrc(p.id, true) : (p.thumbUrl ?? p.dataUrl ?? "");
+          // サムネイルが無い動画は再生アイコンにする（本体を落としに行かせない）
+          const showPlaceholder = p.isVideo && (!previewSrc || thumbFailed.includes(key));
           return (
-            <div key={p.id ?? `new-${i}`} className="group relative">
+            <div key={key} className="group relative">
               <div className="relative aspect-square overflow-hidden rounded-xl bg-surface-sunken">
-                {p.isVideo ? (
-                  p.dataUrl ? (
-                    <video src={p.dataUrl} className="h-full w-full object-cover" preload="metadata" />
-                  ) : (
-                    // 既存動画は本体を読み込まずプレースホルダ表示
-                    <span className="flex h-full w-full items-center justify-center text-ink-muted">
-                      <Play className="h-8 w-8" />
-                    </span>
-                  )
+                {showPlaceholder ? (
+                  <span className="flex h-full w-full items-center justify-center text-ink-muted">
+                    <Play className="h-8 w-8" />
+                  </span>
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -248,9 +467,20 @@ export function PhotoUploader({
                     alt=""
                     loading="lazy"
                     decoding="async"
+                    onError={() => setThumbFailed((prev) => (prev.includes(key) ? prev : [...prev, key]))}
                     className="h-full w-full object-cover"
                   />
                 )}
+                {p.isVideo && !showPlaceholder && (
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <Play className="h-7 w-7 text-white drop-shadow" />
+                  </span>
+                )}
+                {p.isVideo && p.duration ? (
+                  <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    {formatDuration(p.duration)}
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => onDeleteTap(i)}
@@ -264,7 +494,7 @@ export function PhotoUploader({
                   {confirming === i ? "削除?" : <X className="h-4 w-4" />}
                 </button>
                 {p.id ? (
-                  // 既存写真は {id} 参照のみ送るため種別変更不可（静的表示）
+                  // 既存は {id} 参照のみ送るため種別変更不可（静的表示）
                   <span className="absolute bottom-1 left-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-bold text-white">
                     {PHOTO_KIND_LABEL[p.kind]}
                   </span>
@@ -276,7 +506,7 @@ export function PhotoUploader({
                         kind: kindCycle[(kindCycle.indexOf(p.kind) + 1) % kindCycle.length],
                       })
                     }
-                    aria-label={`写真の種別: ${PHOTO_KIND_LABEL[p.kind]}（タップで切替）`}
+                    aria-label={`種別: ${PHOTO_KIND_LABEL[p.kind]}（タップで切替）`}
                     className="absolute bottom-1 left-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-bold text-white before:absolute before:-inset-2.5 before:content-['']"
                   >
                     {PHOTO_KIND_LABEL[p.kind]}
@@ -287,13 +517,30 @@ export function PhotoUploader({
                 value={p.caption}
                 onChange={(e) => update(i, { caption: e.target.value })}
                 placeholder="説明"
-                aria-label="写真の説明"
+                aria-label="説明"
                 readOnly={!!p.id}
                 className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-1 text-[11px] focus:border-brand-400 focus:outline-none"
               />
             </div>
           );
         })}
+
+        {uploading.map((u) => (
+          <div key={u.name} className="relative">
+            <div className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-line-strong bg-surface-subtle px-2">
+              <Loader2 className="h-5 w-5 animate-spin text-ink-muted" />
+              <span className="text-[11px] font-bold text-ink-muted">
+                {Math.round(u.ratio * 100)}%
+              </span>
+              <div className="h-1 w-full overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full bg-brand-500 transition-all"
+                  style={{ width: `${Math.round(u.ratio * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
 
         <button
           type="button"
@@ -322,8 +569,21 @@ export function PhotoUploader({
         </ul>
       )}
 
+      {notices.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {notices.map((msg, i) => (
+            <li key={i} className="flex gap-1 text-[11px] font-medium text-amber-700">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>{msg}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <p className="mt-1.5 text-[11px] text-ink-faint">
-        撮影した写真は自動で軽量化（最大{MAX_DIM}px）してから保存します。タグをタップで「弊社分」等に切替。削除は×を2回タップ。
+        写真は自動で軽量化（最大{MAX_DIM}px）します。動画は{VIDEO_MAX_DURATION_SEC}秒・
+        {formatMb(VIDEO_MAX_BYTES)}まで、{VIDEO_MAX_COUNT}本まで（{VIDEO_RECOMMENDED_DURATION_SEC}
+        秒くらいが目安）。タグをタップで「弊社分」等に切替。削除は×を2回タップ。
       </p>
     </div>
   );

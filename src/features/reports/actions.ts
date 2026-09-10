@@ -264,8 +264,13 @@ async function writeNested(
     await tx.photo.createMany({
       data: photos.added.map((p) => ({
         reportId,
-        dataUrl: p.dataUrl,
+        // 画像は base64、動画は Blob 上のパスだけを持つ
+        dataUrl: p.dataUrl ?? null,
         thumbUrl: p.thumbUrl ?? null,
+        blobPath: p.blobPath ?? null,
+        mimeType: p.mimeType ?? null,
+        sizeBytes: p.sizeBytes ?? null,
+        duration: p.duration ?? null,
         caption: clean(p.caption),
         kind: clean(p.kind) ?? "WORK",
         isVideo: Boolean(p.isVideo),

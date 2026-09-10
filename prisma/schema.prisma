@@ -438,8 +438,12 @@ model Photo {
   reportId  String?
   surveyId  String?
   siteId    String? // 現場直付けの写真（図面・工程表・キーBOX等）
-  dataUrl   String // 圧縮済み base64（軽量・高速アップロード）
-  thumbUrl  String? // サムネイル（base64、一覧表示用）
+  dataUrl   String? // 圧縮済み base64（画像用。動画は blobPath 側に入る）
+  thumbUrl  String? // サムネイル（base64、一覧表示用。動画は先頭フレーム）
+  blobPath  String? // Vercel Blob 上のパス（動画など 4.5MB を超えうるファイル）
+  mimeType  String? // blobPath がある場合の Content-Type
+  sizeBytes Int? // blobPath がある場合のバイト数
+  duration  Int? // 動画の長さ（秒）
   caption   String? // 連動する文章
   kind      String   @default("WORK") // WORK | COMPANY_STOCK(弊社分) | SURVEY | DRAWING(図面) | SCHEDULE(工程表) | KEYBOX(キーBOX) | OTHER
   isVideo   Boolean  @default(false)

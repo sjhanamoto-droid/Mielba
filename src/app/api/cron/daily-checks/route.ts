@@ -4,12 +4,15 @@
 //     1/3/5/7 または 7超 のとき、作成者本人のみへ通知する。
 // (B) 人工超過: actualStartDate があり targetManDays>0 の現場で、着工日以降の
 //     提出済み日報件数が目標人工を超えたら、全ADMIN へ通知する。
-// いずれも dedupeKey は現場・当日単位で、同日の重複通知を防ぐ。
+// (C) 動画の掃除: どの写真レコードからも参照されていない Blob を消す。
+//     動画を選んだあと日報を保存せず離脱すると Blob だけが残るため。
+// (A)(B) の dedupeKey は現場・当日単位で、同日の重複通知を防ぐ。
 
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createNotificationForUsers } from "@/lib/notifications";
 import { dateFromKey, jstDateKey } from "@/lib/date";
+import { sweepOrphanBlobs } from "@/lib/media";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +91,21 @@ async function handle(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, created });
+  // ── (C) 参照されていない動画 Blob の掃除 ──
+  // 当日アップロード中のものを巻き込まないよう、24時間より古いものだけ消す。
+  let sweptBlobs = 0;
+  try {
+    const rows = await db.photo.findMany({
+      where: { blobPath: { not: null } },
+      select: { blobPath: true },
+    });
+    const referenced = new Set(rows.map((r) => r.blobPath as string));
+    sweptBlobs = await sweepOrphanBlobs(referenced, 24 * 60 * 60 * 1000);
+  } catch {
+    // 掃除に失敗しても通知処理の結果は返す
+  }
+
+  return NextResponse.json({ ok: true, created, sweptBlobs });
 }
 
 export const GET = handle;

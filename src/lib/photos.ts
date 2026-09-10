@@ -3,15 +3,31 @@
 // 写真の base64 を RSC ペイロードに載せると本番サイトが重くなるため、
 // 一覧表示は GET /api/photos/[id] のURL（photoSrc）で <img loading="lazy"> 参照する。
 
+import {
+  formatMb,
+  VIDEO_ALLOWED_MIMES,
+  VIDEO_MAX_BYTES,
+  VIDEO_MAX_COUNT,
+  VIDEO_MAX_DURATION_SEC,
+} from "@/lib/media-limits";
+
 /** 写真の表示URL。thumb=true でサムネイル（無ければAPI側で dataUrl にフォールバック） */
 export function photoSrc(id: string, thumb?: boolean): string {
   return "/api/photos/" + id + (thumb ? "?v=thumb" : "");
 }
 
-/** フォームから送られる新規写真（dataUrl 付き） */
+/**
+ * フォームから送られる新規ファイル。2種類ある。
+ * - 画像・PDF: dataUrl（圧縮済み base64）を DB にそのまま入れる
+ * - 動画: 実体は Vercel Blob に直接アップロード済みで、ここには blobPath だけ来る
+ */
 export interface NewPhotoInput {
-  dataUrl: string;
+  dataUrl?: string;
   thumbUrl?: string;
+  blobPath?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  duration?: number;
   caption: string;
   kind: string;
   isVideo: boolean;
@@ -26,21 +42,26 @@ export interface ParsedPhotosField {
   added: NewPhotoInput[];
 }
 
-// 許容する MIME タイプ
+// base64 で DB に入れる（＝Server Action の本文に乗る）ファイルの MIME タイプ。
+// 動画はここを通らない（Blob へ直接アップロードし blobPath だけ受け取る）。
 const ALLOWED_MIMES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
-  "video/mp4",
-  "video/quicktime",
   "application/pdf",
 ]);
 
 const MAX_NEW_PHOTOS = 30;
 const MAX_IMAGE_BYTES = 2.5 * 1024 * 1024; // 画像1点あたり 2.5MB 相当
-const MAX_VIDEO_BYTES = 11 * 1024 * 1024; // 動画1点あたり 11MB
-const MAX_TOTAL_BYTES = 11 * 1024 * 1024; // 新規合計 11MB
+// Vercel の関数はリクエスト本文が 4.5MB までで、超えると 413 になる。
+// ここで数えるのはデコード後のバイト数だが、実際に送られるのは base64（約1.33倍）なので、
+// 3MB = 送信時およそ4MB。他のフォーム項目ぶんの余裕もこれで確保する。
+const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
+
+// Blob 上のパスは createVideoUploadTarget が作った形だけ許す。
+// 認証済みユーザーが任意のパスを差し込んで他人のファイルを紐づけるのを防ぐ。
+const BLOB_PATH_RE = /^media\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(mp4|mov|webm)$/;
 
 /** dataUrl の MIME タイプを取り出す（不正なら null） */
 function mimeOf(dataUrl: string): string | null {
@@ -83,7 +104,10 @@ export function validateAvatarDataUrl(
 
 /**
  * hidden input の JSON 配列を検証してパースする。
- * 要素は {id} （既存写真を維持）または {dataUrl, thumbUrl?, caption, kind, isVideo, width?, height?}（新規）。
+ * 要素は次のいずれか。
+ * - {id}: 既存ファイルを維持する
+ * - {dataUrl, thumbUrl?, caption, kind, width?, height?}: 新規の画像・PDF
+ * - {blobPath, mimeType, sizeBytes, duration, thumbUrl?, caption, kind, isVideo:true}: 新規の動画
  * 失敗時は日本語のエラーメッセージを返す。
  */
 export function parseAndValidatePhotosField(
@@ -106,6 +130,7 @@ export function parseAndValidatePhotosField(
   const kept: string[] = [];
   const added: NewPhotoInput[] = [];
   let totalBytes = 0;
+  let videoCount = 0;
 
   for (const item of raw) {
     if (!item || typeof item !== "object") {
@@ -113,13 +138,78 @@ export function parseAndValidatePhotosField(
     }
     const o = item as Record<string, unknown>;
 
-    // 既存写真の維持（{id: string}）
-    if (typeof o.id === "string" && o.id.length > 0 && typeof o.dataUrl !== "string") {
+    // 既存ファイルの維持（{id: string}）
+    if (
+      typeof o.id === "string" &&
+      o.id.length > 0 &&
+      typeof o.dataUrl !== "string" &&
+      typeof o.blobPath !== "string"
+    ) {
       kept.push(o.id);
       continue;
     }
 
-    // 新規写真
+    // 動画のサムネイル（先頭フレーム）。画像と同じく base64 で本文に乗る
+    const thumbUrl =
+      typeof o.thumbUrl === "string" && o.thumbUrl.length > 0 ? o.thumbUrl : undefined;
+    if (thumbUrl) {
+      const thumbMime = mimeOf(thumbUrl);
+      if (!thumbMime || !ALLOWED_MIMES.has(thumbMime)) {
+        return { error: "サムネイルの形式が不正です。" };
+      }
+      totalBytes += approxBytes(thumbUrl);
+    }
+
+    const caption = typeof o.caption === "string" ? o.caption : "";
+    const kind = typeof o.kind === "string" && o.kind.length > 0 ? o.kind : "WORK";
+    const width = typeof o.width === "number" && Number.isFinite(o.width) ? o.width : undefined;
+    const height = typeof o.height === "number" && Number.isFinite(o.height) ? o.height : undefined;
+
+    // 新規の動画（実体は Blob にアップロード済み。ここにはパスだけ届く）
+    if (typeof o.blobPath === "string" && o.blobPath.length > 0) {
+      if (!BLOB_PATH_RE.test(o.blobPath)) {
+        return { error: "動画の保存先が不正です。撮り直して再度お試しください。" };
+      }
+      const mimeType = typeof o.mimeType === "string" ? o.mimeType.toLowerCase() : "";
+      if (!VIDEO_ALLOWED_MIMES.includes(mimeType)) {
+        return { error: "対応していない動画形式です（MP4 / MOV / WebM のみ）。" };
+      }
+      const sizeBytes = typeof o.sizeBytes === "number" ? o.sizeBytes : NaN;
+      if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > VIDEO_MAX_BYTES) {
+        return { error: `動画のサイズが大きすぎます（1本あたり${formatMb(VIDEO_MAX_BYTES)}まで）。` };
+      }
+      const duration = typeof o.duration === "number" && Number.isFinite(o.duration)
+        ? Math.round(o.duration)
+        : undefined;
+      // 端末側の丸め誤差を見込んで1秒だけ余裕を持たせる
+      if (duration !== undefined && duration > VIDEO_MAX_DURATION_SEC + 1) {
+        return { error: `動画が長すぎます（1本あたり${VIDEO_MAX_DURATION_SEC}秒まで）。` };
+      }
+
+      videoCount += 1;
+      if (videoCount > VIDEO_MAX_COUNT) {
+        return { error: `動画は${VIDEO_MAX_COUNT}本までです。` };
+      }
+
+      added.push({
+        blobPath: o.blobPath,
+        mimeType,
+        sizeBytes,
+        duration,
+        thumbUrl,
+        caption,
+        kind,
+        isVideo: true,
+        width,
+        height,
+      });
+      if (added.length > MAX_NEW_PHOTOS) {
+        return { error: `一度に追加できるのは${MAX_NEW_PHOTOS}件までです。` };
+      }
+      continue;
+    }
+
+    // 新規の画像・PDF
     if (typeof o.dataUrl !== "string" || o.dataUrl.length === 0) {
       return { error: "写真データに不正な項目が含まれています。" };
     }
@@ -128,50 +218,41 @@ export function parseAndValidatePhotosField(
     const mime = mimeOf(dataUrl);
     if (!mime || !ALLOWED_MIMES.has(mime)) {
       return {
-        error:
-          "対応していないファイル形式です（JPEG / PNG / WebP / GIF / MP4 / MOV / PDF のみ）。",
+        error: "対応していないファイル形式です（JPEG / PNG / WebP / GIF / PDF のみ）。",
       };
     }
 
-    const isVideo = o.isVideo === true || mime.startsWith("video/");
     const bytes = approxBytes(dataUrl);
-
-    if (isVideo) {
-      if (bytes > MAX_VIDEO_BYTES) {
-        return { error: "動画のサイズが大きすぎます（1本あたり11MBまで）。" };
-      }
-    } else {
-      if (bytes > MAX_IMAGE_BYTES) {
-        return { error: "写真のサイズが大きすぎます（1枚あたり2.5MBまで）。" };
-      }
+    if (bytes > MAX_IMAGE_BYTES) {
+      return { error: "写真のサイズが大きすぎます（1枚あたり2.5MBまで）。" };
     }
 
     totalBytes += bytes;
     if (totalBytes > MAX_TOTAL_BYTES) {
-      return { error: "追加ファイルの合計サイズが大きすぎます（合計11MBまで）。" };
-    }
-
-    const thumbUrl = typeof o.thumbUrl === "string" && o.thumbUrl.length > 0 ? o.thumbUrl : undefined;
-    if (thumbUrl) {
-      const thumbMime = mimeOf(thumbUrl);
-      if (!thumbMime || !ALLOWED_MIMES.has(thumbMime)) {
-        return { error: "サムネイルの形式が不正です。" };
-      }
+      return {
+        error: `追加ファイルの合計サイズが大きすぎます（合計${formatMb(MAX_TOTAL_BYTES)}まで）。先に保存してから続けてください。`,
+      };
     }
 
     added.push({
       dataUrl,
       thumbUrl,
-      caption: typeof o.caption === "string" ? o.caption : "",
-      kind: typeof o.kind === "string" && o.kind.length > 0 ? o.kind : "WORK",
-      isVideo,
-      width: typeof o.width === "number" && Number.isFinite(o.width) ? o.width : undefined,
-      height: typeof o.height === "number" && Number.isFinite(o.height) ? o.height : undefined,
+      caption,
+      kind,
+      isVideo: false,
+      width,
+      height,
     });
 
     if (added.length > MAX_NEW_PHOTOS) {
-      return { error: `一度に追加できるのは${MAX_NEW_PHOTOS}枚までです。` };
+      return { error: `一度に追加できるのは${MAX_NEW_PHOTOS}件までです。` };
     }
+  }
+
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    return {
+      error: `追加ファイルの合計サイズが大きすぎます（合計${formatMb(MAX_TOTAL_BYTES)}まで）。先に保存してから続けてください。`,
+    };
   }
 
   return { kept, added };
