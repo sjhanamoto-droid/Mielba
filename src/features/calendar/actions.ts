@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/session";
+import { requireUser, isSuperAdmin } from "@/lib/session";
 import { dateFromKey } from "@/lib/date";
 import {
   EVENT_CATEGORY_LABEL,
@@ -29,6 +29,7 @@ const eventSchema = z.object({
   endTime: z.string().optional(),
   allDay: z.boolean(),
   note: z.string().optional(),
+  isPrivate: z.boolean().default(false),
 });
 
 /**
@@ -149,6 +150,7 @@ export async function createEvent(
       endTime: formData.get("endTime") || undefined,
       allDay: formData.get("allDay") === "on" || formData.get("allDay") === "true",
       note: formData.get("note") || undefined,
+      isPrivate: formData.get("isPrivate") === "on" || formData.get("isPrivate") === "true",
     });
     if (!parsed.success) return { error: parsed.error.errors[0]?.message };
     const d = parsed.data;
@@ -157,7 +159,7 @@ export async function createEvent(
     if (!date) return { error: "日付が不正です" };
 
     const siteId = d.siteId || null;
-    const participantIds = [
+    let participantIds = [
       ...new Set(formData.getAll("participants").map(String).filter(Boolean)),
     ];
 
@@ -172,6 +174,12 @@ export async function createEvent(
     // 個人予定（現場なし）は本人が所有者。現場予定は参加者が主役。
     const ownerId = siteId ? participantIds[0] ?? null : user.id;
 
+    // 非公開は「最高管理者が自分の個人予定に付ける」ときだけ。
+    // 現場の予定は配員・日報に連動して他の人が見る前提なので非公開にできない。
+    const isPrivate = isSuperAdmin(user) && !siteId && d.isPrivate;
+    // 本人にしか見えない予定に参加者を残さない（見えない人を巻き込まないため）
+    if (isPrivate) participantIds = [];
+
     const event = await db.calendarEvent.create({
       data: {
         title,
@@ -184,6 +192,7 @@ export async function createEvent(
         endTime: d.allDay ? null : d.endTime || null,
         allDay: d.allDay,
         note: note || null,
+        isPrivate,
         source: "MANUAL",
         createdById: user.id,
       },
@@ -222,6 +231,10 @@ export async function updateEvent(
       include: { participants: { select: { userId: true } } },
     });
     if (!existing) return { error: "予定が見つかりません" };
+    // 非公開の予定は所有者以外には見えない。編集も同じく本人だけに許す。
+    if (existing.isPrivate && existing.ownerId !== user.id) {
+      return { error: "予定が見つかりません" };
+    }
     if (existing.source !== "MANUAL") return { error: "この予定は編集できません" };
 
     const parsed = eventSchema.safeParse({
@@ -234,6 +247,7 @@ export async function updateEvent(
       endTime: formData.get("endTime") || undefined,
       allDay: formData.get("allDay") === "on" || formData.get("allDay") === "true",
       note: formData.get("note") || undefined,
+      isPrivate: formData.get("isPrivate") === "on" || formData.get("isPrivate") === "true",
     });
     if (!parsed.success) return { error: parsed.error.errors[0]?.message };
     const d = parsed.data;
@@ -242,7 +256,7 @@ export async function updateEvent(
     if (!date) return { error: "日付が不正です" };
 
     const siteId = d.siteId || null;
-    const participantIds = [
+    let participantIds = [
       ...new Set(formData.getAll("participants").map(String).filter(Boolean)),
     ];
 
@@ -254,6 +268,13 @@ export async function updateEvent(
     );
 
     const ownerId = siteId ? participantIds[0] ?? null : existing.ownerId;
+
+    // 非公開を切り替えられるのは、最高管理者が自分の個人予定を編集するときだけ。
+    // それ以外（他人の予定・現場の予定）は今の状態を保つ＝勝手に非公開にならない/解除されない。
+    const canSetPrivate = isSuperAdmin(user) && !siteId && existing.ownerId === user.id;
+    const isPrivate = siteId ? false : canSetPrivate ? d.isPrivate : existing.isPrivate;
+    // 本人にしか見えない予定に参加者を残さない（見えない人を巻き込まないため）
+    if (isPrivate) participantIds = [];
 
     await db.calendarEvent.update({
       where: { id },
@@ -268,6 +289,7 @@ export async function updateEvent(
         endTime: d.allDay ? null : d.endTime || null,
         allDay: d.allDay,
         note: note || null,
+        isPrivate,
       },
     });
 
@@ -316,7 +338,7 @@ export async function deleteEvent(
   id: string,
 ): Promise<{ ok?: boolean; error?: string }> {
   try {
-    await requireUser();
+    const user = await requireUser();
     // 手動予定のみ削除可能（日報由来は削除させない）。参加者は cascade で削除。
     const event = await db.calendarEvent.findUnique({
       where: { id },
@@ -325,10 +347,16 @@ export async function deleteEvent(
         source: true,
         date: true,
         category: true,
+        isPrivate: true,
+        ownerId: true,
         participants: { select: { userId: true } },
       },
     });
     if (!event) return { error: "予定が見つかりません" };
+    // 非公開の予定は所有者以外には見えない。削除も同じく本人だけに許す。
+    if (event.isPrivate && event.ownerId !== user.id) {
+      return { error: "予定が見つかりません" };
+    }
     if (event.source !== "MANUAL") return { error: "この予定は削除できません" };
     const participantIds = event.participants.map((p) => p.userId);
     await db.calendarEvent.delete({ where: { id } });

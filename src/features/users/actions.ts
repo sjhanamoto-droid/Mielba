@@ -216,6 +216,9 @@ export async function deleteUser(id: string): Promise<UserFormState> {
     };
   }
 
+  // 非公開の予定は所有者しか見られない。所有者を消すと誰にも見えず消せない行が残るため、
+  // ユーザー削除の前に片付ける（公開の予定は ownerId が null になって残る＝従来どおり）。
+  await db.calendarEvent.deleteMany({ where: { ownerId: id, isPrivate: true } });
   await db.user.delete({ where: { id } });
   revalidatePath("/settings/staff");
   return { ok: true } as UserFormState;

@@ -17,6 +17,7 @@ import {
   Loader2,
   Building2,
   User,
+  EyeOff,
 } from "lucide-react";
 import { EventForm } from "./event-form";
 import { deleteEvent } from "./actions";
@@ -51,6 +52,7 @@ export type CalendarEventData = {
   note: string | null; // 内容
   source: string;
   category: string | null;
+  isPrivate: boolean; // 非公開（最高管理者の個人予定）。取得時点で本人にしか渡らない
   location: string | null;
   site: { id: string; name: string; customer?: { name: string } | null } | null;
   owner: PersonRef | null; // この予定で現場に行く人（担当）
@@ -225,6 +227,12 @@ function EventRow({
               {EVENT_CATEGORY_LABEL[ev.category as EventCategory] ?? ev.category}
             </Badge>
           )}
+          {ev.isPrivate && (
+            <span className="flex items-center gap-1 text-xs font-bold text-ink-muted">
+              <EyeOff className="h-3 w-3" />
+              自分だけ
+            </span>
+          )}
           {!ev.allDay && ev.startTime && (
             <span className="flex items-center gap-1 text-xs font-bold tnum text-ink-soft">
               <Clock className="h-3 w-3" />
@@ -340,6 +348,14 @@ function EventDetailModal({
             )}
             <dd className="font-semibold text-brand-600">{ownerLabel(ev)}</dd>
           </div>
+          {ev.isPrivate && (
+            <div className="flex items-start gap-2 rounded-xl bg-surface-sunken px-3 py-2">
+              <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
+              <dd className="text-xs font-semibold text-ink-soft">
+                自分だけに表示（他の人のカレンダーには出ません）
+              </dd>
+            </div>
+          )}
           {ev.location && (
             <div className="flex items-start gap-2">
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-faint" />
@@ -422,6 +438,9 @@ function MonthEventChip({
         className="h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ backgroundColor: color }}
       />
+      {ev.isPrivate && (
+        <EyeOff className="h-2.5 w-2.5 shrink-0 text-ink-muted" aria-hidden />
+      )}
       {!ev.allDay && ev.startTime && (
         <span className="shrink-0 font-bold tnum text-ink-muted">
           {ev.startTime}
@@ -494,6 +513,8 @@ export function CalendarView({
   baseDay, // "YYYY-MM-DD"（週/日ビューの基準日）
   sites,
   users,
+  currentUserId,
+  canSetPrivate = false,
 }: {
   events: CalendarEventData[];
   visits?: CalendarVisitData[];
@@ -503,6 +524,8 @@ export function CalendarView({
   baseDay: string;
   sites: SiteOption[];
   users: UserOption[];
+  currentUserId: string;
+  canSetPrivate?: boolean; // 最高管理者のみ true（個人予定を「他の人に表示しない」にできる）
 }) {
   const todayKey = jstDateKey();
   const router = useRouter();
@@ -693,6 +716,8 @@ export function CalendarView({
           users={users}
           defaultDate={formDate ?? baseDay}
           event={editEvent}
+          currentUserId={currentUserId}
+          canSetPrivate={canSetPrivate}
         />
       )}
 
@@ -944,7 +969,8 @@ function WeekEventChip({
       className="w-full rounded-lg border-l-[3px] px-2 py-1.5 text-left transition-[filter] hover:brightness-95"
       style={{ borderColor: color, backgroundColor: `${color}12` }}
     >
-      <p className="text-[10px] font-bold tnum text-ink-muted">
+      <p className="flex items-center gap-1 text-[10px] font-bold tnum text-ink-muted">
+        {ev.isPrivate && <EyeOff className="h-2.5 w-2.5 shrink-0" aria-hidden />}
         {!ev.allDay && ev.startTime ? `${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ""}` : "終日"}
       </p>
       <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-ink">{ev.title}</p>

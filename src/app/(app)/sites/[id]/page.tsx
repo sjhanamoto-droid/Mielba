@@ -71,7 +71,8 @@ export default async function SiteDetailPage({
         take: 3,
       },
       events: {
-        where: { date: { gte: today } },
+        // 非公開の予定（最高管理者の個人予定）は現場に紐づかないが、念のため明示的に除く
+        where: { date: { gte: today }, isPrivate: false },
         orderBy: [{ date: "asc" }, { startTime: "asc" }],
         take: 6,
       },

@@ -56,7 +56,9 @@ export default async function AttendancePage({
       },
     }),
     db.calendarEvent.findMany({
-      where: { category: "OFFICE", date: range, ownerId: { not: null } },
+      // 非公開の個人予定（最高管理者の「表示しない」）は業務外扱い。
+      // 誰の稼働にも入れない（見る人によって会社の合計が変わらないようにする）。
+      where: { category: "OFFICE", date: range, ownerId: { not: null }, isPrivate: false },
       select: {
         ownerId: true,
         startTime: true,

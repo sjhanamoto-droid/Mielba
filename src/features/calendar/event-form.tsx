@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
-import { X, AlertCircle, CalendarPlus, Check, Save, Plus, Loader2 } from "lucide-react";
+import { X, AlertCircle, CalendarPlus, Check, Save, Plus, Loader2, Eye, EyeOff } from "lucide-react";
 import { createEvent, updateEvent } from "./actions";
 import { quickCreateSite } from "@/features/sites/actions";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
@@ -30,7 +30,9 @@ type EditEvent = {
   category: string | null;
   location: string | null;
   note: string | null;
+  isPrivate?: boolean;
   site: { id: string; name: string } | null;
+  owner?: { id: string } | null; // 個人予定の持ち主（非公開を切り替えられるのは本人だけ）
   participants: { id: string }[];
 };
 
@@ -57,12 +59,16 @@ export function EventForm({
   users,
   defaultDate,
   event,
+  currentUserId,
+  canSetPrivate = false,
 }: {
   onClose: () => void;
   sites: SiteOption[];
   users: UserOption[];
   defaultDate: string;
   event?: EditEvent | null;
+  currentUserId: string;
+  canSetPrivate?: boolean; // 最高管理者のみ true（個人予定を非公開にできる）
 }) {
   const isEdit = !!event;
   const [allDay, setAllDay] = useState(event?.allDay ?? false);
@@ -85,6 +91,8 @@ export function EventForm({
     isEdit ? (event?.site?.id ? "site" : "personal") : "site",
   );
   const [title, setTitle] = useState(event?.title ?? "");
+  // 公開範囲（最高管理者の個人予定のみ）。true = 自分だけに表示。
+  const [isPrivate, setIsPrivate] = useState(event?.isPrivate ?? false);
 
   async function handleAddSite() {
     const name = newSiteName.trim();
@@ -142,6 +150,11 @@ export function EventForm({
           })
           .slice(0, 4)
       : [];
+
+  // 公開範囲を選べるのは「最高管理者が自分の個人予定を入れる/直す」ときだけ。
+  // 現場の予定は配員・日報につながるので、他の人から隠せてはいけない。
+  const showPrivateChoice =
+    canSetPrivate && mode === "personal" && (!isEdit || event?.owner?.id === currentUserId);
 
   function toggleParticipant(id: string) {
     setParticipants((prev) => {
@@ -209,6 +222,54 @@ export function EventForm({
               </button>
             ))}
           </div>
+
+          {/* 公開範囲（最高管理者の個人予定のみ）。他の人に見せたくない予定のための切り替え。 */}
+          {showPrivateChoice && (
+            <div className="rounded-2xl border border-line-strong bg-surface-subtle p-3">
+              <p className="mb-2 text-sm font-bold text-ink">この予定を他の人に表示しますか？</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  [false, "表示する", Eye],
+                  [true, "表示しない", EyeOff],
+                ] as const).map(([value, label, Icon]) => {
+                  const on = isPrivate === value;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setIsPrivate(value)}
+                      aria-pressed={on}
+                      className={cn(
+                        "flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-bold transition-colors active:scale-95",
+                        on
+                          ? "border-brand-600 bg-brand-600 text-white"
+                          : "border-line-strong bg-surface text-ink-soft",
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[11px] text-ink-faint">
+                {isPrivate
+                  ? "この予定はあなたのカレンダーにだけ出ます。他の人には件名も時間も表示されません。"
+                  : "今までどおり、全員のカレンダーに表示されます。"}
+              </p>
+            </div>
+          )}
+          {showPrivateChoice && (
+            <input type="hidden" name="isPrivate" value={isPrivate ? "true" : "false"} />
+          )}
+
+          {/* 非公開だった予定を現場の作業に変えると全員に見えるようになる。黙って公開しない。 */}
+          {isEdit && event?.isPrivate && mode === "site" && (
+            <div className="flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>現場の作業にすると「表示しない」は解除され、この予定は全員に表示されます。</span>
+            </div>
+          )}
 
           {/* 現場（現場作業のときだけ表示） */}
           {mode === "site" && (
@@ -394,7 +455,15 @@ export function EventForm({
             />
           </Field>
 
-          {/* 参加者（現場に行く人・複数選択） */}
+          {/* 参加者（現場に行く人・複数選択）。
+              「表示しない」の予定は本人しか見られないので、参加者は選ばせない。 */}
+          {showPrivateChoice && isPrivate ? (
+            <p className="rounded-xl bg-surface-subtle px-3 py-2.5 text-[11px] font-medium text-ink-muted">
+              「表示しない」の予定はあなただけのものです。参加者は指定できません。
+              {isEdit && (event?.participants.length ?? 0) > 0 &&
+                `保存すると、今の参加者${event?.participants.length}名は外れます。`}
+            </p>
+          ) : (
           <div>
             <p className="mb-1.5 text-sm font-semibold text-ink-soft">
               参加者（現場に行く人）
@@ -440,6 +509,7 @@ export function EventForm({
               現場を選んで参加者を指定すると、その人の「今日の現場入り」に反映され、日報につながります。
             </p>
           </div>
+          )}
 
           {error && (
             <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600">

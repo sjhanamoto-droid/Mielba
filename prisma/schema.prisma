@@ -536,6 +536,7 @@ model CalendarEvent {
   location    String? // 場所（現場住所の既定 or 自由入力）
   note        String? // 内容
   source      String   @default("MANUAL") // MANUAL | DELIVERY(配達) | SUPPLY(支給品) | PROCESS(工程) | MILESTONE
+  isPrivate   Boolean  @default(false) // 非公開（最高管理者の個人予定のみ）。所有者以外の画面には出さない
   reportId    String? // 日報由来の予定の出所
   createdById String?
   createdAt   DateTime @default(now())

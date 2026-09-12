@@ -1,10 +1,11 @@
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { CalendarView, type CalendarViewMode } from "@/features/calendar/calendar-view";
-import { requireUser } from "@/lib/session";
+import { requireUser, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
 import { isNonWorkEventCategory } from "@/lib/constants";
+import { visibleEventWhere } from "@/lib/event-visibility";
 
 // "YYYY-MM" を解釈。不正なら当月（日本時間の暦日基準）。
 function parseYm(ym: string | undefined): { year: number; month: number } {
@@ -42,7 +43,7 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ ym?: string; view?: string; d?: string }>;
 }) {
-  await requireUser(); // 認証ゲート（未ログインはここでリダイレクト）
+  const me = await requireUser(); // 認証ゲート（未ログインはここでリダイレクト）
   const sp = await searchParams;
   const view = parseView(sp.view);
 
@@ -77,7 +78,8 @@ export default async function CalendarPage({
   const [events, allVisits, sites, users] = await Promise.all([
     db.calendarEvent.findMany({
       // 担当という区別は廃止。全員が全現場の予定を見られる。
-      where: { date: { gte: rangeStart, lt: rangeEnd } },
+      // ただし最高管理者が「他の人に表示しない」で入れた個人予定は本人だけに出す。
+      where: visibleEventWhere(me.id, { date: { gte: rangeStart, lt: rangeEnd } }),
       include: {
         // 一覧では現場名の下に顧客名を出すため、顧客も一緒に取る
         site: { select: { id: true, name: true, customer: { select: { name: true } } } },
@@ -120,6 +122,7 @@ export default async function CalendarPage({
     note: e.note,
     source: e.source,
     category: e.category,
+    isPrivate: e.isPrivate,
     location: e.location,
     site: e.site,
     owner: e.owner,
@@ -180,6 +183,8 @@ export default async function CalendarPage({
           baseDay={baseDayKey}
           sites={sites}
           users={users}
+          currentUserId={me.id}
+          canSetPrivate={isSuperAdmin(me)}
         />
       </PageContainer>
     </div>

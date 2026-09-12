@@ -63,7 +63,8 @@ export default async function AttendanceUserPage({
     }),
     // 事務所作業（本人所有の個人予定・日報なし）。稼働時間に計上する。
     db.calendarEvent.findMany({
-      where: { ownerId: userId, category: "OFFICE", date: range },
+      // 非公開の個人予定（最高管理者の「表示しない」）は業務外扱いで計上しない（一覧側と揃える）
+      where: { ownerId: userId, category: "OFFICE", date: range, isPrivate: false },
       select: { id: true, date: true, startTime: true, endTime: true, allDay: true },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
     }),

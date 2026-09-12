@@ -63,6 +63,7 @@ export default async function DispatchPage({
         date: range,
         participants: { some: {} },
         createdAt: { lt: UNTETHERED_LEGACY_BEFORE },
+        isPrivate: false, // 非公開の個人予定（最高管理者）は誰の配員にも出さない
       },
       select: {
         id: true, title: true, category: true, allDay: true, startTime: true, endTime: true,

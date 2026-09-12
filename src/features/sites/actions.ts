@@ -342,10 +342,14 @@ export async function convertEventToSite(
       siteId: true,
       date: true,
       category: true,
+      isPrivate: true,
+      ownerId: true,
       participants: { select: { userId: true } },
     },
   });
   if (!event) return { error: "予定が見つかりません" };
+  // 非公開の個人予定は所有者以外には見えない。現場化もさせない（見える形に変わってしまうため）。
+  if (event.isPrivate && event.ownerId !== user.id) return { error: "予定が見つかりません" };
   if (event.siteId) return { error: "この予定は既に現場が設定されています" };
   try {
     let customer = await db.customer.findFirst({
@@ -370,8 +374,11 @@ export async function convertEventToSite(
       },
       select: { id: true },
     });
-    // 予定を現場に紐づける
-    await db.calendarEvent.update({ where: { id: event.id }, data: { siteId: site.id } });
+    // 予定を現場に紐づける（現場の予定は配員・日報に連動するので非公開は解除する）
+    await db.calendarEvent.update({
+      where: { id: event.id },
+      data: { siteId: site.id, isPrivate: false },
+    });
     // 現場作業なら参加者を現場入りに（休み/その他/事務所作業は作らない）
     const participantIds = event.participants.map((p) => p.userId);
     if (participantIds.length > 0 && !isNonWorkEventCategory(event.category)) {

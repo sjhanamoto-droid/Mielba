@@ -18,6 +18,7 @@ import {
   EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, SITE_STAGES, siteStageIndex,
   type EventSource,
 } from "@/lib/constants";
+import { visibleEventWhere } from "@/lib/event-visibility";
 
 function greeting(): string {
   // 日本時間の時刻で挨拶を切り替える（サーバーが UTC でもずれないように）
@@ -102,7 +103,8 @@ export default async function HomePage() {
     // 本日の予定。表示は自分の予定のみに絞るため参加者も取得する
     // （配達/支給品の連絡は現場単位の情報なので全件のまま使う）
     db.calendarEvent.findMany({
-      where: { date: today },
+      // 非公開の個人予定（最高管理者）は本人以外に出さない
+      where: visibleEventWhere(user.id, { date: today }),
       include: {
         site: { select: { id: true, name: true } },
         participants: { select: { userId: true } },
@@ -111,7 +113,7 @@ export default async function HomePage() {
     }),
     // 今週の予定（週ストリップの出所色ドット用・全員が全現場分）
     db.calendarEvent.findMany({
-      where: { date: { gte: weekStart, lt: weekEnd } },
+      where: visibleEventWhere(user.id, { date: { gte: weekStart, lt: weekEnd } }),
       select: { id: true, date: true, source: true },
     }),
     // 明日の現場入り（自分の分）
