@@ -5,6 +5,7 @@ import { Check, ChevronDown, Loader2, Pencil, Send, StickyNote, Trash2, X } from
 import { addSiteMemo, deleteSiteMemo, updateSiteMemo } from "./memo-actions";
 import { Avatar } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { jstDateTimeLabel } from "@/lib/date";
@@ -22,6 +23,8 @@ export type SiteMemoRow = {
   createdAt: Date | string;
   updatedAt: Date | string;
   createdById: string | null;
+  /** 現調のときに書いたメモ（一覧で「現調」と示す） */
+  atSurvey?: boolean;
 };
 
 type MemoView = SiteMemoRow & { pending?: boolean };
@@ -43,6 +46,7 @@ export function SiteMemoPanel({
   totalCount,
   currentUser,
   canManageAll,
+  siteInSurvey = false,
 }: {
   siteId: string;
   /** 新しい順 */
@@ -54,6 +58,8 @@ export function SiteMemoPanel({
   currentUser: SiteMemoAuthor;
   /** 管理者＝他人のメモも編集・削除できる */
   canManageAll: boolean;
+  /** 現調中の現場か（いま残すメモに「現調」が付く。サーバー側の保存条件と揃える） */
+  siteInSurvey?: boolean;
 }) {
   const [, startTransition] = useTransition();
   const [draft, setDraft] = useState("");
@@ -99,6 +105,7 @@ export function SiteMemoPanel({
         createdAt: new Date(),
         updatedAt: new Date(),
         createdById: currentUser.id,
+        atSurvey: siteInSurvey,
         pending: true,
       });
       try {
@@ -246,6 +253,7 @@ export function SiteMemoPanel({
                       {m.pending ? "送信中…" : jstDateTimeLabel(m.createdAt)}
                       {edited && !m.pending && "（編集済み）"}
                     </span>
+                    {m.atSurvey && <Badge tone="survey">現調</Badge>}
                   </div>
 
                   {editing ? (

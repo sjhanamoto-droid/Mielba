@@ -96,42 +96,54 @@ export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
   "CLOSED",
 ];
 
-export type SiteStatus = "SURVEY" | "ACTIVE" | "PAST";
+// DECLINED(見送り) = 現調に行ったが受注しなかった現場。完工した「過去」と混ぜずに残す。
+export type SiteStatus = "SURVEY" | "ACTIVE" | "DECLINED" | "PAST";
 export const SITE_STATUS_LABEL: Record<SiteStatus, string> = {
   SURVEY: "現調",
   ACTIVE: "進行中",
+  DECLINED: "見送り",
   PAST: "過去",
 };
 export const SITE_STATUS_COLOR: Record<SiteStatus, string> = {
   SURVEY: "survey",
   ACTIVE: "active",
+  DECLINED: "warn",
   PAST: "past",
 };
 
-// 進捗ステータスの7工程（現調→配線→調査→ボード開口→器具付→段取り→完了）。カード/詳細で現在地のみ点灯表示する。
-// ※内部保存は projectStatus(6値) を各工程のマーカーに流用し、完了のみ siteStatus=PAST（過去）にする。
-export const SITE_STAGES = ["現調", "配線", "調査", "ボード開口", "器具付", "段取り", "完了"] as const;
+// 現場の作り方（作成画面の先頭で選ぶ）。
+// SURVEY = 現調（これから見に行く。基本だけ登録し、記録は現調フォーマットに残す）
+// ORDERED = 受注済（従来どおり全項目を登録する）
+export type SiteEntryMode = "SURVEY" | "ORDERED";
 
-// siteStatus(ACTIVE|PAST) と projectStatus から現在地(0-6)を導く純関数。
+// 進捗ステータスの6工程（配線→調査→ボード開口→器具付→段取り→完了）。カード/詳細で現在地のみ点灯表示する。
+// ※内部保存は projectStatus(6値) を各工程のマーカーに流用し、完了のみ siteStatus=PAST（過去）にする。
+// 現調は工程ではなく区分(siteStatus="SURVEY")で表すため、この並びには入れない。
+export const SITE_STAGES = ["配線", "調査", "ボード開口", "器具付", "段取り", "完了"] as const;
+
+// siteStatus と projectStatus から現在地(0-5)を導く純関数。
 // サーバー/クライアント双方から呼ぶため constants に置く。
 export function siteStageIndex(siteStatus: string, projectStatus: string): number {
-  if (siteStatus === "PAST") return 6; // 完了（過去）
+  if (siteStatus === "PAST") return 5; // 完了（過去）
   switch (projectStatus) {
-    case "ESTIMATING":
-      return 0; // 現調
-    case "ORDERED":
-      return 1; // 配線
     case "STARTED":
-      return 2; // 調査
+      return 1; // 調査
     case "IN_PROGRESS":
-      return 3; // ボード開口
+      return 2; // ボード開口
     case "COMPLETED":
-      return 4; // 器具付
+      return 3; // 器具付
     case "CLOSED":
-      return 5; // 段取り
+      return 4; // 段取り
+    // ORDERED（受注済）と、旧データの ESTIMATING はどちらも先頭の「配線」
     default:
-      return 0; // 区分不明は現調（先頭）
+      return 0;
   }
+}
+
+// 現調(SURVEY)と見送り(DECLINED)は工程がまだ始まっていない。
+// 工程バーを出さず、簡易フォーム（基本項目のみ）で扱う現場。
+export function isPreOrderSite(siteStatus: string): boolean {
+  return siteStatus === "SURVEY" || siteStatus === "DECLINED";
 }
 
 export type BillingStatus = "UNBILLED" | "BILLED" | "PARTIAL" | "PAID";

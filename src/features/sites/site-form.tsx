@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 import { Save, AlertCircle, AlertTriangle, ChevronDown, KeyRound, FileText, CalendarRange, Info } from "lucide-react";
 import { createSite, updateSite } from "./actions";
 import { SitePhotoField, type SitePhotoInit } from "./site-photo-field";
+import { PhotoUploader, type UploadPhoto } from "@/components/photo-uploader";
 import { DeleteSiteButton } from "./delete-site-button";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
@@ -16,6 +17,8 @@ import {
   BILLING_STATUS_LABEL,
   type ProjectType,
   type BillingStatus,
+  type SiteEntryMode,
+  isPreOrderSite,
 } from "@/lib/constants";
 
 type CustomerOption = { id: string; name: string };
@@ -100,12 +103,21 @@ export function SiteForm({
   customers,
   site,
   sitePhotos = [],
+  surveyPhotos = [],
 }: {
   customers: CustomerOption[];
   site?: SiteFormData;
   sitePhotos?: SiteFormPhoto[];
+  /** 現調の写真・動画（現調フォーマットと同じ置き場所。編集時は既存分を渡す） */
+  surveyPhotos?: UploadPhoto[];
 }) {
   const isEdit = !!site;
+  // 現調 = これから見に行く現場。基本だけ登録し、記録は現調フォーマットに残す。
+  // 受注済 = 従来どおり全項目を入力する。編集時は現場の区分から決まる（切替は現場詳細から）。
+  const [entryMode, setEntryMode] = useState<SiteEntryMode>(
+    site ? (isPreOrderSite(site.siteStatus) ? "SURVEY" : "ORDERED") : "ORDERED",
+  );
+  const surveyMode = entryMode === "SURVEY";
 
   const action = async (_prev: FormState, formData: FormData): Promise<FormState> => {
     if (site) {
@@ -174,6 +186,8 @@ export function SiteForm({
       bypassRef.current = false;
       return;
     }
+    // 現調は情報が揃っていないのが普通。必須チェックも仮登録の確認も出さない。
+    if (surveyMode) return;
     const fd = new FormData(e.currentTarget);
     setClientError(null);
     // ── ハード必須：理由が空なら保存させない（仮登録もさせない）──
@@ -211,14 +225,63 @@ export function SiteForm({
   return (
     <div className="space-y-4">
     <form ref={formRef} action={formAction} onSubmit={handleSubmit} className="space-y-4">
-      {/* 仮登録の注記（必須が未入力でも保存できるが仮登録扱いになる） */}
-      <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-xs leading-relaxed text-blue-800 dark:border-blue-800/60 dark:bg-blue-950/50 dark:text-blue-300">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>
-          未入力があると<b className="font-bold">仮登録</b>になります。本登録に必要な項目：
-          <b className="font-bold">住所・キーBOX・キーBOX写真・図面/工程表</b>
-        </span>
-      </div>
+      <input type="hidden" name="entryMode" value={entryMode} />
+      {/* 種別は「詳細設定」にあり現調では出さないため、既定値を送る（受注済にしてから直せる） */}
+      {surveyMode && (
+        <input type="hidden" name="projectType" value={site?.projectType ?? "REFORM"} />
+      )}
+
+      {/* どちらの現場を作るかを先に選ぶ（新規のみ。既存の区分は現場詳細から変える） */}
+      {!isEdit && (
+        <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-sunken p-1">
+          {([["SURVEY", "現調"], ["ORDERED", "受注済"]] as const).map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setEntryMode(m)}
+              aria-pressed={entryMode === m}
+              className={cn(
+                "flex h-10 items-center justify-center rounded-full text-sm font-bold transition-colors",
+                entryMode === m
+                  ? "bg-surface text-ink shadow-sm"
+                  : "text-ink-muted active:bg-surface-subtle",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {surveyMode ? (
+        /* 現調の注記（この段階では基本だけでよいことを伝える） */
+        <div className="flex items-start gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2.5 text-xs leading-relaxed text-violet-800 dark:border-violet-800/60 dark:bg-violet-950/50 dark:text-violet-300">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {site?.siteStatus === "DECLINED" ? (
+              <>
+                見送りにした現場です。基本の項目だけを直せます。話が戻ったら現場詳細から
+                <b className="font-bold">現調に戻す</b>と、受注済へ進められます。
+              </>
+            ) : (
+              <>
+                これから見に行く現場です。<b className="font-bold">元請企業・案件名・住所</b>だけで登録できます。
+                見てきた内容は現場詳細の<b className="font-bold">現調フォーマット</b>に残し、
+                受注が決まったら<b className="font-bold">受注済</b>に切り替えます。
+              </>
+            )}
+          </span>
+        </div>
+      ) : (
+        /* 仮登録の注記（必須が未入力でも保存できるが仮登録扱いになる） */
+        <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-xs leading-relaxed text-blue-800 dark:border-blue-800/60 dark:bg-blue-950/50 dark:text-blue-300">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            未入力があると<b className="font-bold">仮登録</b>になります。本登録に必要な項目：
+            <b className="font-bold">住所・キーBOX・キーBOX写真・図面/工程表</b>
+          </span>
+        </div>
+      )}
 
       {/* 基本 */}
       <div className="space-y-3">
@@ -258,6 +321,40 @@ export function SiteForm({
         </Card>
       </div>
 
+      {/* 現調のメモは現場メモ（連絡・メモの時系列）に1件として残す。
+          修正画面では出さない（追記は現場詳細の現場メモから行う）。 */}
+      {surveyMode && (
+        <div className="space-y-3">
+          {!isEdit && (
+            <>
+              <SectionTitle>メモ</SectionTitle>
+              <Card className="p-4">
+                <Field
+                  label="メモ"
+                  htmlFor="siteMemo"
+                  hint="任意・現場の「連絡・メモ」に残ります"
+                >
+                  <Textarea
+                    id="siteMemo"
+                    name="siteMemo"
+                    placeholder="例：現調は午前中のみ入れます。鍵は管理人室。"
+                  />
+                </Field>
+              </Card>
+            </>
+          )}
+
+          {/* 写真・動画。置き場所は現調フォーマットと同じなので、後から現調フォーマットでも増やせる。 */}
+          <SectionTitle>写真・動画</SectionTitle>
+          <Card className="p-4">
+            <PhotoUploader name="surveyPhotos" defaultKind="SURVEY" initial={surveyPhotos} />
+          </Card>
+        </div>
+      )}
+
+      {/* 現調では以下を出さない（見てきてから決まる項目のため） */}
+      {!surveyMode && (
+      <>
       {/* 現場入り情報 */}
       <div className="space-y-3">
         <SectionTitle>現場入り情報</SectionTitle>
@@ -543,6 +640,8 @@ export function SiteForm({
           )}
         </div>
       </details>
+      </>
+      )}
 
       {(clientError || state.error) && (
         <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600 dark:bg-red-950/40 dark:text-red-300">

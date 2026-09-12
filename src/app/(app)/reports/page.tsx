@@ -45,12 +45,13 @@ export default async function ReportsHubPage({
         where: { userId: user.id, workDate: { gte: today, lt: tomorrow } },
         select: { id: true, siteId: true, status: true },
       }),
-      // 「別の現場に行った」候補：進行中の全現場から（担当の区別は廃止）
+      // 「別の現場に行った」候補：進行中と現調の全現場から（担当の区別は廃止）
       db.site.findMany({
-        where: { siteStatus: "ACTIVE" },
+        where: { siteStatus: { in: ["ACTIVE", "SURVEY"] } },
         select: {
           id: true,
           name: true,
+          siteStatus: true,
         },
         orderBy: { updatedAt: "desc" },
       }),

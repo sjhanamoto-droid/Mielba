@@ -10,6 +10,7 @@ import { toggleVisit } from "./actions";
 import { quickCreateSite, convertEventToSite } from "@/features/sites/actions";
 import { adminSetMain } from "@/features/reports/main-vote-actions";
 import { Avatar } from "@/components/ui/avatar";
+import { SiteStatusBadge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { ROLE_LABEL, EVENT_CATEGORY_LABEL, type Role, type EventCategory } from "@/lib/constants";
@@ -33,6 +34,8 @@ type SiteRow = {
   id: string;
   name: string;
   customerName: string | null;
+  /** 現調の現場は見た目で分かるようにする（進行中と混ざらないように） */
+  siteStatus?: string;
   staff: Staff[];
   visitedIds: string[];
   /** メインの人（全員一致で確定した userId）。未確定は null */
@@ -305,6 +308,9 @@ export function DispatchBoard({
                   <Link href={`/sites/${s.id}`} className="block truncate text-[15px] font-bold text-ink">
                     {s.name}
                   </Link>
+                  {s.siteStatus === "SURVEY" && (
+                    <span className="mt-0.5 inline-block"><SiteStatusBadge status={s.siteStatus} /></span>
+                  )}
                   {s.customerName && (
                     <p className="truncate text-xs text-ink-muted">{s.customerName}</p>
                   )}

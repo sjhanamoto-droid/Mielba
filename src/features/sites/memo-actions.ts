@@ -23,11 +23,15 @@ export async function addSiteMemo(siteId: string, raw: string) {
   const { content, error } = normalize(raw);
   if (error || !content) return { error };
 
-  const site = await db.site.findUnique({ where: { id: siteId }, select: { id: true } });
+  const site = await db.site.findUnique({
+    where: { id: siteId },
+    select: { id: true, siteStatus: true },
+  });
   if (!site) return { error: "現場が見つかりません。" };
 
   await db.siteMemo.create({
-    data: { siteId, content, createdById: user.id },
+    // 現調中の現場に残したメモは「現調」と分かるようにしておく（後から見返すときの手がかり）
+    data: { siteId, content, createdById: user.id, atSurvey: site.siteStatus === "SURVEY" },
   });
 
   revalidatePath(`/sites/${siteId}`);

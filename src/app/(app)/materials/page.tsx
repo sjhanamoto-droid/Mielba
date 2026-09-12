@@ -9,7 +9,7 @@ export default async function MaterialsPage() {
   await requireSuperAdmin();
 
   const sites = await db.site.findMany({
-    orderBy: [{ siteStatus: "asc" }, { updatedAt: "desc" }],
+    orderBy: { updatedAt: "desc" },
     select: {
       id: true,
       name: true,
@@ -18,6 +18,13 @@ export default async function MaterialsPage() {
       _count: { select: { siteMaterials: true } },
     },
   });
+
+  // 区分の並びは文字コード順だと意味が通らない（ACTIVE→DECLINED→PAST→SURVEY）ため、
+  // 進行中・現調を上、見送り・過去を下にして、同じ区分の中は更新の新しい順にする。
+  const STATUS_RANK: Record<string, number> = { ACTIVE: 0, SURVEY: 1, DECLINED: 2, PAST: 3 };
+  sites.sort(
+    (a, b) => (STATUS_RANK[a.siteStatus] ?? 9) - (STATUS_RANK[b.siteStatus] ?? 9),
+  );
 
   const pickerSites: PickerSite[] = sites.map((s) => ({
     id: s.id,

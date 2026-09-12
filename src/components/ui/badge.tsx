@@ -59,6 +59,7 @@ export function SiteStatusBadge({
   const toneMap: Record<SiteStatus, Tone> = {
     SURVEY: "survey",
     ACTIVE: "active",
+    DECLINED: "warn",
     PAST: "past",
   };
   return (

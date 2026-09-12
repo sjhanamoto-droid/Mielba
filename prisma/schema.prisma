@@ -126,7 +126,7 @@ model Site {
   constructionCode String? // 工事コード
   projectType      String   @default("REFORM") // REFORM | RENOVATION | NEWBUILD | MAINTENANCE
   projectStatus    String   @default("ESTIMATING") // ESTIMATING|ORDERED|STARTED|IN_PROGRESS|COMPLETED|CLOSED
-  siteStatus       String   @default("SURVEY") // SURVEY(現調) | ACTIVE(進行中) | PAST(過去)
+  siteStatus       String   @default("SURVEY") // SURVEY(現調) | ACTIVE(進行中) | DECLINED(見送り) | PAST(過去)
 
   // 場所・契約
   locationName     String? // 作業場所の名称
@@ -229,6 +229,7 @@ model SiteMemo {
   id          String   @id @default(cuid())
   siteId      String
   content     String // 本文（改行そのまま表示）
+  atSurvey    Boolean  @default(false) // 現調のときに書いたメモ（一覧で「現調」と表示する）
   createdById String? // 投稿者（退職などで削除されても本文は残す）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

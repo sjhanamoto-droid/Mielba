@@ -18,6 +18,7 @@ const STATUS_FILTERS: { value: SiteStatus | "ALL"; label: string }[] = [
   { value: "ALL", label: "すべて" },
   { value: "SURVEY", label: SITE_STATUS_LABEL.SURVEY },
   { value: "ACTIVE", label: SITE_STATUS_LABEL.ACTIVE },
+  { value: "DECLINED", label: SITE_STATUS_LABEL.DECLINED },
   { value: "PAST", label: SITE_STATUS_LABEL.PAST },
 ];
 
@@ -45,7 +46,8 @@ export default async function SitesPage({
   const admin = isAdmin(user);
   const { status, customer, q, page } = await searchParams;
 
-  const statusValue = status && ["SURVEY", "ACTIVE", "PAST"].includes(status) ? status : undefined;
+  const statusValue =
+    status && ["SURVEY", "ACTIVE", "DECLINED", "PAST"].includes(status) ? status : undefined;
   // 「さらに表示」方式のページネーション（page * 20 件まで表示）
   const pageNum = Math.max(1, Math.min(500, Number.parseInt(page ?? "1", 10) || 1));
   const shown = pageNum * PAGE_SIZE;
@@ -62,7 +64,7 @@ export default async function SitesPage({
   }
   // 現場一覧は権限によらず全現場を表示する（誰が作成した現場も全員に見える）。
 
-  const [sitesRaw, customers] = await Promise.all([
+  const [sitesRaw, customers, surveyCount] = await Promise.all([
     db.site.findMany({
       where,
       include: {
@@ -75,6 +77,10 @@ export default async function SitesPage({
     admin
       ? db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } })
       : Promise.resolve([]),
+    // 現調の件数は「表示中の分」ではなく全件を出す（見出しの数が途中で変わらないように）
+    statusValue
+      ? Promise.resolve(0)
+      : db.site.count({ where: { ...where, siteStatus: "SURVEY" } }),
   ]);
   const hasMore = sitesRaw.length > shown;
   const sites = hasMore ? sitesRaw.slice(0, shown) : sitesRaw;
@@ -82,6 +88,11 @@ export default async function SitesPage({
   const activeCustomer = customer
     ? customers.find((c) => c.id === customer)
     : undefined;
+
+  // 絞り込み無しのときは、現調の現場を上にまとめて区切り線で分ける
+  // （現調はこれから受注が決まる現場で、進行中の現場とは見る目的が違うため）
+  const surveySites = statusValue ? [] : sites.filter((s) => s.siteStatus === "SURVEY");
+  const otherSites = statusValue ? sites : sites.filter((s) => s.siteStatus !== "SURVEY");
 
   return (
     <div>
@@ -138,8 +149,27 @@ export default async function SitesPage({
           />
         ) : (
           <>
+            {surveySites.length > 0 && (
+              <div className="mb-5">
+                <p className="mb-2 px-1 text-sm font-bold text-ink-soft">
+                  現調
+                  <span className="ml-1.5 text-xs font-semibold text-ink-muted">
+                    {surveyCount}件
+                  </span>
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
+                  {surveySites.map((s) => (
+                    <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
+                  ))}
+                </div>
+                <div className="mt-5 border-t border-line" />
+              </div>
+            )}
+            {surveySites.length > 0 && otherSites.length > 0 && (
+              <p className="mb-2 px-1 text-sm font-bold text-ink-soft">そのほかの現場</p>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
-              {sites.map((s) => (
+              {otherSites.map((s) => (
                 <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
               ))}
             </div>

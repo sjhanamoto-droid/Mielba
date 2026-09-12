@@ -3,12 +3,13 @@
 import { useState, useTransition } from "react";
 import { Plus, X, AlertCircle, MapPin, Info } from "lucide-react";
 import { addMyVisit } from "./actions";
+import { SiteStatusBadge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type SiteOpt = { id: string; name: string };
+type SiteOpt = { id: string; name: string; siteStatus?: string };
 
 // スタッフが「今日は別の現場にも行った」と自己申告して現場入りを追加する。
-// 候補は進行中（ACTIVE）の全現場（担当の区別は廃止・フラット表示）。
+// 候補は進行中(ACTIVE)と現調(SURVEY)の全現場（担当の区別は廃止・フラット表示）。
 export function AddMyVisit({
   sites,
   dateStr,
@@ -25,7 +26,7 @@ export function AddMyVisit({
     return (
       <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface-subtle px-4 py-3 text-sm text-ink-muted">
         <Info className="h-4 w-4 shrink-0" />
-        進行中の現場がありません。管理者に現場登録を依頼してください。
+        選べる現場がありません。管理者に現場登録を依頼してください。
       </div>
     );
   }
@@ -63,6 +64,9 @@ export function AddMyVisit({
     >
       <MapPin className="h-4 w-4 shrink-0 text-brand-600" />
       <span className="truncate">{s.name}</span>
+      {s.siteStatus === "SURVEY" && (
+        <span className="ml-auto shrink-0"><SiteStatusBadge status={s.siteStatus} /></span>
+      )}
     </button>
   );
 

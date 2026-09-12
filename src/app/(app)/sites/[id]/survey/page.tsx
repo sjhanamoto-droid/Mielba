@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -12,7 +12,8 @@ export default async function SiteSurveyPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAdmin();
+  // 現調フォーマットは現調に行った本人が書く（管理者に限定しない）
+  await requireUser();
   const { id } = await params;
 
   const site = await db.site.findUnique({

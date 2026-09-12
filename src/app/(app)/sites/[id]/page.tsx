@@ -21,6 +21,7 @@ import { SearchParamToast } from "@/components/ui/toast";
 import { getOpenHandovers, getResolvedHandovers } from "@/features/handovers/actions";
 import { HandoverPanel } from "@/features/handovers/handover-panel";
 import { SiteStageControl } from "@/features/sites/site-stage-control";
+import { SiteSurveyActions, SiteRevertToSurvey } from "@/features/sites/site-survey-actions";
 import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
 import { SiteMaterialSummary } from "@/features/materials/site-material-summary";
@@ -60,7 +61,19 @@ export default async function SiteDetailPage({
     include: {
       customer: { select: { id: true, name: true } },
       createdBy: { select: { name: true } },
-      survey: { select: { id: true, address: true, situationMemo: true, surveyedAt: true } },
+      survey: {
+        select: {
+          id: true,
+          address: true,
+          situationMemo: true,
+          surveyedAt: true,
+          // 現調で撮った写真・動画（base64 は載せず {id} 参照で渡す）
+          photos: {
+            select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
       partners: true,
       reports: {
         include: {
@@ -105,6 +118,7 @@ export default async function SiteDetailPage({
     parkingAgg,
     siteMaterials,
     materialUses,
+    workPhotos,
   ] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
     // 人工は提出済み(SUBMITTED)のみ数える（勤怠・人工超過チェックと同じ基準）
@@ -140,6 +154,13 @@ export default async function SiteDetailPage({
       where: { report: { siteId: site.id } },
       select: { name: true, quantity: true },
     }),
+    // 施工が始まってからの写真・動画（日報に付いたもの）。現調の分と分けて見せる。
+    db.photo.findMany({
+      where: { report: { siteId: site.id } },
+      select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+      orderBy: { createdAt: "desc" },
+      take: 60,
+    }),
   ]);
 
   const parkingTotal = parkingAgg._sum.parkingFee ?? 0;
@@ -153,6 +174,8 @@ export default async function SiteDetailPage({
   const schedulePdfs = sitePhotos.filter((p) => p.kind === "SCHEDULE" && isPdfLike(p));
   const hasDocuments =
     drawingImages.length + drawingPdfs.length + scheduleImages.length + schedulePdfs.length > 0;
+  // 現調のときに撮った写真・動画（現調記録に紐づく分）
+  const surveyPhotos: PhotoData[] = site.survey?.photos ?? [];
 
   const mapsUrl = site.address
     ? `https://maps.google.com/?q=${encodeURIComponent(site.address)}`
@@ -198,7 +221,14 @@ export default async function SiteDetailPage({
   const memoAuthors: Record<string, SiteMemoAuthor> = {};
   const memoRows: SiteMemoRow[] = site.memos.map((m) => {
     if (m.createdBy) memoAuthors[m.createdBy.id] = m.createdBy;
-    return { id: m.id, content: m.content, createdAt: m.createdAt, updatedAt: m.updatedAt, createdById: m.createdById };
+    return {
+      id: m.id,
+      content: m.content,
+      createdAt: m.createdAt,
+      updatedAt: m.updatedAt,
+      createdById: m.createdById,
+      atSurvey: m.atSurvey,
+    };
   });
   const memoCount = site._count.memos;
 
@@ -222,9 +252,19 @@ export default async function SiteDetailPage({
     </div>
   ) : null;
 
+  // 現調／見送りの現場は、次に何をするかをタブの先頭で示す
+  const stageless = site.siteStatus === "SURVEY" || site.siteStatus === "DECLINED";
+  const surveyBanner =
+    site.siteStatus === "SURVEY" ? (
+      <SiteSurveyActions siteId={site.id} admin={admin} />
+    ) : site.siteStatus === "DECLINED" && admin ? (
+      <SiteRevertToSurvey siteId={site.id} />
+    ) : null;
+
   // ───────────────── タブ①「連絡・メモ」: 現場を開いたら最初に目に入る ─────────────────
   const notesPanel = (
     <div className="space-y-5">
+      {surveyBanner}
       {provisionalBanner}
 
       {/* 引き継ぎ事項（未確認 → 現場の常設メモ → 確認済みの履歴） */}
@@ -293,6 +333,7 @@ export default async function SiteDetailPage({
             avatarImage: user.avatarImage,
           }}
           canManageAll={admin}
+          siteInSurvey={site.siteStatus === "SURVEY"}
         />
       </section>
     </div>
@@ -301,6 +342,7 @@ export default async function SiteDetailPage({
   // ───────────────── タブ②「現場情報」 ─────────────────
   const infoPanel = (
     <div className="space-y-5">
+      {surveyBanner}
       {provisionalBanner}
 
       {/* ステータス */}
@@ -333,18 +375,20 @@ export default async function SiteDetailPage({
                   value={`予定 ${fmtDate(site.plannedEndDate)} ／ 実績 ${fmtDate(site.actualEndDate)}`}
                 />
               </DataList>
-              <div>
-                <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
-                {admin ? (
-                  <SiteStageControl
-                    siteId={site.id}
-                    siteStatus={site.siteStatus}
-                    projectStatus={site.projectStatus}
-                  />
-                ) : (
-                  <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
-                )}
-              </div>
+              {!stageless && (
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
+                  {admin ? (
+                    <SiteStageControl
+                      siteId={site.id}
+                      siteStatus={site.siteStatus}
+                      projectStatus={site.projectStatus}
+                    />
+                  ) : (
+                    <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
+                  )}
+                </div>
+              )}
             </Card>
 
             {/* 工事完了のAI分析（管理者のみ・完了＝過去の現場に表示） */}
@@ -593,6 +637,44 @@ export default async function SiteDetailPage({
             </section>
           )}
 
+          {/* 写真・動画（現調のときの分と、施工が始まってからの分をタブで分ける） */}
+          {(surveyPhotos.length > 0 || workPhotos.length > 0) && (
+            <section className="space-y-2.5">
+              <SectionTitle>写真・動画</SectionTitle>
+              <Tabs
+                defaultId={workPhotos.length > 0 ? "work" : "survey"}
+                tabs={[
+                  {
+                    id: "survey",
+                    label: "現調",
+                    count: surveyPhotos.length,
+                    content:
+                      surveyPhotos.length > 0 ? (
+                        <PhotoGrid photos={surveyPhotos} />
+                      ) : (
+                        <p className="px-1 py-2 text-sm text-ink-muted">
+                          現調の写真はまだありません。現調フォーマットから追加できます。
+                        </p>
+                      ),
+                  },
+                  {
+                    id: "work",
+                    label: "施工",
+                    count: workPhotos.length,
+                    content:
+                      workPhotos.length > 0 ? (
+                        <PhotoGrid photos={workPhotos} />
+                      ) : (
+                        <p className="px-1 py-2 text-sm text-ink-muted">
+                          施工の写真はまだありません。日報に付けた写真がここに並びます。
+                        </p>
+                      ),
+                  },
+                ]}
+              />
+            </section>
+          )}
+
           {/* 登録材料（種類・数量は全員／金額は最高管理者のみ） */}
           <section className="space-y-2.5">
             <SectionTitle>
@@ -685,11 +767,9 @@ export default async function SiteDetailPage({
           <section className="space-y-2.5">
             <SectionTitle
               action={
-                admin ? (
-                  <Link href={`/sites/${site.id}/survey`} className="text-xs font-semibold text-brand-600">
-                    {site.survey ? "編集" : "登録"}
-                  </Link>
-                ) : undefined
+                <Link href={`/sites/${site.id}/survey`} className="text-xs font-semibold text-brand-600">
+                  {site.survey ? "編集" : "登録"}
+                </Link>
               }
             >
               現調
@@ -710,15 +790,13 @@ export default async function SiteDetailPage({
                     {site.survey.situationMemo}
                   </p>
                 )}
-                {admin && (
-                  <Link
-                    href={`/sites/${site.id}/survey`}
-                    className="flex items-center gap-1 text-xs font-semibold text-brand-600"
-                  >
-                    現調フォーマットを開く
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                )}
+                <Link
+                  href={`/sites/${site.id}/survey`}
+                  className="flex items-center gap-1 text-xs font-semibold text-brand-600"
+                >
+                  現調フォーマットを開く
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
               </Card>
             ) : (
               <div className="flex items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface/50 px-4 py-4 text-sm text-ink-muted">

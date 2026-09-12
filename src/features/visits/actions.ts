@@ -174,15 +174,15 @@ export async function addMyVisit(
     const date = parseDateKey(dateStr);
     if (!date) return { error: "日付が不正です" };
 
-    // 「別の現場に行った」は配属に限定せず、進行中（ACTIVE）の現場なら登録できる
-    // （add-my-visit.tsx が全 ACTIVE 現場を候補に出す仕様に合わせる）
+    // 「別の現場に行った」は配属に限定せず、進行中(ACTIVE)と現調(SURVEY)の現場なら登録できる
+    // （add-my-visit.tsx が候補に出す現場の範囲に合わせる）
     if (!isAdmin(me)) {
       const site = await db.site.findUnique({
         where: { id: siteId },
         select: { siteStatus: true },
       });
-      if (!site || site.siteStatus !== "ACTIVE") {
-        return { error: "進行中の現場のみ登録できます" };
+      if (!site || (site.siteStatus !== "ACTIVE" && site.siteStatus !== "SURVEY")) {
+        return { error: "進行中または現調の現場のみ登録できます" };
       }
     }
 

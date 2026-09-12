@@ -34,7 +34,8 @@ export default async function DispatchPage({
 
   const [sites, reports, allUsers, siteless] = await Promise.all([
     db.site.findMany({
-      where: { siteStatus: "ACTIVE" },
+      // 現調も配員の対象（現調に行くのも1日の仕事なので、誰が行くかを共有する）
+      where: { siteStatus: { in: ["ACTIVE", "SURVEY"] } },
       include: {
         customer: { select: { name: true } },
         visits: {
@@ -103,6 +104,7 @@ export default async function DispatchPage({
       id: s.id,
       name: s.name,
       customerName: s.customer?.name ?? null,
+      siteStatus: s.siteStatus,
       staff: visitors,
       visitedIds: visitors.map((u) => u.id),
       mainUserId,

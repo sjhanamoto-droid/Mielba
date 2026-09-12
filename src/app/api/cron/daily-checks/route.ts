@@ -45,7 +45,8 @@ async function handle(req: NextRequest) {
 
   // ── (A) 仮登録リマインド ──
   const provisionalSites = await db.site.findMany({
-    where: { provisional: true },
+    // 見送り・過去の現場は本登録を求める相手ではないので催促しない
+    where: { provisional: true, siteStatus: { notIn: ["DECLINED", "PAST"] } },
     select: { id: true, name: true, createdById: true, createdAt: true },
   });
   for (const site of provisionalSites) {

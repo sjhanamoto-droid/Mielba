@@ -7,11 +7,11 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin, requireUser } from "@/lib/session";
 import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
-import { isNonWorkEventCategory } from "@/lib/constants";
+import { isNonWorkEventCategory, isPreOrderSite } from "@/lib/constants";
 
 // ── 区分の許容値（@/lib/constants の型に対応） ──
 const PROJECT_TYPES = ["REFORM", "RENOVATION", "NEWBUILD", "MAINTENANCE"] as const;
-const SITE_STATUSES = ["SURVEY", "ACTIVE", "PAST"] as const;
+const SITE_STATUSES = ["SURVEY", "ACTIVE", "DECLINED", "PAST"] as const;
 const BILLING_STATUSES = ["UNBILLED", "BILLED", "PARTIAL", "PAID"] as const;
 
 // 空文字 → undefined（任意文字列）
@@ -164,14 +164,21 @@ function parseSitePhotoFields(formData: FormData): SitePhotoSet[] | { error: str
 // 本登録に必要な必須項目が揃っていなければ仮登録(provisional=true)。
 // 必須: 住所 / キーBOX（HAS→番号, NONE→理由） / キーBOX写真(1枚以上) / 図面 or 工程表(1枚以上)。
 // 写真枚数は kept(既存維持) + added(新規) で数える。
-function computeProvisional(
-  d: z.infer<typeof siteSchema>,
-  photoSets: SitePhotoSet[],
+type RegistrationFields = {
+  address?: string | null;
+  keyboxStatus?: string | null;
+  keyboxNumber?: string | null;
+  keyboxNoneReason?: string | null;
+  keyboxPhotoNoneReason?: string | null;
+  drawingNoneReason?: string | null;
+  scheduleNoneReason?: string | null;
+};
+
+// 本登録の判定はここ1本だけ。フォームから来た値でも、保存済みの値でも同じ条件で判定する。
+function isRegistrationIncomplete(
+  d: RegistrationFields,
+  count: (kind: string) => number,
 ): boolean {
-  const countKind = (kind: string) => {
-    const set = photoSets.find((s) => s.kind === kind);
-    return set ? set.kept.length + set.added.length : 0;
-  };
   const hasAddress = !!d.address;
   const keyboxOk =
     d.keyboxStatus === "HAS"
@@ -180,13 +187,21 @@ function computeProvisional(
         ? !!d.keyboxNoneReason
         : false;
   // 写真は1枚以上、または「撮れない理由」があれば本登録OK
-  const hasKeyboxPhoto = countKind("KEYBOX") > 0 || !!d.keyboxPhotoNoneReason;
+  const hasKeyboxPhoto = count("KEYBOX") > 0 || !!d.keyboxPhotoNoneReason;
   // 図面・工程表は各々「写真1枚以上、または無い理由」で満たす。両方が必要。
-  const hasDrawing = countKind("DRAWING") > 0 || !!d.drawingNoneReason;
-  const hasSchedule = countKind("SCHEDULE") > 0 || !!d.scheduleNoneReason;
-  const hasDocument = hasDrawing && hasSchedule;
-  const complete = hasAddress && keyboxOk && hasKeyboxPhoto && hasDocument;
-  return !complete;
+  const hasDrawing = count("DRAWING") > 0 || !!d.drawingNoneReason;
+  const hasSchedule = count("SCHEDULE") > 0 || !!d.scheduleNoneReason;
+  return !(hasAddress && keyboxOk && hasKeyboxPhoto && hasDrawing && hasSchedule);
+}
+
+function computeProvisional(
+  d: z.infer<typeof siteSchema>,
+  photoSets: SitePhotoSet[],
+): boolean {
+  return isRegistrationIncomplete(d, (kind) => {
+    const set = photoSets.find((s) => s.kind === kind);
+    return set ? set.kept.length + set.added.length : 0;
+  });
 }
 
 // キーBOX「無し」/写真「なし」/図面「なし」を選んだのに理由が空なら保存させない（ハード必須）。
@@ -240,6 +255,38 @@ async function applySitePhotoSets(
   }
 }
 
+// 現調フォームの写真・動画を現調記録(Survey)に保存する。
+// 置き場所を現調フォーマットと同じにして、後からそちらで増やしたり消したりできるようにする。
+async function applySurveyPhotos(
+  tx: Prisma.TransactionClient,
+  siteId: string,
+  photos: { kept: string[]; added: NewPhotoInput[] },
+): Promise<void> {
+  const survey = await tx.survey.upsert({
+    where: { siteId },
+    create: { siteId, surveyedAt: new Date() },
+    update: {},
+  });
+  await tx.photo.deleteMany({ where: { surveyId: survey.id, id: { notIn: photos.kept } } });
+  if (photos.added.length === 0) return;
+  await tx.photo.createMany({
+    data: photos.added.map((p) => ({
+      surveyId: survey.id,
+      dataUrl: p.dataUrl ?? null,
+      thumbUrl: p.thumbUrl ?? null,
+      blobPath: p.blobPath ?? null,
+      mimeType: p.mimeType ?? null,
+      sizeBytes: p.sizeBytes ?? null,
+      duration: p.duration ?? null,
+      caption: p.caption.trim() === "" ? null : p.caption,
+      kind: p.kind && p.kind !== "WORK" ? p.kind : "SURVEY",
+      isVideo: p.isVideo,
+      width: p.width ?? null,
+      height: p.height ?? null,
+    })),
+  });
+}
+
 export async function createSite(formData: FormData) {
   // 現場作成は全ユーザー可（作成者を createdById に記録）
   const user = await requireUser();
@@ -253,23 +300,49 @@ export async function createSite(formData: FormData) {
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
   }
-  const provisional = computeProvisional(parsed.data, photoSets);
+  // 現調は「これから見に行く」段階。基本だけで登録でき、仮登録の催促もしない。
+  // 受注済は従来どおり、必須が欠けていれば仮登録として保存する。
+  const survey = formData.get("entryMode") === "SURVEY";
+  const provisional = survey ? false : computeProvisional(parsed.data, photoSets);
+
+  // 現調は写真・動画を現調記録(Survey)側に置く
+  const rawSurveyPhotos = formData.get("surveyPhotos");
+  const surveyPhotos = survey
+    ? parseAndValidatePhotosField(typeof rawSurveyPhotos === "string" ? rawSurveyPhotos : "")
+    : { kept: [], added: [] };
+  if ("error" in surveyPhotos) return { error: surveyPhotos.error };
+
+  // 現調のメモ（現場メモとして残す。2000文字はメモ側の上限に合わせる）
+  const rawMemo = formData.get("siteMemo");
+  const surveyMemo =
+    survey && typeof rawMemo === "string"
+      ? rawMemo.replace(/\r\n/g, "\n").trim().slice(0, 2000)
+      : "";
 
   let siteId: string;
   let customerId: string;
   try {
     const site = await db.$transaction(async (tx) => {
       const created = await tx.site.create({
-        // 新規は進捗「配線」＝進行中(ACTIVE)＋projectStatus=ESTIMATING で開始する
+        // 現調は区分「現調」。受注済は進行中で、工程は「配線」から始める。
         data: {
           ...toData(parsed.data),
           createdById: user.id,
           provisional,
-          siteStatus: "ACTIVE",
-          projectStatus: "ESTIMATING",
+          siteStatus: survey ? "SURVEY" : "ACTIVE",
+          projectStatus: survey ? "ESTIMATING" : "ORDERED",
         },
       });
       await applySitePhotoSets(tx, created.id, photoSets);
+      if (survey && surveyPhotos.added.length > 0) {
+        await applySurveyPhotos(tx, created.id, surveyPhotos);
+      }
+      // 現調で書いたメモは、現場詳細「連絡・メモ」の現場メモに1件として残す
+      if (surveyMemo) {
+        await tx.siteMemo.create({
+          data: { siteId: created.id, content: surveyMemo, createdById: user.id, atSurvey: true },
+        });
+      }
       return created;
     });
     siteId = site.id;
@@ -311,7 +384,7 @@ export async function quickCreateSite(
         name: n,
         customerId: customer.id,
         siteStatus: "ACTIVE", // すぐ配員/予定に使えるよう進行中で作成
-        projectStatus: "ESTIMATING",
+        projectStatus: "ORDERED", // 工程は「配線」から（現調は区分側で表す）
         provisional: true, // 仮登録（詳細は後から追記）
         createdById: user.id,
       },
@@ -368,7 +441,7 @@ export async function convertEventToSite(
         name,
         customerId: customer.id,
         siteStatus: "ACTIVE",
-        projectStatus: "ESTIMATING",
+        projectStatus: "ORDERED", // 工程は「配線」から（現調は区分側で表す）
         provisional: true,
         createdById: user.id,
       },
@@ -414,7 +487,7 @@ export async function updateSite(siteId: string, formData: FormData) {
   await requireUser();
   const existing = await db.site.findUnique({
     where: { id: siteId },
-    select: { createdById: true },
+    select: { createdById: true, siteStatus: true },
   });
   if (!existing) return { error: "現場が見つかりません" };
   const parsed = parseSiteForm(formData);
@@ -427,7 +500,33 @@ export async function updateSite(siteId: string, formData: FormData) {
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
   }
-  const provisional = computeProvisional(parsed.data, photoSets);
+  // 現調・見送りは情報が揃っていないのが普通なので、仮登録の催促はしない
+  //（受注済にする時に判定する。見送りに催促を出すと cron が毎日通知してしまう）
+  const surveyEdit = isPreOrderSite(existing.siteStatus);
+  const provisional = surveyEdit ? false : computeProvisional(parsed.data, photoSets);
+
+  // 現調・見送りの修正画面はキーBOX・資料・管理の欄を出さない。出していない欄はフォームから
+  // 送られてこないため、toData をそのまま当てると既存値を null で消してしまう。
+  // このときは画面に出している項目だけを更新し、他は今の値のままにする。
+  const d = parsed.data;
+  const data = surveyEdit
+    ? {
+        customerId: d.customerId,
+        name: d.name,
+        projectType: d.projectType,
+        address: d.address ?? null,
+        siteContactName: d.siteContactName ?? null,
+        siteContactPhone: d.siteContactPhone ?? null,
+      }
+    : toData(d);
+
+  // 現調・見送りの画面に出している写真・動画（現調記録側の置き場所）
+  const rawSurveyPhotos = formData.get("surveyPhotos");
+  const surveyPhotos =
+    surveyEdit && typeof rawSurveyPhotos === "string"
+      ? parseAndValidatePhotosField(rawSurveyPhotos)
+      : null;
+  if (surveyPhotos && "error" in surveyPhotos) return { error: surveyPhotos.error };
 
   let customerId: string;
   try {
@@ -435,9 +534,11 @@ export async function updateSite(siteId: string, formData: FormData) {
       const updated = await tx.site.update({
         where: { id: siteId },
         // createdById は変更しない（作成者は保持）
-        data: { ...toData(parsed.data), provisional },
+        data: { ...data, provisional },
       });
-      await applySitePhotoSets(tx, siteId, photoSets);
+      // 写真の欄（キーBOX/図面/工程表）は簡易フォームでは出していないので触らない
+      if (!surveyEdit) await applySitePhotoSets(tx, siteId, photoSets);
+      if (surveyPhotos) await applySurveyPhotos(tx, siteId, surveyPhotos);
       return updated;
     });
     customerId = site.customerId;
@@ -447,6 +548,7 @@ export async function updateSite(siteId: string, formData: FormData) {
 
   revalidatePath("/sites");
   revalidatePath(`/sites/${siteId}`);
+  revalidatePath(`/sites/${siteId}/survey`);
   revalidatePath("/");
   revalidatePath(`/customers/${customerId}`);
   redirect(`/sites/${siteId}?toast=${encodeURIComponent("保存しました")}`);
@@ -481,13 +583,12 @@ export async function deleteSite(siteId: string) {
 // projectStatus(6値) を各工程のマーカーに流用し、完了のみ siteStatus=PAST（過去）にする。
 // 管理者が現場詳細でタップして手動変更する。
 const STAGE_TO_STATUS: { siteStatus: string; projectStatus: string }[] = [
-  { siteStatus: "ACTIVE", projectStatus: "ESTIMATING" }, // 0 現調
-  { siteStatus: "ACTIVE", projectStatus: "ORDERED" }, // 1 配線
-  { siteStatus: "ACTIVE", projectStatus: "STARTED" }, // 2 調査
-  { siteStatus: "ACTIVE", projectStatus: "IN_PROGRESS" }, // 3 ボード開口
-  { siteStatus: "ACTIVE", projectStatus: "COMPLETED" }, // 4 器具付
-  { siteStatus: "ACTIVE", projectStatus: "CLOSED" }, // 5 段取り
-  { siteStatus: "PAST", projectStatus: "CLOSED" }, // 6 完了
+  { siteStatus: "ACTIVE", projectStatus: "ORDERED" }, // 0 配線
+  { siteStatus: "ACTIVE", projectStatus: "STARTED" }, // 1 調査
+  { siteStatus: "ACTIVE", projectStatus: "IN_PROGRESS" }, // 2 ボード開口
+  { siteStatus: "ACTIVE", projectStatus: "COMPLETED" }, // 3 器具付
+  { siteStatus: "ACTIVE", projectStatus: "CLOSED" }, // 4 段取り
+  { siteStatus: "PAST", projectStatus: "CLOSED" }, // 5 完了
 ];
 
 export async function setSiteStage(
@@ -508,29 +609,106 @@ export async function setSiteStage(
   revalidatePath("/calendar");
 }
 
-export async function changeSiteStatus(siteId: string, status: string) {
+// ── 現調の現場を「受注済」にする / 「見送り」にする ──
+// 受注するかは現調から戻ったあとに決まる。判断は管理者が行う。
+
+// 保存済みの値から本登録の判定をやり直す（フォーム経由の computeProvisional と同じ条件）。
+// 現調から受注済へ移したときに、足りない項目があれば仮登録バッジで催促するために使う。
+async function recomputeProvisional(siteId: string): Promise<boolean> {
+  const site = await db.site.findUnique({
+    where: { id: siteId },
+    select: {
+      address: true,
+      keyboxStatus: true,
+      keyboxNumber: true,
+      keyboxNoneReason: true,
+      keyboxPhotoNoneReason: true,
+      drawingNoneReason: true,
+      scheduleNoneReason: true,
+      photos: { select: { kind: true } },
+    },
+  });
+  if (!site) return true;
+  return isRegistrationIncomplete(site, (kind) =>
+    site.photos.filter((p) => p.kind === kind).length,
+  );
+}
+
+export async function startOrderedSite(
+  siteId: string,
+): Promise<{ ok?: true; error?: string }> {
   await requireAdmin();
-  if (!SITE_STATUSES.includes(status as (typeof SITE_STATUSES)[number])) return;
-  const current = await db.site.findUnique({
+  const site = await db.site.findUnique({
+    where: { id: siteId },
+    select: { siteStatus: true, survey: { select: { address: true, keybox: true } } },
+  });
+  if (!site) return { error: "現場が見つかりません" };
+  // 受注済にできるのは現調・見送りの現場だけ（進行中や過去の現場を巻き戻さない）
+  if (!isPreOrderSite(site.siteStatus)) {
+    return { error: "現調・見送りの現場のみ受注済にできます" };
+  }
+
+  // 現調で書いた住所・キーBOXを現場本体へ引き継ぐ（本体が未入力のときだけ）
+  if (site.survey) {
+    await backfillSiteFromSurvey(
+      siteId,
+      site.survey.address ?? null,
+      site.survey.keybox ?? null,
+    );
+  }
+  await db.site.update({
+    where: { id: siteId },
+    // 工程は「配線」から。足りない項目があれば仮登録として残りの入力を促す。
+    data: {
+      siteStatus: "ACTIVE",
+      projectStatus: "ORDERED",
+      provisional: await recomputeProvisional(siteId),
+    },
+  });
+  revalidateSiteViews(siteId);
+  return { ok: true };
+}
+
+export async function declineSite(
+  siteId: string,
+): Promise<{ ok?: true; error?: string }> {
+  await requireAdmin();
+  const site = await db.site.findUnique({
     where: { id: siteId },
     select: { siteStatus: true },
   });
-  await db.site.update({ where: { id: siteId }, data: { siteStatus: status } });
+  if (!site) return { error: "現場が見つかりません" };
+  if (site.siteStatus !== "SURVEY") return { error: "現調の現場のみ見送りにできます" };
+  await db.site.update({ where: { id: siteId }, data: { siteStatus: "DECLINED" } });
+  revalidateSiteViews(siteId);
+  return { ok: true };
+}
 
-  // 現調→進行中の再入力不要（§4.2.8 フローB）: 引き継ぎ時に住所/キーBOX を Survey から補完
-  if (current?.siteStatus === "SURVEY" && status === "ACTIVE") {
-    const survey = await db.survey.findUnique({
-      where: { siteId },
-      select: { address: true, keybox: true },
-    });
-    if (survey) {
-      await backfillSiteFromSurvey(siteId, survey.address ?? null, survey.keybox ?? null);
-    }
-  }
+export async function revertSiteToSurvey(
+  siteId: string,
+): Promise<{ ok?: true; error?: string }> {
+  await requireAdmin();
+  const site = await db.site.findUnique({
+    where: { id: siteId },
+    select: { siteStatus: true },
+  });
+  if (!site) return { error: "現場が見つかりません" };
+  // 進行中の現場を現調に落とすと入力済みの情報が扱えなくなるため、見送りからのみ戻す
+  if (site.siteStatus !== "DECLINED") return { error: "見送りの現場のみ現調に戻せます" };
+  await db.site.update({ where: { id: siteId }, data: { siteStatus: "SURVEY" } });
+  revalidateSiteViews(siteId);
+  return { ok: true };
+}
+
+function revalidateSiteViews(siteId: string) {
+  revalidatePath(`/sites/${siteId}`);
+  revalidatePath(`/sites/${siteId}/edit`); // 受注済にした直後に開く画面
 
   revalidatePath("/sites");
-  revalidatePath(`/sites/${siteId}`);
   revalidatePath("/");
+  revalidatePath("/dispatch");
+  revalidatePath("/reports");
+  revalidatePath("/calendar");
 }
 
 // ── 現調（Survey）の upsert ──
@@ -548,7 +726,8 @@ function clean(v: string | null | undefined): string | null {
 }
 
 export async function saveSurvey(siteId: string, formData: FormData) {
-  await requireAdmin();
+  // 現調に行った本人が現場で書けるよう、全ログインユーザーに開放する
+  await requireUser();
   const parsed = surveySchema.safeParse({
     address: formData.get("address"),
     keybox: formData.get("keybox"),

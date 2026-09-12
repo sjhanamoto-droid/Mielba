@@ -2,7 +2,7 @@
 
 import { MapPin, ChevronRight, AlertTriangle } from "lucide-react";
 import { CardLink } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Badge, SiteStatusBadge } from "@/components/ui/badge";
 import { PROJECT_TYPE_LABEL, SITE_STAGES, siteStageIndex, type ProjectType } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -80,13 +80,21 @@ export function SiteCard({
   site: SiteCardData;
   meta?: React.ReactNode;
 }) {
+  const stageless = site.siteStatus === "SURVEY" || site.siteStatus === "DECLINED";
   return (
     <CardLink href={`/sites/${site.id}`} className="p-4">
-      {/* 進捗ステータス（現調→見積り→受注→施工中→完了。現在地のみ点灯） */}
-      <SiteStageStepper
-        index={siteStageIndex(site.siteStatus, site.projectStatus)}
-        className="mb-2.5"
-      />
+      {/* 進捗ステータス（配線→…→完了。現在地のみ点灯）。
+          現調・見送りの現場はまだ工程が始まっていないので、区分バッジだけを出す。 */}
+      {stageless ? (
+        <div className="mb-2.5">
+          <SiteStatusBadge status={site.siteStatus} />
+        </div>
+      ) : (
+        <SiteStageStepper
+          index={siteStageIndex(site.siteStatus, site.projectStatus)}
+          className="mb-2.5"
+        />
+      )}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
