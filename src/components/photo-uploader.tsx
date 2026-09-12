@@ -8,6 +8,8 @@ import {
   formatMb,
   looksLikeVideo,
   videoMimeFromName,
+  IMAGE_MAX_BYTES,
+  MEDIA_MAX_COUNT,
   VIDEO_ALLOWED_MIMES,
   VIDEO_COMPAT_RISK_MIMES,
   VIDEO_MAX_BYTES,
@@ -19,8 +21,9 @@ import {
 /**
  * アップローダーが扱うファイル。
  * - 既存（DB保存済み）: id のみ保持（本体を再送しない。プレビューは photoSrc(id, true)）
- * - 新規の画像・PDF: dataUrl（+ thumbUrl）を保持し、フォーム送信で本文に乗せる
- * - 新規の動画: 先に Vercel Blob へ直接アップロードし、blobPath だけを保持する
+ * - 新規の写真・動画: 先に Vercel Blob へ直接アップロードし、blobPath と
+ *   一覧用サムネイル（thumbUrl）だけを保持する
+ * - dataUrl は旧経路（現場フォームの図面・工程表など、少数のファイル）だけが使う
  */
 export type UploaderPhoto = {
   id?: string;
@@ -40,12 +43,13 @@ export type UploaderPhoto = {
 /** 後方互換エイリアス（既存の呼び出し側は UploadPhoto を import している） */
 export type UploadPhoto = UploaderPhoto;
 
-const MAX_DIM = 1280;
-const JPEG_QUALITY = 0.7;
-const THUMB_DIM = 320;
-const THUMB_QUALITY = 0.6;
+const MAX_DIM = 1600;
+const JPEG_QUALITY = 0.72;
+// サムネイルだけがフォーム本文に乗る。50枚でも収まるよう小さめにする（1枚およそ15KB）。
+const THUMB_DIM = 288;
+const THUMB_QUALITY = 0.55;
 // Vercel の関数はリクエスト本文が 4.5MB までなので、base64 で送る分はここで頭打ちにする。
-// デコード後3MB = 送信時のbase64でおよそ4MB。動画はこの経路を通らない（Blob へ直接）。
+// 写真・動画の本体は Blob へ直接上げるので、ここに乗るのはサムネイルだけ。
 const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
 
 /** dataUrl のデコード後バイト数の概算（base64 は 4文字=3バイト） */
@@ -93,27 +97,56 @@ function drawJpeg(
   return canvas.toDataURL("image/jpeg", quality);
 }
 
-/** 画像を本体（最大1280px）+ サムネイル（最大320px）に圧縮する */
-function compressImage(file: File): Promise<UploaderPhoto> {
+type CompressedImage = {
+  /** Blob へ上げる本体（軽量化済みJPEG） */
+  body: Blob;
+  /** 一覧用サムネイル（base64。フォーム本文に乗る） */
+  thumbUrl: string;
+  width: number;
+  height: number;
+};
+
+/** canvas を JPEG の Blob にする（本体は base64 にせず、そのまま Blob へ上げる） */
+function toJpegBlob(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  quality: number,
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      reject(new Error("canvas error"));
+      return;
+    }
+    ctx.drawImage(source, 0, 0, width, height);
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("canvas error"))),
+      "image/jpeg",
+      quality,
+    );
+  });
+}
+
+/** 画像を本体（最大1600px・Blob行き）+ サムネイル（最大288px・base64）に圧縮する */
+function compressImage(file: File): Promise<CompressedImage> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
+        const main = scaleDims(img.width, img.height, MAX_DIM);
+        const th = scaleDims(img.width, img.height, THUMB_DIM);
         try {
-          const main = scaleDims(img.width, img.height, MAX_DIM);
-          const dataUrl = drawJpeg(img, main.width, main.height, JPEG_QUALITY);
-          const th = scaleDims(img.width, img.height, THUMB_DIM);
           const thumbUrl = drawJpeg(img, th.width, th.height, THUMB_QUALITY);
-          resolve({
-            dataUrl,
-            thumbUrl,
-            caption: "",
-            kind: "WORK",
-            isVideo: false,
-            width: main.width,
-            height: main.height,
-          });
+          toJpegBlob(img, main.width, main.height, JPEG_QUALITY)
+            .then((body) =>
+              resolve({ body, thumbUrl, width: main.width, height: main.height }),
+            )
+            .catch(reject);
         } catch (e) {
           reject(e);
         }
@@ -203,7 +236,7 @@ function readVideoMeta(file: File): Promise<VideoMeta> {
 /** 進捗つきで Blob へ直接 PUT する（fetch では進捗が取れないので XHR を使う） */
 function putWithProgress(
   url: string,
-  file: File,
+  file: Blob,
   contentType: string,
   onProgress: (ratio: number) => void,
 ): Promise<void> {
@@ -238,7 +271,7 @@ function serialize(photos: UploaderPhoto[]): string {
           thumbUrl: p.thumbUrl,
           caption: p.caption,
           kind: p.kind,
-          isVideo: true,
+          isVideo: p.isVideo,
           width: p.width,
           height: p.height,
         };
@@ -285,6 +318,63 @@ export function PhotoUploader({
   }, []);
 
   /** 動画1本を検証してBlobへ上げる。成功したら追加用の1件を返す */
+  /** Blob のアップロード先を取り、本体を直接 PUT する（写真・動画で共通） */
+  async function uploadToBlob(
+    body: Blob,
+    contentType: string,
+    label: string,
+    onProgress: (ratio: number) => void,
+  ): Promise<{ blobPath: string } | { error: string }> {
+    const res = await fetch("/api/media/upload-url", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contentType, sizeBytes: body.size }),
+    });
+    if (!res.ok) {
+      const info = (await res.json().catch(() => null)) as { error?: string } | null;
+      return { error: info?.error ?? `${label} のアップロードを開始できませんでした` };
+    }
+    const { uploadUrl, blobPath } = (await res.json()) as {
+      uploadUrl: string;
+      blobPath: string;
+    };
+    try {
+      await putWithProgress(uploadUrl, body, contentType, onProgress);
+    } catch {
+      return { error: `${label} のアップロードに失敗しました。電波の良い場所で再度お試しください` };
+    }
+    return { blobPath };
+  }
+
+  /** 写真1枚：軽量化して Blob へ上げ、サムネイルだけフォームに載せる */
+  async function processImage(
+    file: File,
+    onProgress: (ratio: number) => void,
+  ): Promise<UploaderPhoto | { error: string }> {
+    let image: CompressedImage;
+    try {
+      image = await compressImage(file);
+    } catch {
+      return { error: `${file.name} を読み込めませんでした。別の写真でお試しください` };
+    }
+    if (image.body.size > IMAGE_MAX_BYTES) {
+      return { error: `${file.name} は${formatMb(image.body.size)}あり、上限を超えます` };
+    }
+    const up = await uploadToBlob(image.body, "image/jpeg", file.name, onProgress);
+    if ("error" in up) return up;
+    return {
+      blobPath: up.blobPath,
+      mimeType: "image/jpeg",
+      sizeBytes: image.body.size,
+      thumbUrl: image.thumbUrl,
+      caption: "",
+      kind: defaultKind,
+      isVideo: false,
+      width: image.width,
+      height: image.height,
+    };
+  }
+
   async function processVideo(
     file: File,
     onProgress: (ratio: number) => void,
@@ -312,28 +402,11 @@ export function PhotoUploader({
       };
     }
 
-    const res = await fetch("/api/media/upload-url", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ contentType: mime, sizeBytes: file.size }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      return { error: body?.error ?? `${file.name} のアップロードを開始できませんでした` };
-    }
-    const { uploadUrl, blobPath } = (await res.json()) as {
-      uploadUrl: string;
-      blobPath: string;
-    };
-
-    try {
-      await putWithProgress(uploadUrl, file, mime, onProgress);
-    } catch {
-      return { error: `${file.name} のアップロードに失敗しました。電波の良い場所で再度お試しください` };
-    }
+    const up = await uploadToBlob(file, mime, file.name, onProgress);
+    if ("error" in up) return up;
 
     return {
-      blobPath,
+      blobPath: up.blobPath,
       mimeType: mime,
       sizeBytes: file.size,
       duration: Math.round(meta.duration),
@@ -360,9 +433,14 @@ export function PhotoUploader({
       // 既に保持している新規分の合計から積み上げる
       let total = photos.reduce((sum, p) => sum + photoBytes(p), 0);
       let videoCount = photos.filter((p) => p.isVideo).length;
+      let count = photos.length;
 
       for (const f of files) {
         if (looksLikeVideo(f)) {
+          if (count >= MEDIA_MAX_COUNT) {
+            nextErrors.push(`写真・動画は合計${MEDIA_MAX_COUNT}件までです（${f.name} は追加していません）`);
+            continue;
+          }
           if (videoCount >= VIDEO_MAX_COUNT) {
             nextErrors.push(`動画は${VIDEO_MAX_COUNT}本までです（${f.name} は追加していません）`);
             continue;
@@ -388,6 +466,7 @@ export function PhotoUploader({
           }
           if ("notice" in result) continue;
           videoCount += 1;
+          count += 1;
           total += photoBytes(result);
           setPhotos((prev) => [...prev, result]);
           continue;
@@ -395,15 +474,31 @@ export function PhotoUploader({
 
         if (!f.type.startsWith("image/")) continue;
 
-        const item = { ...(await compressImage(f)), kind: defaultKind };
+        if (count >= MEDIA_MAX_COUNT) {
+          nextErrors.push(`写真・動画は合計${MEDIA_MAX_COUNT}件までです（${f.name} は追加していません）`);
+          continue;
+        }
+
+        const label = f.name;
+        setUploading((prev) => [...prev, { name: label, ratio: 0 }]);
+        const item = await processImage(f, (ratio) => {
+          setUploading((prev) => prev.map((u) => (u.name === label ? { ...u, ratio } : u)));
+        });
+        setUploading((prev) => prev.filter((u) => u.name !== label));
+
+        if ("error" in item) {
+          nextErrors.push(item.error);
+          continue;
+        }
         const bytes = photoBytes(item);
         if (total + bytes > MAX_TOTAL_BYTES) {
           nextErrors.push(
-            `${f.name} を追加すると合計サイズが上限(${formatMb(MAX_TOTAL_BYTES)})を超えます。先に保存するか、他のファイルを削除してください`,
+            `${f.name} を追加すると一度に保存できる量を超えます。先に保存してから続けてください`,
           );
           continue;
         }
         total += bytes;
+        count += 1;
         setPhotos((prev) => [...prev, item]);
       }
     } catch {
@@ -581,9 +676,10 @@ export function PhotoUploader({
       )}
 
       <p className="mt-1.5 text-[11px] text-ink-faint">
-        写真は自動で軽量化（最大{MAX_DIM}px）します。動画は{VIDEO_MAX_DURATION_SEC}秒・
-        {formatMb(VIDEO_MAX_BYTES)}まで、{VIDEO_MAX_COUNT}本まで（{VIDEO_RECOMMENDED_DURATION_SEC}
-        秒くらいが目安）。タグをタップで「弊社分」等に切替。削除は×を2回タップ。
+        写真は自動で軽量化（最大{MAX_DIM}px）します。写真・動画あわせて{MEDIA_MAX_COUNT}件まで。
+        動画は{VIDEO_MAX_DURATION_SEC}秒・{formatMb(VIDEO_MAX_BYTES)}まで、{VIDEO_MAX_COUNT}本まで
+        （{VIDEO_RECOMMENDED_DURATION_SEC}秒くらいが目安）。
+        タグをタップで「弊社分」等に切替。削除は×を2回タップ。
       </p>
     </div>
   );

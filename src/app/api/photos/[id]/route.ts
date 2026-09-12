@@ -51,9 +51,10 @@ export async function GET(
     return NextResponse.json({ error: "サムネイルがありません" }, { status: 404 });
   }
 
-  // Blob 保存（動画）の本体は、署名付きURLへ転送してブラウザに直接読ませる。
+  // Blob 保存（写真・動画）の本体は、署名付きURLへ転送してブラウザに直接読ませる。
   // 関数を通すと 4.5MB のレスポンス上限に当たり、範囲リクエスト（シーク）も効かない。
-  if (photo.blobPath && !wantThumb) {
+  // 写真でサムネイルが無いときも、本体へ転送して表示できるようにする。
+  if (photo.blobPath && (!wantThumb || !photo.thumbUrl)) {
     try {
       const url = await signedReadUrl(photo.blobPath);
       // 署名URLは短命なので、この転送自体はキャッシュさせない

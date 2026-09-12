@@ -5,6 +5,9 @@
 
 import {
   formatMb,
+  IMAGE_ALLOWED_MIMES,
+  IMAGE_MAX_BYTES,
+  MEDIA_MAX_COUNT,
   VIDEO_ALLOWED_MIMES,
   VIDEO_MAX_BYTES,
   VIDEO_MAX_COUNT,
@@ -18,8 +21,9 @@ export function photoSrc(id: string, thumb?: boolean): string {
 
 /**
  * フォームから送られる新規ファイル。2種類ある。
- * - 画像・PDF: dataUrl（圧縮済み base64）を DB にそのまま入れる
- * - 動画: 実体は Vercel Blob に直接アップロード済みで、ここには blobPath だけ来る
+ * - 写真・動画: 実体は Vercel Blob に直接アップロード済みで、ここには blobPath だけ来る
+ *   （一覧用のサムネイルだけ base64 で本文に乗る）
+ * - PDF と旧来の画像: dataUrl（圧縮済み base64）を DB にそのまま入れる
  */
 export interface NewPhotoInput {
   dataUrl?: string;
@@ -52,16 +56,16 @@ const ALLOWED_MIMES = new Set([
   "application/pdf",
 ]);
 
-const MAX_NEW_PHOTOS = 30;
+const MAX_NEW_PHOTOS = MEDIA_MAX_COUNT;
 const MAX_IMAGE_BYTES = 2.5 * 1024 * 1024; // 画像1点あたり 2.5MB 相当
 // Vercel の関数はリクエスト本文が 4.5MB までで、超えると 413 になる。
 // ここで数えるのはデコード後のバイト数だが、実際に送られるのは base64（約1.33倍）なので、
 // 3MB = 送信時およそ4MB。他のフォーム項目ぶんの余裕もこれで確保する。
 const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
 
-// Blob 上のパスは createVideoUploadTarget が作った形だけ許す。
+// Blob 上のパスは createMediaUploadTarget が作った形だけ許す。
 // 認証済みユーザーが任意のパスを差し込んで他人のファイルを紐づけるのを防ぐ。
-const BLOB_PATH_RE = /^media\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(mp4|mov|webm)$/;
+const BLOB_PATH_RE = /^media\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(mp4|mov|webm|jpg|png|webp)$/;
 
 /** dataUrl の MIME タイプを取り出す（不正なら null） */
 function mimeOf(dataUrl: string): string | null {
@@ -165,30 +169,43 @@ export function parseAndValidatePhotosField(
     const width = typeof o.width === "number" && Number.isFinite(o.width) ? o.width : undefined;
     const height = typeof o.height === "number" && Number.isFinite(o.height) ? o.height : undefined;
 
-    // 新規の動画（実体は Blob にアップロード済み。ここにはパスだけ届く）
+    // 新規の写真・動画（実体は Blob にアップロード済み。ここにはパスだけ届く）
     if (typeof o.blobPath === "string" && o.blobPath.length > 0) {
       if (!BLOB_PATH_RE.test(o.blobPath)) {
-        return { error: "動画の保存先が不正です。撮り直して再度お試しください。" };
+        return { error: "ファイルの保存先が不正です。選び直して再度お試しください。" };
       }
       const mimeType = typeof o.mimeType === "string" ? o.mimeType.toLowerCase() : "";
-      if (!VIDEO_ALLOWED_MIMES.includes(mimeType)) {
-        return { error: "対応していない動画形式です（MP4 / MOV / WebM のみ）。" };
+      const isVideo = VIDEO_ALLOWED_MIMES.includes(mimeType);
+      const isImage = IMAGE_ALLOWED_MIMES.includes(mimeType);
+      if (!isVideo && !isImage) {
+        return {
+          error: "対応していない形式です（写真: JPEG / PNG / WebP、動画: MP4 / MOV / WebM）。",
+        };
       }
+      const maxBytes = isVideo ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
       const sizeBytes = typeof o.sizeBytes === "number" ? o.sizeBytes : NaN;
-      if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > VIDEO_MAX_BYTES) {
-        return { error: `動画のサイズが大きすぎます（1本あたり${formatMb(VIDEO_MAX_BYTES)}まで）。` };
-      }
-      const duration = typeof o.duration === "number" && Number.isFinite(o.duration)
-        ? Math.round(o.duration)
-        : undefined;
-      // 端末側の丸め誤差を見込んで1秒だけ余裕を持たせる
-      if (duration !== undefined && duration > VIDEO_MAX_DURATION_SEC + 1) {
-        return { error: `動画が長すぎます（1本あたり${VIDEO_MAX_DURATION_SEC}秒まで）。` };
+      if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > maxBytes) {
+        return {
+          error: isVideo
+            ? `動画のサイズが大きすぎます（1本あたり${formatMb(VIDEO_MAX_BYTES)}まで）。`
+            : `写真のサイズが大きすぎます（1枚あたり${formatMb(IMAGE_MAX_BYTES)}まで）。`,
+        };
       }
 
-      videoCount += 1;
-      if (videoCount > VIDEO_MAX_COUNT) {
-        return { error: `動画は${VIDEO_MAX_COUNT}本までです。` };
+      let duration: number | undefined;
+      if (isVideo) {
+        duration =
+          typeof o.duration === "number" && Number.isFinite(o.duration)
+            ? Math.round(o.duration)
+            : undefined;
+        // 端末側の丸め誤差を見込んで1秒だけ余裕を持たせる
+        if (duration !== undefined && duration > VIDEO_MAX_DURATION_SEC + 1) {
+          return { error: `動画が長すぎます（1本あたり${VIDEO_MAX_DURATION_SEC}秒まで）。` };
+        }
+        videoCount += 1;
+        if (videoCount > VIDEO_MAX_COUNT) {
+          return { error: `動画は${VIDEO_MAX_COUNT}本までです。` };
+        }
       }
 
       added.push({
@@ -199,7 +216,7 @@ export function parseAndValidatePhotosField(
         thumbUrl,
         caption,
         kind,
-        isVideo: true,
+        isVideo,
         width,
         height,
       });

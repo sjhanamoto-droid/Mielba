@@ -1,20 +1,36 @@
-// 動画アップロードの制約。クライアント（選択時の検証）とサーバー（署名URL発行時の検証）で共有する。
+// 写真・動画アップロードの制約。クライアント（選択時の検証）とサーバー（署名URL発行時の検証）で共有する。
 //
-// 写真は今まで通り base64 に圧縮して DB に入れるが、動画はサイズが桁違いなので
-// Vercel Blob（private ストア）へブラウザから直接アップロードする。
-// Vercel の関数はリクエスト/レスポンスとも 4.5MB が上限のため、経由させると必ず失敗する。
+// 写真も動画も Vercel Blob（private ストア）へブラウザから直接アップロードする。
+// Vercel の関数はリクエスト/レスポンスとも 4.5MB が上限のため、本体を経由させると
+// 枚数が増えた時点で必ず失敗する。フォーム送信に載せるのは一覧用の小さなサムネイルだけ。
 
-/** 動画1本あたりの上限バイト数 */
-export const VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+/** 動画1本あたりの上限バイト数（1分の1080p動画で概ね60〜100MB） */
+export const VIDEO_MAX_BYTES = 150 * 1024 * 1024;
 
-/** 動画1本あたりの上限秒数 */
-export const VIDEO_MAX_DURATION_SEC = 30;
+/** 動画1本あたりの上限秒数（1分程度＋撮影の余裕） */
+export const VIDEO_MAX_DURATION_SEC = 90;
 
 /** 画面で案内する推奨の長さ（秒） */
-export const VIDEO_RECOMMENDED_DURATION_SEC = 15;
+export const VIDEO_RECOMMENDED_DURATION_SEC = 60;
 
-/** 1件（日報・調査など）あたりに添付できる動画の本数 */
-export const VIDEO_MAX_COUNT = 3;
+/** 1件（日報・現調など）あたりに添付できる動画の本数 */
+export const VIDEO_MAX_COUNT = 6;
+
+/** 写真1枚あたりの上限バイト数（軽量化後。通常は0.3MB前後） */
+export const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+/** 1件あたりに添付できる写真・動画の合計点数 */
+export const MEDIA_MAX_COUNT = 60;
+
+/** Blob へ直接上げる画像の形式（アップローダーが JPEG に変換してから送る） */
+export const IMAGE_ALLOWED_MIMES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
+
+/** MIME からファイル拡張子を決める（Blob 上のパス生成用） */
+export function imageExtFor(mime: string): string {
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  return "jpg";
+}
 
 /** 受け付ける動画の MIME タイプ */
 export const VIDEO_ALLOWED_MIMES: readonly string[] = [

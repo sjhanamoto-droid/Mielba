@@ -1,13 +1,20 @@
 // Vercel Blob（private ストア）の読み書き。サーバー専用。
 //
 // なぜ Blob か: Vercel の関数はリクエスト/レスポンスとも 4.5MB が上限なので、
-// 動画を Server Action や API 経由で流すと必ず 413 になる。
+// 写真をまとめて上げたり動画を Server Action や API 経由で流すと 413 になる。
 // アップロードは「署名付き PUT URL をサーバーで作る → ブラウザが Blob へ直接 PUT」、
 // 再生は「/api/photos/[id] で認証 → 署名付き GET URL へ 307 リダイレクト」で通す。
 // GET はブラウザが CDN を直接叩くので、範囲リクエスト（動画のシーク）もそのまま効く。
 
 import { del, issueSignedToken, list, presignUrl, type IssuedSignedToken } from "@vercel/blob";
-import { VIDEO_ALLOWED_MIMES, VIDEO_MAX_BYTES, videoExtFor } from "@/lib/media-limits";
+import {
+  IMAGE_ALLOWED_MIMES,
+  IMAGE_MAX_BYTES,
+  imageExtFor,
+  VIDEO_ALLOWED_MIMES,
+  VIDEO_MAX_BYTES,
+  videoExtFor,
+} from "@/lib/media-limits";
 
 /** アップロードURLの有効時間（現場の回線でも上げ切れる長さ） */
 const PUT_URL_TTL_MS = 30 * 60 * 1000;
@@ -43,7 +50,7 @@ async function getReadToken(): Promise<IssuedSignedToken> {
   return token;
 }
 
-/** 保存済み動画の再生用URL。ブラウザがこのURLで Blob を直接読む */
+/** 保存済み写真・動画のURL。ブラウザがこのURLで Blob を直接読む */
 export async function signedReadUrl(blobPath: string): Promise<string> {
   const token = await getReadToken();
   const { presignedUrl } = await presignUrl(token, {
@@ -55,7 +62,7 @@ export async function signedReadUrl(blobPath: string): Promise<string> {
   return presignedUrl;
 }
 
-export interface VideoUploadTarget {
+export interface MediaUploadTarget {
   /** ブラウザが PUT する先 */
   uploadUrl: string;
   /** DB（Photo.blobPath）に保存するパス */
@@ -63,31 +70,35 @@ export interface VideoUploadTarget {
 }
 
 /**
- * 動画1本ぶんのアップロード先を用意する。
+ * 写真1枚・動画1本ぶんのアップロード先を用意する。
  *
  * URL は1つのパスに固定され、宣言サイズまでしか書き込めない（超過は CDN が 403 で拒否）。
  * 形式（allowedContentTypes）は署名に含めても単発 PUT では強制されないことを実測で確認済みなので、
  * 拒否の根拠はサイズと「そのパスにしか書けないこと」に置く。パスの形は保存時にも検証する。
  */
-export async function createVideoUploadTarget(
+export async function createMediaUploadTarget(
   contentType: string,
   sizeBytes: number,
-): Promise<VideoUploadTarget | { error: string }> {
+): Promise<MediaUploadTarget | { error: string }> {
   if (!isBlobConfigured()) {
-    return { error: "動画の保存先が未設定です。管理者にお問い合わせください。" };
+    return { error: "写真・動画の保存先が未設定です。管理者にお問い合わせください。" };
   }
-  if (!VIDEO_ALLOWED_MIMES.includes(contentType)) {
-    return { error: "対応していない動画形式です（MP4 / MOV / WebM のみ）。" };
+  const isVideo = VIDEO_ALLOWED_MIMES.includes(contentType);
+  const isImage = IMAGE_ALLOWED_MIMES.includes(contentType);
+  if (!isVideo && !isImage) {
+    return { error: "対応していない形式です（写真: JPEG / PNG / WebP、動画: MP4 / MOV / WebM）。" };
   }
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > VIDEO_MAX_BYTES) {
-    return { error: "動画のサイズが上限を超えています。" };
+  const maxBytes = isVideo ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > maxBytes) {
+    return { error: isVideo ? "動画のサイズが上限を超えています。" : "写真のサイズが上限を超えています。" };
   }
 
-  const blobPath = `media/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${videoExtFor(contentType)}`;
+  const ext = isVideo ? videoExtFor(contentType) : imageExtFor(contentType);
+  const blobPath = `media/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`;
   const validUntil = Date.now() + PUT_URL_TTL_MS;
-  // 上限は「その動画の実サイズ」に寄せる。全体上限のままだと、小さい動画のつもりで
-  // 発行したURLで 50MB まで書き込めてしまう。多重化などのわずかな増分だけ許す。
-  const maximumSizeInBytes = Math.min(Math.ceil(sizeBytes * 1.05) + 1024, VIDEO_MAX_BYTES);
+  // 上限は「その1件の実サイズ」に寄せる。全体上限のままだと、小さいファイルのつもりで
+  // 発行したURLで上限いっぱいまで書き込めてしまう。多重化などのわずかな増分だけ許す。
+  const maximumSizeInBytes = Math.min(Math.ceil(sizeBytes * 1.05) + 1024, maxBytes);
 
   const token = await issueSignedToken({
     pathname: blobPath,
