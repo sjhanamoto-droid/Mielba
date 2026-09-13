@@ -16,7 +16,8 @@ import { LinkButton } from "@/components/ui/button";
 import { cn, fmtDateWithDay, fmtMonthDay } from "@/lib/utils";
 import {
   EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, SITE_STAGES, siteStageIndex,
-  type EventSource,
+  SITE_STATUS_LABEL, isPreOrderSite,
+  type EventSource, type SiteStatus,
 } from "@/lib/constants";
 import { visibleEventWhere } from "@/lib/event-visibility";
 
@@ -335,7 +336,10 @@ export default async function HomePage() {
                 ) : (
                   <div className="mt-3 space-y-5">
                     {todayVisits.map((v) => {
-                      const stage = SITE_STAGES[siteStageIndex(v.site.siteStatus, v.site.projectStatus)];
+                      // 現調・見送りは工程が始まっていないので、工程名ではなく区分を出す
+                      const stage = isPreOrderSite(v.site.siteStatus)
+                        ? SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus]
+                        : SITE_STAGES[siteStageIndex(v.site.siteStatus, v.site.projectStatus)];
                       const report = reportLink(v.siteId);
                       return (
                         <div key={v.id}>

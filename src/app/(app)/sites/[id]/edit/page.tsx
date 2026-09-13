@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/session";
+import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
@@ -12,7 +12,8 @@ export default async function EditSitePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
+  const admin = isAdmin(user); // 受注済 → 現調に戻す操作は管理者のみ
   const { id } = await params;
 
   const [site, customers, sitePhotos, surveyPhotoRows] = await Promise.all([
@@ -53,6 +54,7 @@ export default async function EditSitePage({
           site={site}
           sitePhotos={sitePhotos}
           surveyPhotos={surveyPhotos}
+          admin={admin}
         />
       </PageContainer>
     </div>

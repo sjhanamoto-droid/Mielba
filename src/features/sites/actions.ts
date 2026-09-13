@@ -262,11 +262,13 @@ async function applySurveyPhotos(
   siteId: string,
   photos: { kept: string[]; added: NewPhotoInput[] },
 ): Promise<void> {
-  const survey = await tx.survey.upsert({
-    where: { siteId },
-    create: { siteId, surveyedAt: new Date() },
-    update: {},
-  });
+  const existing = await tx.survey.findUnique({ where: { siteId }, select: { id: true } });
+  // 現調記録がまだ無く、追加する写真も無いなら何もしない。
+  // （受注済から現調に戻した現場を簡易フォームで保存しただけで、空の現調記録が
+  //   できてしまうのを防ぐ）
+  if (!existing && photos.added.length === 0) return;
+  const survey =
+    existing ?? (await tx.survey.create({ data: { siteId, surveyedAt: new Date() } }));
   await tx.photo.deleteMany({ where: { surveyId: survey.id, id: { notIn: photos.kept } } });
   if (photos.added.length === 0) return;
   await tx.photo.createMany({
@@ -640,7 +642,11 @@ export async function startOrderedSite(
   await requireAdmin();
   const site = await db.site.findUnique({
     where: { id: siteId },
-    select: { siteStatus: true, survey: { select: { address: true, keybox: true } } },
+    select: {
+      siteStatus: true,
+      projectStatus: true,
+      survey: { select: { address: true, keybox: true } },
+    },
   });
   if (!site) return { error: "現場が見つかりません" };
   // 受注済にできるのは現調・見送りの現場だけ（進行中や過去の現場を巻き戻さない）
@@ -658,10 +664,13 @@ export async function startOrderedSite(
   }
   await db.site.update({
     where: { id: siteId },
-    // 工程は「配線」から。足りない項目があれば仮登録として残りの入力を促す。
     data: {
       siteStatus: "ACTIVE",
-      projectStatus: "ORDERED",
+      // 現調から初めて受注済にするときは工程を「配線」から始める。
+      // 受注済から現調に戻していた現場は戻す前の工程をそのまま持っているので、
+      // 触らずに元の工程へ復帰させる（器具付まで進んでいたら器具付に戻る）。
+      projectStatus: site.projectStatus === "ESTIMATING" ? "ORDERED" : site.projectStatus,
+      // 足りない項目があれば仮登録として残りの入力を促す（現調の間は催促しない）。
       provisional: await recomputeProvisional(siteId),
     },
   });
@@ -684,6 +693,10 @@ export async function declineSite(
   return { ok: true };
 }
 
+// 見送り・受注済（進行中）の現場を現調に戻す。
+// 受注済で登録したあとに「まだ現調だった」と分かることがあるため、進行中からも戻せる。
+// 入力済みの情報（キーBOX・図面・工程表・日程・写真・日報など）は一切消さずそのまま残し、
+// 工程(projectStatus)も触らない。受注済に戻したときに元の状態へそのまま復帰させるため。
 export async function revertSiteToSurvey(
   siteId: string,
 ): Promise<{ ok?: true; error?: string }> {
@@ -693,9 +706,16 @@ export async function revertSiteToSurvey(
     select: { siteStatus: true },
   });
   if (!site) return { error: "現場が見つかりません" };
-  // 進行中の現場を現調に落とすと入力済みの情報が扱えなくなるため、見送りからのみ戻す
-  if (site.siteStatus !== "DECLINED") return { error: "見送りの現場のみ現調に戻せます" };
-  await db.site.update({ where: { id: siteId }, data: { siteStatus: "SURVEY" } });
+  if (site.siteStatus === "SURVEY") return { error: "すでに現調の現場です" };
+  // 完工した現場はまず工程を戻してから（過去の現場を現調に落とすと集計が合わなくなる）
+  if (site.siteStatus === "PAST") {
+    return { error: "完了した現場は現調に戻せません。工程を戻してからお試しください" };
+  }
+  await db.site.update({
+    where: { id: siteId },
+    // 現調の間は仮登録の催促をしない（受注済に戻すときに判定し直す）
+    data: { siteStatus: "SURVEY", provisional: false },
+  });
   revalidateSiteViews(siteId);
   return { ok: true };
 }

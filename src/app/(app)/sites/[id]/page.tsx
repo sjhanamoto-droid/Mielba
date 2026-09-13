@@ -38,6 +38,7 @@ import {
   EVENT_SOURCE_COLOR,
   labelOf,
   siteStageIndex,
+  hasOrderedRecord,
   type ProjectType,
   type BillingStatus,
   type EventSource,
@@ -256,7 +257,12 @@ export default async function SiteDetailPage({
   const stageless = site.siteStatus === "SURVEY" || site.siteStatus === "DECLINED";
   const surveyBanner =
     site.siteStatus === "SURVEY" ? (
-      <SiteSurveyActions siteId={site.id} admin={admin} />
+      <SiteSurveyActions
+        siteId={site.id}
+        admin={admin}
+        // 受注済から戻した現場は、入力済みの情報も工程も残っている
+        resumed={hasOrderedRecord(site.siteStatus, site.projectStatus)}
+      />
     ) : site.siteStatus === "DECLINED" && admin ? (
       <SiteRevertToSurvey siteId={site.id} />
     ) : null;

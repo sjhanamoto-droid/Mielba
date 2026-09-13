@@ -146,6 +146,14 @@ export function isPreOrderSite(siteStatus: string): boolean {
   return siteStatus === "SURVEY" || siteStatus === "DECLINED";
 }
 
+// 受注済で入れた情報を持ったまま現調に戻した現場か。
+// 現調で作った現場は工程が「見積(ESTIMATING)」のまま動かない。一度でも受注済にした現場は
+// 配線以降の工程を持ち、現調に戻してもその工程を残す（受注済に戻すと続きから再開する）。
+// キーBOX・図面・工程表などの入力もそのまま残っているので、画面ではその旨を伝える。
+export function hasOrderedRecord(siteStatus: string, projectStatus: string): boolean {
+  return isPreOrderSite(siteStatus) && projectStatus !== "ESTIMATING";
+}
+
 export type BillingStatus = "UNBILLED" | "BILLED" | "PARTIAL" | "PAID";
 export const BILLING_STATUS_LABEL: Record<BillingStatus, string> = {
   UNBILLED: "未請求",

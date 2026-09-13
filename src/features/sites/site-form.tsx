@@ -7,6 +7,7 @@ import { createSite, updateSite } from "./actions";
 import { SitePhotoField, type SitePhotoInit } from "./site-photo-field";
 import { PhotoUploader, type UploadPhoto } from "@/components/photo-uploader";
 import { DeleteSiteButton } from "./delete-site-button";
+import { SiteBackToSurvey } from "./site-survey-actions";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
@@ -19,6 +20,7 @@ import {
   type BillingStatus,
   type SiteEntryMode,
   isPreOrderSite,
+  hasOrderedRecord,
 } from "@/lib/constants";
 
 type CustomerOption = { id: string; name: string };
@@ -104,12 +106,15 @@ export function SiteForm({
   site,
   sitePhotos = [],
   surveyPhotos = [],
+  admin = false,
 }: {
   customers: CustomerOption[];
   site?: SiteFormData;
   sitePhotos?: SiteFormPhoto[];
   /** 現調の写真・動画（現調フォーマットと同じ置き場所。編集時は既存分を渡す） */
   surveyPhotos?: UploadPhoto[];
+  /** 管理者か（受注済 → 現調に戻す操作は管理者のみ） */
+  admin?: boolean;
 }) {
   const isEdit = !!site;
   // 現調 = これから見に行く現場。基本だけ登録し、記録は現調フォーマットに残す。
@@ -258,7 +263,13 @@ export function SiteForm({
         <div className="flex items-start gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2.5 text-xs leading-relaxed text-violet-800 dark:border-violet-800/60 dark:bg-violet-950/50 dark:text-violet-300">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            {site?.siteStatus === "DECLINED" ? (
+            {site && hasOrderedRecord(site.siteStatus, site.projectStatus) ? (
+              <>
+                受注済から現調に戻した現場です。ここでは基本の項目だけを直せますが、
+                <b className="font-bold">キーBOX・図面・工程表・日程などの入力はそのまま残しています</b>
+                （現場情報で確認できます）。現場詳細から受注済にすると、戻す前の工程で再び編集できます。
+              </>
+            ) : site?.siteStatus === "DECLINED" ? (
               <>
                 見送りにした現場です。基本の項目だけを直せます。話が戻ったら現場詳細から
                 <b className="font-bold">現調に戻す</b>と、受注済へ進められます。
@@ -652,6 +663,12 @@ export function SiteForm({
 
       <SubmitButton isEdit={isEdit} />
     </form>
+
+    {/* 受注済 → 現調に戻す（進行中の現場のみ・管理者のみ・フォーム外）。
+        入力済みの情報は消さずに区分だけを戻す。 */}
+    {isEdit && site && admin && site.siteStatus === "ACTIVE" && (
+      <SiteBackToSurvey siteId={site.id} />
+    )}
 
     {/* 危険操作ゾーン（編集時のみ・フォーム外） */}
     {isEdit && site && <DeleteSiteButton siteId={site.id} siteName={site.name} />}
