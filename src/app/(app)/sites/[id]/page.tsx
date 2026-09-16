@@ -70,7 +70,15 @@ export default async function SiteDetailPage({
           surveyedAt: true,
           // 現調で撮った写真・動画（base64 は載せず {id} 参照で渡す）
           photos: {
-            select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+            select: {
+              id: true,
+              caption: true,
+              kind: true,
+              isVideo: true,
+              width: true,
+              height: true,
+              createdAt: true,
+            },
             orderBy: { createdAt: "asc" },
           },
         },
@@ -108,6 +116,7 @@ export default async function SiteDetailPage({
               width: true,
               height: true,
               duration: true,
+              createdAt: true,
             },
             orderBy: { createdAt: "asc" },
           },
@@ -132,7 +141,7 @@ export default async function SiteDetailPage({
     parkingAgg,
     siteMaterials,
     materialUses,
-    workPhotos,
+    reportPhotos,
   ] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
     // 人工は提出済み(SUBMITTED)のみ数える（勤怠・人工超過チェックと同じ基準）
@@ -171,7 +180,15 @@ export default async function SiteDetailPage({
     // 施工が始まってからの写真・動画（日報に付いたもの）。現調の分と分けて見せる。
     db.photo.findMany({
       where: { report: { siteId: site.id } },
-      select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+      select: {
+        id: true,
+        caption: true,
+        kind: true,
+        isVideo: true,
+        width: true,
+        height: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: "desc" },
       take: 60,
     }),
@@ -188,8 +205,21 @@ export default async function SiteDetailPage({
   const schedulePdfs = sitePhotos.filter((p) => p.kind === "SCHEDULE" && isPdfLike(p));
   const hasDocuments =
     drawingImages.length + drawingPdfs.length + scheduleImages.length + schedulePdfs.length > 0;
-  // 現調のときに撮った写真・動画（現調記録に紐づく分）
-  const surveyPhotos: PhotoData[] = site.survey?.photos ?? [];
+  // 「写真・動画」セクションの中身。現調記録・日報の写真に、現場メモの添付も合流させる。
+  // メモの添付は「現調中に書いたメモ（atSurvey）」なら現調、そうでなければ施工に自動で振り分ける。
+  type TimedPhoto = PhotoData & { createdAt: Date };
+  const memoPhotosAtSurvey: TimedPhoto[] = [];
+  const memoPhotosAtWork: TimedPhoto[] = [];
+  for (const m of site.memos) {
+    for (const p of m.photos) (m.atSurvey ? memoPhotosAtSurvey : memoPhotosAtWork).push(p);
+  }
+  // 現調：撮った順（古い順）。施工：新しい順
+  const surveyPhotos: PhotoData[] = [...(site.survey?.photos ?? []), ...memoPhotosAtSurvey].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+  );
+  const workPhotos: PhotoData[] = [...reportPhotos, ...memoPhotosAtWork].sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+  );
 
   const mapsUrl = site.address
     ? `https://maps.google.com/?q=${encodeURIComponent(site.address)}`
@@ -301,7 +331,7 @@ export default async function SiteDetailPage({
                   <PhotoGrid photos={surveyPhotos} />
                 ) : (
                   <p className="px-1 py-2 text-sm text-ink-muted">
-                    現調の写真はまだありません。現調フォーマットから追加できます。
+                    現調の写真はまだありません。現調フォーマットや、現調中の現場メモから追加できます。
                   </p>
                 ),
             },
@@ -314,7 +344,7 @@ export default async function SiteDetailPage({
                   <PhotoGrid photos={workPhotos} />
                 ) : (
                   <p className="px-1 py-2 text-sm text-ink-muted">
-                    施工の写真はまだありません。日報に付けた写真がここに並びます。
+                    施工の写真はまだありません。日報や現場メモに付けた写真がここに並びます。
                   </p>
                 ),
             },
