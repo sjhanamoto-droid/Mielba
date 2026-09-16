@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, X, Loader2, Play, AlertTriangle } from "lucide-react";
 import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
+import { buttonClass } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   formatMb,
   looksLikeVideo,
@@ -257,8 +259,11 @@ function putWithProgress(
   });
 }
 
-/** hidden input に載せるJSON。既存={id}のみ、新規は画像/動画で形が違う */
-function serialize(photos: UploaderPhoto[]): string {
+/**
+ * hidden input（または Server Action の引数）に載せるJSON。既存={id}のみ、新規は画像/動画で形が違う。
+ * サーバー側は parseAndValidatePhotosField でこの形を検証する。
+ */
+export function serializeUploaderPhotos(photos: UploaderPhoto[]): string {
   return JSON.stringify(
     photos.map((p) => {
       if (p.id) return { id: p.id };
@@ -293,13 +298,43 @@ export function PhotoUploader({
   name = "photos",
   defaultKind = "WORK",
   initial = [],
+  variant = "default",
+  maxCount = MEDIA_MAX_COUNT,
+  onChange,
+  onBusyChange,
 }: {
   name?: string;
   defaultKind?: PhotoKind;
   initial?: UploaderPhoto[];
+  /**
+   * compact: 現場メモなど「本文に添える」用途。種別タグ・説明欄は出さず、
+   * 未選択のあいだは小さな「写真・動画を添付」ボタンだけにして入力欄を圧迫しない。
+   */
+  variant?: "default" | "compact";
+  /** 写真・動画の合計点数の上限（サーバー側の検証と同じ値を渡す。超える分は上げる前に断る） */
+  maxCount?: number;
+  /** 選択中のファイルが変わるたびに呼ぶ（フォーム外から Server Action に渡す用途） */
+  onChange?: (photos: UploaderPhoto[]) => void;
+  /** 圧縮・アップロード中かどうか（親の送信ボタンを無効化するため） */
+  onBusyChange?: (busy: boolean) => void;
 }) {
+  const compact = variant === "compact";
   const [photos, setPhotos] = useState<UploaderPhoto[]>(initial);
   const [busy, setBusy] = useState(false);
+  // 親へ通知するコールバックは最新のものを ref 経由で呼ぶ（依存配列に入れて毎回発火させない）。
+  // ref の更新は描画中ではなく commit 後に行う（この effect を先に宣言しておくと、下の通知より先に走る）
+  const onChangeRef = useRef(onChange);
+  const onBusyChangeRef = useRef(onBusyChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    onBusyChangeRef.current = onBusyChange;
+  });
+  useEffect(() => {
+    onChangeRef.current?.(photos);
+  }, [photos]);
+  useEffect(() => {
+    onBusyChangeRef.current?.(busy);
+  }, [busy]);
   const [errors, setErrors] = useState<string[]>([]);
   const [notices, setNotices] = useState<string[]>([]);
   // アップロード中の動画（完了した時点で photos に入る）
@@ -437,8 +472,8 @@ export function PhotoUploader({
 
       for (const f of files) {
         if (looksLikeVideo(f)) {
-          if (count >= MEDIA_MAX_COUNT) {
-            nextErrors.push(`写真・動画は合計${MEDIA_MAX_COUNT}件までです（${f.name} は追加していません）`);
+          if (count >= maxCount) {
+            nextErrors.push(`写真・動画は合計${maxCount}件までです（${f.name} は追加していません）`);
             continue;
           }
           if (videoCount >= VIDEO_MAX_COUNT) {
@@ -474,8 +509,8 @@ export function PhotoUploader({
 
         if (!f.type.startsWith("image/")) continue;
 
-        if (count >= MEDIA_MAX_COUNT) {
-          nextErrors.push(`写真・動画は合計${MEDIA_MAX_COUNT}件までです（${f.name} は追加していません）`);
+        if (count >= maxCount) {
+          nextErrors.push(`写真・動画は合計${maxCount}件までです（${f.name} は追加していません）`);
           continue;
         }
 
@@ -531,7 +566,8 @@ export function PhotoUploader({
 
   return (
     <div>
-      <input type="hidden" name={name} value={serialize(photos)} />
+      {/* フォーム送信用。compact（Server Action に onChange で渡す用途）では DOM に載せない */}
+      {!compact && <input type="hidden" name={name} value={serializeUploaderPhotos(photos)} />}
       <input
         ref={inputRef}
         type="file"
@@ -541,7 +577,19 @@ export function PhotoUploader({
         onChange={onFiles}
       />
 
-      <div className="grid grid-cols-3 gap-2">
+      {compact && photos.length === 0 && uploading.length === 0 ? (
+        /* 未選択のあいだはボタンだけ（メモ入力欄を大きなグリッドで圧迫しない） */
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          className={buttonClass({ variant: "outline", size: "sm" })}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Camera className="h-4 w-4" aria-hidden />}
+          写真・動画を添付
+        </button>
+      ) : (
+      <div className={cn("grid gap-2", compact ? "grid-cols-4" : "grid-cols-3")}>
         {photos.map((p, i) => {
           // 既存はAPIサムネイル、新規は生成済み thumbUrl
           const key = p.id ?? p.blobPath ?? `new-${i}`;
@@ -588,7 +636,7 @@ export function PhotoUploader({
                 >
                   {confirming === i ? "削除?" : <X className="h-4 w-4" />}
                 </button>
-                {p.id ? (
+                {compact ? null : p.id ? (
                   // 既存は {id} 参照のみ送るため種別変更不可（静的表示）
                   <span className="absolute bottom-1 left-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-bold text-white">
                     {PHOTO_KIND_LABEL[p.kind]}
@@ -608,14 +656,16 @@ export function PhotoUploader({
                   </button>
                 )}
               </div>
-              <input
-                value={p.caption}
-                onChange={(e) => update(i, { caption: e.target.value })}
-                placeholder="説明"
-                aria-label="説明"
-                readOnly={!!p.id}
-                className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-1 text-[11px] focus:border-brand-400 focus:outline-none"
-              />
+              {!compact && (
+                <input
+                  value={p.caption}
+                  onChange={(e) => update(i, { caption: e.target.value })}
+                  placeholder="説明"
+                  aria-label="説明"
+                  readOnly={!!p.id}
+                  className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-1 text-[11px] focus:border-brand-400 focus:outline-none"
+                />
+              )}
             </div>
           );
         })}
@@ -653,6 +703,7 @@ export function PhotoUploader({
           )}
         </button>
       </div>
+      )}
 
       {errors.length > 0 && (
         <ul className="mt-1.5 space-y-0.5">
@@ -675,12 +726,21 @@ export function PhotoUploader({
         </ul>
       )}
 
-      <p className="mt-1.5 text-[11px] text-ink-faint">
-        写真は自動で軽量化（最大{MAX_DIM}px）します。写真・動画あわせて{MEDIA_MAX_COUNT}件まで。
-        動画は{VIDEO_MAX_DURATION_SEC}秒・{formatMb(VIDEO_MAX_BYTES)}まで、{VIDEO_MAX_COUNT}本まで
-        （{VIDEO_RECOMMENDED_DURATION_SEC}秒くらいが目安）。
-        タグをタップで「弊社分」等に切替。削除は×を2回タップ。
-      </p>
+      {compact ? (
+        (photos.length > 0 || uploading.length > 0) && (
+          <p className="mt-1.5 text-[11px] text-ink-faint">
+            写真は自動で軽量化します。写真・動画あわせて{maxCount}件まで。
+            動画は{VIDEO_MAX_DURATION_SEC}秒・{formatMb(VIDEO_MAX_BYTES)}まで。削除は×を2回タップ。
+          </p>
+        )
+      ) : (
+        <p className="mt-1.5 text-[11px] text-ink-faint">
+          写真は自動で軽量化（最大{MAX_DIM}px）します。写真・動画あわせて{maxCount}件まで。
+          動画は{VIDEO_MAX_DURATION_SEC}秒・{formatMb(VIDEO_MAX_BYTES)}まで、{VIDEO_MAX_COUNT}本まで
+          （{VIDEO_RECOMMENDED_DURATION_SEC}秒くらいが目安）。
+          タグをタップで「弊社分」等に切替。削除は×を2回タップ。
+        </p>
+      )}
     </div>
   );
 }

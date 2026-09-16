@@ -234,8 +234,9 @@ model SiteMemo {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  site      Site  @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdBy User? @relation("SiteMemoAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  site      Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("SiteMemoAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  photos    Photo[] // メモに添えた写真・動画（現場の様子をその場で共有する）
 
   @@index([siteId, createdAt])
 }
@@ -439,6 +440,7 @@ model Photo {
   reportId  String?
   surveyId  String?
   siteId    String? // 現場直付けの写真（図面・工程表・キーBOX等）
+  memoId    String? // 現場メモに添えた写真・動画
   dataUrl   String? // 圧縮済み base64（画像用。動画は blobPath 側に入る）
   thumbUrl  String? // サムネイル（base64、一覧表示用。動画は先頭フレーム）
   blobPath  String? // Vercel Blob 上のパス（動画など 4.5MB を超えうるファイル）
@@ -455,10 +457,12 @@ model Photo {
   report DailyReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
   survey Survey?      @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   site   Site?        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  memo   SiteMemo?    @relation(fields: [memoId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
   @@index([surveyId])
   @@index([siteId])
+  @@index([memoId])
 }
 
 // ──────────────────────── MaterialMaster（在庫材料マスター） ────────────────────────

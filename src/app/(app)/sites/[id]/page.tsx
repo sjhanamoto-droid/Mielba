@@ -98,6 +98,19 @@ export default async function SiteDetailPage({
         take: 200,
         include: {
           createdBy: { select: { id: true, name: true, avatarColor: true, avatarImage: true } },
+          // メモに添えた写真・動画（base64 は載せず {id} 参照で渡し、実体は /api/photos/[id] から）
+          photos: {
+            select: {
+              id: true,
+              caption: true,
+              kind: true,
+              isVideo: true,
+              width: true,
+              height: true,
+              duration: true,
+            },
+            orderBy: { createdAt: "asc" },
+          },
         },
       },
       _count: { select: { memos: true } },
@@ -229,6 +242,7 @@ export default async function SiteDetailPage({
       updatedAt: m.updatedAt,
       createdById: m.createdById,
       atSurvey: m.atSurvey,
+      photos: m.photos,
     };
   });
   const memoCount = site._count.memos;

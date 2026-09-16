@@ -179,6 +179,7 @@ export type PhotoKind =
   | "KEYBOX"
   | "DELIVERY"
   | "ORDER"
+  | "MEMO"
   | "OTHER";
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   WORK: "作業",
@@ -189,8 +190,13 @@ export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   KEYBOX: "キーBOX",
   DELIVERY: "納品書",
   ORDER: "発注書",
+  MEMO: "メモ",
   OTHER: "その他",
 };
+/** DB の kind（文字列）が既知の種別か（未知なら呼び出し側で既定値に寄せる） */
+export function isPhotoKind(value: string): value is PhotoKind {
+  return Object.prototype.hasOwnProperty.call(PHOTO_KIND_LABEL, value);
+}
 
 // ── 材料の伝票種別（OCR登録） ──
 export type MaterialDocumentType = "DELIVERY" | "ORDER";

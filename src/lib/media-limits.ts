@@ -22,6 +22,9 @@ export const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 /** 1件あたりに添付できる写真・動画の合計点数 */
 export const MEDIA_MAX_COUNT = 60;
 
+/** 現場メモ1件に添えられる写真・動画の点数（「その場で数枚」の用途なので日報より少なめ） */
+export const MEMO_MEDIA_MAX_COUNT = 20;
+
 /** Blob へ直接上げる画像の形式（アップローダーが JPEG に変換してから送る） */
 export const IMAGE_ALLOWED_MIMES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 

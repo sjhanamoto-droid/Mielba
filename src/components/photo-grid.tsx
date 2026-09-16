@@ -18,6 +18,8 @@ export type PhotoData = {
   isVideo: boolean;
   width?: number | null;
   height?: number | null;
+  /** 動画の長さ（秒）。編集用アップローダーの「0:08」表示に使う */
+  duration?: number | null;
 };
 
 /**

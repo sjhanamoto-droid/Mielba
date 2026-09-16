@@ -1,18 +1,27 @@
 "use client";
 
 import { useOptimistic, useRef, useState, useTransition } from "react";
-import { Check, ChevronDown, Loader2, Pencil, Send, StickyNote, Trash2, X } from "lucide-react";
+import { Camera, Check, ChevronDown, Loader2, Pencil, Send, StickyNote, Trash2, X } from "lucide-react";
 import { addSiteMemo, deleteSiteMemo, updateSiteMemo } from "./memo-actions";
 import { Avatar } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
+import { PhotoGrid, type PhotoData } from "@/components/photo-grid";
+import {
+  PhotoUploader,
+  serializeUploaderPhotos,
+  type UploaderPhoto,
+} from "@/components/photo-uploader";
+import { isPhotoKind } from "@/lib/constants";
+import { MEMO_MEDIA_MAX_COUNT } from "@/lib/media-limits";
 import { jstDateTimeLabel } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
 // 現場メモ（現場詳細の先頭）。
 // 開いてすぐ書けるよう入力欄を最上部に置き、投稿は新しい順に「誰が・いつ・何を」で並べる。
+// 写真・動画も添えられる（実体は Blob に直接上げ、ここには参照だけ来る）。
 // 追加は全員、編集・削除は投稿者本人か管理者。5件を超える分は「もっと見る」で畳む。
 
 export type SiteMemoAuthor = { id: string; name: string; avatarColor: string; avatarImage: string | null };
@@ -25,16 +34,37 @@ export type SiteMemoRow = {
   createdById: string | null;
   /** 現調のときに書いたメモ（一覧で「現調」と示す） */
   atSurvey?: boolean;
+  /** 添えた写真・動画（古い順）。実体は /api/photos/[id] から */
+  photos?: PhotoData[];
 };
 
-type MemoView = SiteMemoRow & { pending?: boolean };
+type MemoView = SiteMemoRow & {
+  pending?: boolean;
+  /** 送信中の添付点数（サムネイルはまだ無いので件数だけ出す） */
+  pendingMediaCount?: number;
+};
 
 const FAIL_MSG = "通信に失敗しました。もう一度お試しください。";
+const UPLOADING_MSG = "写真・動画のアップロードが終わるまでお待ちください。";
+const EMPTY_MSG = "メモの内容を入力するか、写真・動画を添付してください。";
 
 function tempId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? `pending-${crypto.randomUUID()}`
     : `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** 保存済みの添付を、編集用アップローダーの初期値（{id} 参照のみ）にする */
+function toUploaderPhotos(photos: PhotoData[] | undefined): UploaderPhoto[] {
+  return (photos ?? []).map((p) => ({
+    id: p.id,
+    caption: p.caption ?? "",
+    kind: isPhotoKind(p.kind) ? p.kind : "MEMO",
+    isVideo: p.isVideo,
+    width: p.width ?? undefined,
+    height: p.height ?? undefined,
+    duration: p.duration ?? undefined,
+  }));
 }
 
 const INITIAL_VISIBLE = 5;
@@ -74,6 +104,19 @@ export function SiteMemoPanel({
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // 新規メモの添付。アップローダーは key を変えて作り直す（送信後に空へ戻す／失敗時に戻す）
+  const [draftPhotos, setDraftPhotos] = useState<UploaderPhoto[]>([]);
+  // 送信中に新しく選んだ添付を、失敗時の復元で消さないよう最新値を ref にも持つ
+  const draftPhotosRef = useRef<UploaderPhoto[]>([]);
+  const [draftUploading, setDraftUploading] = useState(false);
+  const [uploaderKey, setUploaderKey] = useState(0);
+  const [uploaderInitial, setUploaderInitial] = useState<UploaderPhoto[]>([]);
+
+  // 編集中メモの添付（既存は {id} 参照、外したものは kept から抜ける）
+  const [editPhotos, setEditPhotos] = useState<UploaderPhoto[]>([]);
+  const [editInitial, setEditInitial] = useState<UploaderPhoto[]>([]);
+  const [editUploading, setEditUploading] = useState(false);
+
   // 送信直後にその場で1件目として見せる（サーバー反映後は props が置き換わる）
   const [optimisticMemos, addOptimistic] = useOptimistic<MemoView[], MemoView>(
     memos,
@@ -87,17 +130,42 @@ export function SiteMemoPanel({
   const authorOf = (m: MemoView): SiteMemoAuthor | null =>
     m.createdById ? (m.createdById === currentUser.id ? currentUser : (authors[m.createdById] ?? null)) : null;
 
+  function onDraftPhotosChange(photos: UploaderPhoto[]) {
+    draftPhotosRef.current = photos;
+    setDraftPhotos(photos);
+  }
+
+  function resetUploader(initial: UploaderPhoto[]) {
+    setUploaderInitial(initial);
+    setUploaderKey((k) => k + 1);
+  }
+
   function submit() {
+    if (submitting) return; // ⌘+Enter の連打で二重送信しない
     const content = draft.replace(/\r\n/g, "\n").trim();
-    if (!content) {
-      setError("メモの内容を入力してください。");
+    const mediaCount = draftPhotos.length;
+    if (!content && mediaCount === 0) {
+      setError(EMPTY_MSG);
       textareaRef.current?.focus();
+      return;
+    }
+    if (draftUploading) {
+      setError(UPLOADING_MSG);
       return;
     }
     setError(null);
     const snapshot = draft;
+    const snapshotPhotos = draftPhotos;
+    const photosJson = serializeUploaderPhotos(draftPhotos);
     setDraft("");
+    resetUploader([]);
     setSubmitting(true);
+    // 失敗時は入力と添付を戻す。送信中に新しく選んだ添付があればそれも残す
+    // （アップロード済みの実体はそのまま使える）
+    const restore = () => {
+      setDraft((cur) => (cur ? `${snapshot}\n${cur}` : snapshot));
+      resetUploader([...snapshotPhotos, ...draftPhotosRef.current]);
+    };
     startTransition(async () => {
       addOptimistic({
         id: tempId(),
@@ -107,16 +175,17 @@ export function SiteMemoPanel({
         createdById: currentUser.id,
         atSurvey: siteInSurvey,
         pending: true,
+        pendingMediaCount: mediaCount,
       });
       try {
-        const res = await addSiteMemo(siteId, content);
+        const res = await addSiteMemo(siteId, content, photosJson);
         if (res && "error" in res && res.error) {
           setError(res.error);
-          setDraft(snapshot); // 失敗時は入力を戻す
+          restore();
         }
       } catch {
         setError(FAIL_MSG);
-        setDraft(snapshot);
+        restore();
       } finally {
         setSubmitting(false);
       }
@@ -132,22 +201,31 @@ export function SiteMemoPanel({
   }
 
   function beginEdit(m: MemoView) {
+    const initial = toUploaderPhotos(m.photos);
     setEditingId(m.id);
     setEditText(m.content);
+    setEditInitial(initial);
+    setEditPhotos(initial);
+    setEditUploading(false);
     setRowError(null);
   }
 
   function saveEdit(id: string) {
     const content = editText.trim();
-    if (!content) {
-      setRowError({ id, message: "メモの内容を入力してください。" });
+    if (!content && editPhotos.length === 0) {
+      setRowError({ id, message: EMPTY_MSG });
+      return;
+    }
+    if (editUploading) {
+      setRowError({ id, message: UPLOADING_MSG });
       return;
     }
     setBusyId(id);
     setRowError(null);
+    const photosJson = serializeUploaderPhotos(editPhotos);
     startTransition(async () => {
       try {
-        const res = await updateSiteMemo(id, content);
+        const res = await updateSiteMemo(id, content, photosJson);
         if (res && "error" in res && res.error) setRowError({ id, message: res.error });
         else setEditingId(null);
       } catch {
@@ -194,6 +272,16 @@ export function SiteMemoPanel({
           className="min-h-[72px] bg-surface"
           aria-invalid={error ? true : undefined}
         />
+        {/* 写真・動画の添付。未選択のあいだは小さなボタンだけ */}
+        <PhotoUploader
+          key={uploaderKey}
+          variant="compact"
+          defaultKind="MEMO"
+          maxCount={MEMO_MEDIA_MAX_COUNT}
+          initial={uploaderInitial}
+          onChange={onDraftPhotosChange}
+          onBusyChange={setDraftUploading}
+        />
         <div className="flex items-center justify-end gap-2">
           {error && (
             <p role="alert" className="mr-auto min-w-0 text-[11px] font-semibold text-status-danger">
@@ -203,15 +291,15 @@ export function SiteMemoPanel({
           <button
             type="button"
             onClick={submit}
-            disabled={submitting}
+            disabled={submitting || draftUploading}
             className={buttonClass({ size: "md", className: "shrink-0" })}
           >
-            {submitting ? (
+            {submitting || draftUploading ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             ) : (
               <Send className="h-4 w-4" aria-hidden />
             )}
-            メモを残す
+            {draftUploading ? "アップロード中…" : "メモを残す"}
           </button>
         </div>
       </div>
@@ -232,6 +320,7 @@ export function SiteMemoPanel({
             const canManage = !m.pending && (mine || canManageAll);
             const editing = editingId === m.id;
             const busy = busyId === m.id;
+            const photos = m.photos ?? [];
             // 作成時の createdAt(DB) と updatedAt(Prisma) はミリ秒単位でずれうるので、数秒以上の差を「編集済み」とみなす
             const edited =
               new Date(m.updatedAt).getTime() - new Date(m.createdAt).getTime() > 5_000;
@@ -266,11 +355,22 @@ export function SiteMemoPanel({
                         autoFocus
                         className="min-h-[80px]"
                       />
+                      {/* 添付の追加・取り外し（× を2回タップで外す） */}
+                      <PhotoUploader
+                        key={`edit-${m.id}`}
+                        variant="compact"
+                        defaultKind="MEMO"
+                        maxCount={MEMO_MEDIA_MAX_COUNT}
+                        initial={editInitial}
+                        onChange={setEditPhotos}
+                        onBusyChange={setEditUploading}
+                      />
                       <div className="flex justify-end gap-2">
+                        {/* アップロード中に閉じると上げた分が宙に浮くので、終わるまで待ってもらう */}
                         <button
                           type="button"
                           onClick={() => setEditingId(null)}
-                          disabled={busy}
+                          disabled={busy || editUploading}
                           className={buttonClass({ variant: "outline", size: "sm" })}
                         >
                           <X className="h-4 w-4" />
@@ -279,10 +379,10 @@ export function SiteMemoPanel({
                         <button
                           type="button"
                           onClick={() => saveEdit(m.id)}
-                          disabled={busy}
+                          disabled={busy || editUploading}
                           className={buttonClass({ size: "sm" })}
                         >
-                          {busy ? (
+                          {busy || editUploading ? (
                             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                           ) : (
                             <Check className="h-4 w-4" aria-hidden />
@@ -292,16 +392,34 @@ export function SiteMemoPanel({
                       </div>
                     </div>
                   ) : (
-                    <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-ink">
-                      {m.content}
-                    </p>
+                    <>
+                      {m.content && (
+                        <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-ink">
+                          {m.content}
+                        </p>
+                      )}
+                      {/* 添付の写真・動画：タップで拡大・再生 */}
+                      {photos.length > 0 && (
+                        <div className="mt-2">
+                          <PhotoGrid photos={photos} />
+                        </div>
+                      )}
+                      {m.pending && (m.pendingMediaCount ?? 0) > 0 && (
+                        <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
+                          <Camera className="h-3.5 w-3.5" aria-hidden />
+                          写真・動画 {m.pendingMediaCount} 件を送信中…
+                        </p>
+                      )}
+                    </>
                   )}
 
                   {canManage && !editing && (
                     confirmDeleteId === m.id ? (
                       /* 誤タップ防止：その場で2段階確認 */
                       <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-                        <span className="text-xs font-semibold text-status-danger">このメモを削除しますか？</span>
+                        <span className="text-xs font-semibold text-status-danger">
+                          {photos.length > 0 ? "このメモと添付の写真・動画を削除しますか？" : "このメモを削除しますか？"}
+                        </span>
                         <div className="ml-auto flex gap-1.5">
                           <button
                             type="button"
