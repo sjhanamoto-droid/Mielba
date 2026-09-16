@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
 import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
-import { deleteBlobPaths } from "@/lib/media";
+import { deleteUnreferencedBlobs } from "@/lib/blob-cleanup";
 import { MEMO_MEDIA_MAX_COUNT } from "@/lib/media-limits";
 
 // 現場メモ（SiteMemo）のサーバーアクション。
@@ -53,21 +53,6 @@ function toPhotoRows(added: NewPhotoInput[]) {
     width: p.width ?? null,
     height: p.height ?? null,
   }));
-}
-
-/**
- * 外した添付の Blob 本体を消す。ただし、ほかの写真レコード（送信の再試行で二重に
- * 登録された分など）がまだ同じパスを参照していれば残す。失敗しても日次の掃除で拾われる。
- */
-async function deleteUnreferencedBlobs(paths: (string | null)[]): Promise<void> {
-  const candidates = paths.filter((p): p is string => !!p);
-  if (candidates.length === 0) return;
-  const stillUsed = await db.photo.findMany({
-    where: { blobPath: { in: candidates } },
-    select: { blobPath: true },
-  });
-  const used = new Set(stillUsed.map((r) => r.blobPath));
-  await deleteBlobPaths(candidates.filter((p) => !used.has(p)));
 }
 
 /** 現場メモを追加する（photosJson はアップローダーの出力。省略可） */

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Play } from "lucide-react";
+import { Loader2, Play, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
@@ -53,10 +53,46 @@ function VideoThumb({ photo }: { photo: PhotoData }) {
   );
 }
 
-export function PhotoGrid({ photos }: { photos: PhotoData[] }) {
+export function PhotoGrid({
+  photos,
+  canDelete,
+  onDelete,
+}: {
+  photos: PhotoData[];
+  /** 拡大表示に「削除」を出す写真か（onDelete と併せて渡す） */
+  canDelete?: (photo: PhotoData) => boolean;
+  /** 削除の実行。エラーメッセージを返すと拡大表示の中に出す */
+  onDelete?: (photo: PhotoData) => Promise<{ error?: string } | void>;
+}) {
   const [active, setActive] = useState<PhotoData | null>(null);
   // 端末が形式に対応していないと再生できない（iPhoneのHEVC動画をAndroidで開いた場合など）
   const [playbackFailed, setPlaybackFailed] = useState(false);
+  // 削除は拡大表示の中で2段階確認（誤タップ防止）
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  function open(p: PhotoData) {
+    setPlaybackFailed(false);
+    setConfirmDelete(false);
+    setDeleting(false);
+    setDeleteError(null);
+    setActive(p);
+  }
+
+  async function runDelete(p: PhotoData) {
+    if (!onDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await onDelete(p);
+      if (res && res.error) setDeleteError(res.error);
+      else setActive(null);
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   // ライトボックス表示中は Escape で閉じる
   useEffect(() => {
@@ -76,10 +112,7 @@ export function PhotoGrid({ photos }: { photos: PhotoData[] }) {
         {photos.map((p) => (
           <button
             key={p.id}
-            onClick={() => {
-              setPlaybackFailed(false);
-              setActive(p);
-            }}
+            onClick={() => open(p)}
             aria-label={p.caption || (p.isVideo ? "動画を再生" : "写真を拡大")}
             className="group relative aspect-square overflow-hidden rounded-xl bg-surface-sunken active:scale-95"
           >
@@ -118,10 +151,16 @@ export function PhotoGrid({ photos }: { photos: PhotoData[] }) {
           aria-modal="true"
           aria-label={active.caption || (active.isVideo ? "動画" : "写真")}
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4 animate-fade-in"
-          onClick={() => setActive(null)}
+          onClick={() => {
+            // 削除の通信中は閉じない（失敗したときのメッセージを見せるため）
+            if (!deleting) setActive(null);
+          }}
         >
           <button
-            onClick={() => setActive(null)}
+            onClick={() => {
+            // 削除の通信中は閉じない（失敗したときのメッセージを見せるため）
+            if (!deleting) setActive(null);
+          }}
             className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white safe-top"
             aria-label="閉じる"
           >
@@ -167,9 +206,54 @@ export function PhotoGrid({ photos }: { photos: PhotoData[] }) {
               onClick={(e) => e.stopPropagation()}
             />
           )}
-          <div className="mt-3 flex items-center gap-2 text-center text-white" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="mt-3 flex max-w-full flex-wrap items-center justify-center gap-2 text-center text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Badge tone="neutral">{PHOTO_KIND_LABEL[active.kind as PhotoKind] ?? active.kind}</Badge>
             {active.caption && <span className="text-sm">{active.caption}</span>}
+            {onDelete && canDelete?.(active) && (
+              confirmDelete ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold">この写真を削除しますか？</span>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleting}
+                    className="flex min-h-[36px] items-center rounded-full bg-white/15 px-3 text-xs font-bold text-white"
+                  >
+                    やめる
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runDelete(active)}
+                    disabled={deleting}
+                    className="flex min-h-[36px] items-center gap-1 rounded-full bg-red-600 px-3 text-xs font-bold text-white"
+                  >
+                    {deleting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    )}
+                    削除する
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex min-h-[36px] items-center gap-1 rounded-full bg-white/15 px-3 text-xs font-bold text-white/90"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  削除
+                </button>
+              )
+            )}
+            {deleteError && (
+              <span role="alert" className="basis-full text-xs font-semibold text-red-300">
+                {deleteError}
+              </span>
+            )}
           </div>
         </div>
       )}

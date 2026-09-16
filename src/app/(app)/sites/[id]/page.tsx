@@ -27,6 +27,7 @@ import { PartnerControl } from "@/features/sites/partner-control";
 import { SiteMaterialSummary } from "@/features/materials/site-material-summary";
 import { SiteAnalysisCard } from "@/features/sites/site-analysis-card";
 import { SiteMemoPanel, type SiteMemoAuthor, type SiteMemoRow } from "@/features/sites/site-memo-panel";
+import { SitePhotosSection, type SitePhotoItem } from "@/features/sites/site-photos-section";
 import { SiteDetailTabs } from "@/features/sites/site-detail-tabs";
 import { Tabs } from "@/components/ui/tabs";
 import { todayRange } from "@/lib/date";
@@ -159,7 +160,15 @@ export default async function SiteDetailPage({
     getResolvedHandovers(site.id),
     db.photo.findMany({
       where: { siteId: site.id },
-      select: { id: true, caption: true, kind: true, isVideo: true, width: true, height: true },
+      select: {
+        id: true,
+        caption: true,
+        kind: true,
+        isVideo: true,
+        width: true,
+        height: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: "asc" },
     }),
     db.dailyReport.aggregate({
@@ -205,21 +214,45 @@ export default async function SiteDetailPage({
   const schedulePdfs = sitePhotos.filter((p) => p.kind === "SCHEDULE" && isPdfLike(p));
   const hasDocuments =
     drawingImages.length + drawingPdfs.length + scheduleImages.length + schedulePdfs.length > 0;
-  // 「写真・動画」セクションの中身。現調記録・日報の写真に、現場メモの添付も合流させる。
-  // メモの添付は「現調中に書いたメモ（atSurvey）」なら現調、そうでなければ施工に自動で振り分ける。
-  type TimedPhoto = PhotoData & { createdAt: Date };
+  // 「写真・動画」セクションの中身。現調記録・日報の写真に、セクションから直接上げた写真と
+  // 現場メモの添付も合流させる。メモの添付は「現調中に書いたメモ（atSurvey）」なら現調、
+  // そうでなければ施工に自動で振り分ける。
+  // deletable＝このセクションから外せる写真（現調記録の写真と現場直付けの施工写真）。
+  // 日報・メモの写真はそれぞれの画面から外す。
+  type TimedPhoto = SitePhotoItem & { createdAt: Date };
   const memoPhotosAtSurvey: TimedPhoto[] = [];
   const memoPhotosAtWork: TimedPhoto[] = [];
   for (const m of site.memos) {
-    for (const p of m.photos) (m.atSurvey ? memoPhotosAtSurvey : memoPhotosAtWork).push(p);
+    for (const p of m.photos) {
+      (m.atSurvey ? memoPhotosAtSurvey : memoPhotosAtWork).push({ ...p, deletable: false });
+    }
   }
+  // 並べ替えが済んだら createdAt は落とす（クライアントには表示に要る項目だけ渡す。両タブに載るので二重に送られる）
+  const toItem = (p: TimedPhoto): SitePhotoItem => ({
+    id: p.id,
+    caption: p.caption,
+    kind: p.kind,
+    isVideo: p.isVideo,
+    width: p.width,
+    height: p.height,
+    duration: p.duration,
+    deletable: p.deletable,
+  });
   // 現調：撮った順（古い順）。施工：新しい順
-  const surveyPhotos: PhotoData[] = [...(site.survey?.photos ?? []), ...memoPhotosAtSurvey].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-  );
-  const workPhotos: PhotoData[] = [...reportPhotos, ...memoPhotosAtWork].sort(
-    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-  );
+  const surveyPhotos: SitePhotoItem[] = [
+    ...(site.survey?.photos ?? []).map((p): TimedPhoto => ({ ...p, deletable: true })),
+    ...memoPhotosAtSurvey,
+  ]
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .map(toItem);
+  const workPhotos: SitePhotoItem[] = [
+    ...reportPhotos.map((p): TimedPhoto => ({ ...p, deletable: false })),
+    // セクションから直接上げた施工写真（現場直付け・kind=WORK）
+    ...sitePhotos.filter((p) => p.kind === "WORK").map((p): TimedPhoto => ({ ...p, deletable: true })),
+    ...memoPhotosAtWork,
+  ]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .map(toItem);
 
   const mapsUrl = site.address
     ? `https://maps.google.com/?q=${encodeURIComponent(site.address)}`
@@ -312,46 +345,17 @@ export default async function SiteDetailPage({
     ) : null;
 
   // ───────────────── タブ①「連絡・メモ」: 現場を開いたら最初に目に入る ─────────────────
-  // 写真・動画（現調のときの分と、施工が始まってからの分をタブで分ける）。
+  // 写真・動画（現調のときの分と、施工が始まってからの分をタブで分ける）。写真が無くても常に出す。
   // 「連絡・メモ」と「現場情報」の両方に同じものを置く。どちらも同じデータから描画するので、
-  // 現調フォーマットや日報で写真を足したり消したりすれば、両方のタブに同時に反映される。
-  const photosSection =
-    surveyPhotos.length > 0 || workPhotos.length > 0 ? (
-      <section className="space-y-2.5">
-        <SectionTitle>写真・動画</SectionTitle>
-        <Tabs
-          defaultId={workPhotos.length > 0 ? "work" : "survey"}
-          tabs={[
-            {
-              id: "survey",
-              label: "現調",
-              count: surveyPhotos.length,
-              content:
-                surveyPhotos.length > 0 ? (
-                  <PhotoGrid photos={surveyPhotos} />
-                ) : (
-                  <p className="px-1 py-2 text-sm text-ink-muted">
-                    現調の写真はまだありません。現調フォーマットや、現調中の現場メモから追加できます。
-                  </p>
-                ),
-            },
-            {
-              id: "work",
-              label: "施工",
-              count: workPhotos.length,
-              content:
-                workPhotos.length > 0 ? (
-                  <PhotoGrid photos={workPhotos} />
-                ) : (
-                  <p className="px-1 py-2 text-sm text-ink-muted">
-                    施工の写真はまだありません。日報や現場メモに付けた写真がここに並びます。
-                  </p>
-                ),
-            },
-          ]}
-        />
-      </section>
-    ) : null;
+  // どちらのタブから追加・削除しても、現調フォーマットや日報で足したり消したりしても、両方に同時に反映される。
+  const photosSection = (
+    <SitePhotosSection
+      siteId={site.id}
+      surveyPhotos={surveyPhotos}
+      workPhotos={workPhotos}
+      siteInSurvey={site.siteStatus === "SURVEY"}
+    />
+  );
 
   const notesPanel = (
     <div className="space-y-5">

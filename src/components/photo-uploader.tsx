@@ -294,18 +294,33 @@ export function serializeUploaderPhotos(photos: UploaderPhoto[]): string {
   );
 }
 
+/** 親から選択中のファイルを操作するためのハンドル（controlRef 経由） */
+export type PhotoUploaderHandle = {
+  /** 保存が済んだ分（blobPath）を一覧から外す。アップロード中のものはそのまま続く */
+  remove: (blobPaths: string[]) => void;
+};
+
 export function PhotoUploader({
   name = "photos",
   defaultKind = "WORK",
   initial = [],
   variant = "default",
   maxCount = MEDIA_MAX_COUNT,
+  addLabel = "写真・動画を添付",
+  disabled = false,
+  controlRef,
   onChange,
   onBusyChange,
 }: {
   name?: string;
   defaultKind?: PhotoKind;
   initial?: UploaderPhoto[];
+  /** compact で未選択のときに出すボタンの文言 */
+  addLabel?: string;
+  /** 親が保存中など、新しいファイルを選ばせたくないあいだ true */
+  disabled?: boolean;
+  /** 親から remove() を呼ぶためのハンドル置き場 */
+  controlRef?: React.MutableRefObject<PhotoUploaderHandle | null>;
   /**
    * compact: 現場メモなど「本文に添える」用途。種別タグ・説明欄は出さず、
    * 未選択のあいだは小さな「写真・動画を添付」ボタンだけにして入力欄を圧迫しない。
@@ -335,6 +350,19 @@ export function PhotoUploader({
   useEffect(() => {
     onBusyChangeRef.current?.(busy);
   }, [busy]);
+  // 親からの操作（保存済み分の取り外し）。作り直し（key 変更）せずに済むので、アップロード中の分を巻き込まない
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = {
+      remove: (blobPaths) => {
+        const targets = new Set(blobPaths);
+        setPhotos((prev) => prev.filter((p) => !(p.blobPath && targets.has(p.blobPath))));
+      },
+    };
+    return () => {
+      controlRef.current = null;
+    };
+  }, [controlRef]);
   const [errors, setErrors] = useState<string[]>([]);
   const [notices, setNotices] = useState<string[]>([]);
   // アップロード中の動画（完了した時点で photos に入る）
@@ -507,7 +535,11 @@ export function PhotoUploader({
           continue;
         }
 
-        if (!f.type.startsWith("image/")) continue;
+        if (!f.type.startsWith("image/")) {
+          // PDF などを選んでも黙って落とさず、何が起きたか伝える
+          nextErrors.push(`${f.name} は写真・動画ではないため追加していません`);
+          continue;
+        }
 
         if (count >= maxCount) {
           nextErrors.push(`写真・動画は合計${maxCount}件までです（${f.name} は追加していません）`);
@@ -582,11 +614,11 @@ export function PhotoUploader({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={busy}
+          disabled={busy || disabled}
           className={buttonClass({ variant: "outline", size: "sm" })}
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Camera className="h-4 w-4" aria-hidden />}
-          写真・動画を添付
+          {addLabel}
         </button>
       ) : (
       <div className={cn("grid gap-2", compact ? "grid-cols-4" : "grid-cols-3")}>
@@ -690,7 +722,7 @@ export function PhotoUploader({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={busy}
+          disabled={busy || disabled}
           className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-line-strong bg-surface-subtle text-ink-muted active:scale-95"
         >
           {busy ? (
