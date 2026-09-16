@@ -282,6 +282,47 @@ export default async function SiteDetailPage({
     ) : null;
 
   // ───────────────── タブ①「連絡・メモ」: 現場を開いたら最初に目に入る ─────────────────
+  // 写真・動画（現調のときの分と、施工が始まってからの分をタブで分ける）。
+  // 「連絡・メモ」と「現場情報」の両方に同じものを置く。どちらも同じデータから描画するので、
+  // 現調フォーマットや日報で写真を足したり消したりすれば、両方のタブに同時に反映される。
+  const photosSection =
+    surveyPhotos.length > 0 || workPhotos.length > 0 ? (
+      <section className="space-y-2.5">
+        <SectionTitle>写真・動画</SectionTitle>
+        <Tabs
+          defaultId={workPhotos.length > 0 ? "work" : "survey"}
+          tabs={[
+            {
+              id: "survey",
+              label: "現調",
+              count: surveyPhotos.length,
+              content:
+                surveyPhotos.length > 0 ? (
+                  <PhotoGrid photos={surveyPhotos} />
+                ) : (
+                  <p className="px-1 py-2 text-sm text-ink-muted">
+                    現調の写真はまだありません。現調フォーマットから追加できます。
+                  </p>
+                ),
+            },
+            {
+              id: "work",
+              label: "施工",
+              count: workPhotos.length,
+              content:
+                workPhotos.length > 0 ? (
+                  <PhotoGrid photos={workPhotos} />
+                ) : (
+                  <p className="px-1 py-2 text-sm text-ink-muted">
+                    施工の写真はまだありません。日報に付けた写真がここに並びます。
+                  </p>
+                ),
+            },
+          ]}
+        />
+      </section>
+    ) : null;
+
   const notesPanel = (
     <div className="space-y-5">
       {surveyBanner}
@@ -356,6 +397,9 @@ export default async function SiteDetailPage({
           siteInSurvey={site.siteStatus === "SURVEY"}
         />
       </section>
+
+      {/* 写真・動画（「現場情報」タブと同じ内容。定義は photosSection） */}
+      {photosSection}
     </div>
   );
 
@@ -657,43 +701,8 @@ export default async function SiteDetailPage({
             </section>
           )}
 
-          {/* 写真・動画（現調のときの分と、施工が始まってからの分をタブで分ける） */}
-          {(surveyPhotos.length > 0 || workPhotos.length > 0) && (
-            <section className="space-y-2.5">
-              <SectionTitle>写真・動画</SectionTitle>
-              <Tabs
-                defaultId={workPhotos.length > 0 ? "work" : "survey"}
-                tabs={[
-                  {
-                    id: "survey",
-                    label: "現調",
-                    count: surveyPhotos.length,
-                    content:
-                      surveyPhotos.length > 0 ? (
-                        <PhotoGrid photos={surveyPhotos} />
-                      ) : (
-                        <p className="px-1 py-2 text-sm text-ink-muted">
-                          現調の写真はまだありません。現調フォーマットから追加できます。
-                        </p>
-                      ),
-                  },
-                  {
-                    id: "work",
-                    label: "施工",
-                    count: workPhotos.length,
-                    content:
-                      workPhotos.length > 0 ? (
-                        <PhotoGrid photos={workPhotos} />
-                      ) : (
-                        <p className="px-1 py-2 text-sm text-ink-muted">
-                          施工の写真はまだありません。日報に付けた写真がここに並びます。
-                        </p>
-                      ),
-                  },
-                ]}
-              />
-            </section>
-          )}
+          {/* 写真・動画（「連絡・メモ」タブと同じ内容。定義は photosSection） */}
+          {photosSection}
 
           {/* 登録材料（種類・数量は全員／金額は最高管理者のみ） */}
           <section className="space-y-2.5">
