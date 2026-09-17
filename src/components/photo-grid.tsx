@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, Play, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Loader2, Play, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
+import { cn } from "@/lib/utils";
 
 /**
  * 表示用の写真メタデータ。base64（dataUrl/thumbUrl）は含めない。
@@ -53,6 +54,10 @@ function VideoThumb({ photo }: { photo: PhotoData }) {
   );
 }
 
+/** 横スワイプとみなす最小の移動量（px）と、縦方向に対する比率 */
+const SWIPE_MIN_PX = 50;
+const SWIPE_RATIO = 1.2;
+
 export function PhotoGrid({
   photos,
   canDelete,
@@ -64,20 +69,49 @@ export function PhotoGrid({
   /** 削除の実行。エラーメッセージを返すと拡大表示の中に出す */
   onDelete?: (photo: PhotoData) => Promise<{ error?: string } | void>;
 }) {
-  const [active, setActive] = useState<PhotoData | null>(null);
+  // 拡大表示中の写真は配列の位置で持つ（前後へ移動するため）
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   // 端末が形式に対応していないと再生できない（iPhoneのHEVC動画をAndroidで開いた場合など）
   const [playbackFailed, setPlaybackFailed] = useState(false);
   // 削除は拡大表示の中で2段階確認（誤タップ防止）
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const touchRef = useRef<{ x: number; y: number; ok: boolean } | null>(null);
 
-  function open(p: PhotoData) {
+  const total = photos.length;
+  const active = activeIndex != null ? (photos[activeIndex] ?? null) : null;
+  const hasPrev = activeIndex != null && activeIndex > 0;
+  const hasNext = activeIndex != null && activeIndex < total - 1;
+
+  function resetPerPhoto() {
     setPlaybackFailed(false);
     setConfirmDelete(false);
-    setDeleting(false);
     setDeleteError(null);
-    setActive(p);
+  }
+
+  function open(index: number) {
+    resetPerPhoto();
+    setDeleting(false);
+    setActiveIndex(index);
+  }
+
+  function close() {
+    // 削除の通信中は閉じない（失敗したときのメッセージを見せるため）
+    if (deleting) return;
+    setActiveIndex(null);
+  }
+
+  /** 前後へ移動する（端では止まる。削除中は動かさない） */
+  function go(delta: 1 | -1) {
+    if (deleting) return;
+    setActiveIndex((cur) => {
+      if (cur == null) return cur;
+      const next = cur + delta;
+      if (next < 0 || next >= total) return cur;
+      return next;
+    });
+    resetPerPhoto();
   }
 
   async function runDelete(p: PhotoData) {
@@ -87,32 +121,75 @@ export function PhotoGrid({
     try {
       const res = await onDelete(p);
       if (res && res.error) setDeleteError(res.error);
-      else setActive(null);
+      else setActiveIndex(null);
     } finally {
       setDeleting(false);
       setConfirmDelete(false);
     }
   }
 
-  // ライトボックス表示中は Escape で閉じる
+  // 表示中の写真が（別の場所での削除などで）無くなったら閉じる
+  useEffect(() => {
+    if (activeIndex != null && !photos[activeIndex]) setActiveIndex(null);
+  }, [photos, activeIndex]);
+
+  // ライトボックス表示中：Escape で閉じる、← → で前後へ、背面のページはスクロールさせない
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setActive(null);
+      if (e.key === "Escape") close();
+      else if (e.key === "ArrowLeft") go(-1);
+      else if (e.key === "ArrowRight") go(1);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active]);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+    // close/go は state の setter しか使わないので依存に入れない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, deleting, total]);
+
+  // 隣の写真を先に読んでおく（次へ進んだときに待たせない。動画は重いので対象外）
+  useEffect(() => {
+    if (activeIndex == null) return;
+    for (const i of [activeIndex - 1, activeIndex + 1]) {
+      const p = photos[i];
+      if (!p || p.isVideo) continue;
+      const img = new Image();
+      img.src = photoSrc(p.id);
+    }
+  }, [activeIndex, photos]);
+
+  function onTouchStart(e: React.TouchEvent<HTMLDivElement>) {
+    const t = e.touches[0];
+    const el = e.target as HTMLElement | null;
+    // 動画の操作バー（シーク）上のドラッグは前後移動と誤認しない
+    touchRef.current = { x: t.clientX, y: t.clientY, ok: !el?.closest?.("video") };
+  }
+
+  function onTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (!start?.ok) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return;
+    go(dx < 0 ? 1 : -1);
+  }
 
   if (photos.length === 0) return null;
 
   return (
     <>
       <div className="grid grid-cols-3 gap-2">
-        {photos.map((p) => (
+        {photos.map((p, i) => (
           <button
             key={p.id}
-            onClick={() => open(p)}
+            onClick={() => open(i)}
             aria-label={p.caption || (p.isVideo ? "動画を再生" : "写真を拡大")}
             className="group relative aspect-square overflow-hidden rounded-xl bg-surface-sunken active:scale-95"
           >
@@ -145,27 +222,76 @@ export function PhotoGrid({
         ))}
       </div>
 
-      {active && (
+      {active && activeIndex != null && (
+        /*
+         * data-noswipe: 現場詳細のタブ（連絡・メモ／現場情報／日報）は横スワイプで切り替わるので、
+         * ライトボックス上のスワイプはタブ側に拾わせない（前後の写真へ移動する操作にする）。
+         * touch-none: 背面のページがスクロールしないようにする。
+         */
         <div
           role="dialog"
           aria-modal="true"
           aria-label={active.caption || (active.isVideo ? "動画" : "写真")}
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4 animate-fade-in"
-          onClick={() => {
-            // 削除の通信中は閉じない（失敗したときのメッセージを見せるため）
-            if (!deleting) setActive(null);
-          }}
+          data-noswipe
+          className="fixed inset-0 z-50 flex touch-none flex-col items-center justify-center overscroll-contain bg-black/90 p-4 animate-fade-in"
+          onClick={close}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
         >
-          <button
-            onClick={() => {
-            // 削除の通信中は閉じない（失敗したときのメッセージを見せるため）
-            if (!deleting) setActive(null);
-          }}
-            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white safe-top"
-            aria-label="閉じる"
+          {/* 上部：枚数と閉じる */}
+          <div
+            className="safe-top absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4"
+            onClick={(e) => e.stopPropagation()}
           >
-            <X className="h-6 w-6" />
-          </button>
+            <span className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold text-white tnum">
+              {activeIndex + 1} / {total}
+            </span>
+            <button
+              type="button"
+              onClick={close}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
+              aria-label="閉じる"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+
+          {/* 前後へ（端では薄くして無効に）。スマホは横スワイプでも移動できる */}
+          {total > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  go(-1);
+                }}
+                disabled={!hasPrev}
+                aria-label="前の写真"
+                className={cn(
+                  "absolute left-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white",
+                  !hasPrev && "opacity-30",
+                )}
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  go(1);
+                }}
+                disabled={!hasNext}
+                aria-label="次の写真"
+                className={cn(
+                  "absolute right-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white",
+                  !hasNext && "opacity-30",
+                )}
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </>
+          )}
+
           {active.isVideo ? (
             playbackFailed ? (
               <div
@@ -187,6 +313,7 @@ export function PhotoGrid({
               </div>
             ) : (
               <video
+                key={active.id}
                 src={photoSrc(active.id)}
                 controls
                 playsInline
@@ -199,6 +326,7 @@ export function PhotoGrid({
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
+              key={active.id}
               src={photoSrc(active.id)}
               alt={active.caption ?? ""}
               decoding="async"
