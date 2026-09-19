@@ -814,6 +814,8 @@ export async function saveSurvey(siteId: string, formData: FormData) {
 
   revalidatePath(`/sites/${siteId}`);
   revalidatePath(`/sites/${siteId}/survey`);
+  // 現調の現場は現調フォーマットの保存が日報の代わり。未入力ゲート（layout）を再計算させる
+  revalidatePath("/", "layout");
   return { ok: true };
 }
 

@@ -8,6 +8,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { dayRangeForKey, jstDateKey } from "@/lib/date";
+import { surveyCoversVisit } from "@/lib/missing-reports";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,16 @@ async function handle(req: NextRequest) {
   const range = dayRangeForKey(dayKey);
 
   // 当日の現場入りと、当日の提出済み日報を取得して突き合わせる。
+  // 現調の現場は日報の代わりに現調フォーマットを書くので、当日以降に保存済みなら未入力にしない。
   const [visits, reports] = await Promise.all([
     db.siteVisit.findMany({
       where: { date: range },
-      select: { siteId: true, userId: true },
+      select: {
+        siteId: true,
+        userId: true,
+        date: true,
+        site: { select: { survey: { select: { updatedAt: true } } } },
+      },
     }),
     db.dailyReport.findMany({
       where: { workDate: range, status: "SUBMITTED" },
@@ -42,6 +49,7 @@ async function handle(req: NextRequest) {
   let created = 0;
   for (const visit of visits) {
     if (submitted.has(`${visit.siteId}:${visit.userId}`)) continue;
+    if (surveyCoversVisit(visit.site.survey?.updatedAt, visit.date)) continue;
     const done = await createNotification({
       userId: visit.userId,
       type: "REPORT_MISSING",

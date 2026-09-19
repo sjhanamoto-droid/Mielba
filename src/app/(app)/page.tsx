@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
+import { isSurveySite, surveyFormHref } from "@/lib/missing-reports";
 import { jstDateKey, todayRange, tomorrowKey, dayRangeForKey, dateFromKey, addDaysKey } from "@/lib/date";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { mapSearchUrl } from "@/lib/utils";
@@ -241,11 +242,12 @@ export default async function HomePage() {
     })),
   ];
 
-  // 現場カードの日報ボタン（状態で文言と遷移先が変わる）
-  function reportLink(siteId: string): { href: string; label: string } {
+  // 現場カードの日報ボタン（状態で文言と遷移先が変わる）。現調中の現場は日報ではなく現調フォーマット
+  function reportLink(siteId: string, siteStatus: string): { href: string; label: string } {
     const r = reportBySiteId.get(siteId);
     if (r?.status === "SUBMITTED") return { href: `/reports/${r.id}`, label: "日報を見る" };
     if (r?.status === "DRAFT") return { href: `/reports/${r.id}/edit`, label: "下書きを開く" };
+    if (isSurveySite(siteStatus)) return { href: surveyFormHref(siteId), label: "現調フォーマットを開く" };
     return { href: `/reports/new?siteId=${siteId}`, label: "日報を書く" };
   }
 
@@ -340,7 +342,7 @@ export default async function HomePage() {
                       const stage = isPreOrderSite(v.site.siteStatus)
                         ? SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus]
                         : SITE_STAGES[siteStageIndex(v.site.siteStatus, v.site.projectStatus)];
-                      const report = reportLink(v.siteId);
+                      const report = reportLink(v.siteId, v.site.siteStatus);
                       return (
                         <div key={v.id}>
                           <Link

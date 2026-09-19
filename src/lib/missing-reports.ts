@@ -12,11 +12,39 @@ export type MissingReport = {
   dateKey: string; // "YYYY-MM-DD"（作業日）
   dateLabel: string; // 表示用（例: 8月4日(月)）
   draftReportId: string | null; // 下書きがあれば編集リンク、なければ新規作成
+  /** 現調中の現場（日報ではなく現調フォーマットを書く） */
+  siteInSurvey: boolean;
 };
+
+/** 現調中の現場か（日報の代わりに現調フォーマットを書く） */
+export function isSurveySite(siteStatus: string): boolean {
+  return siteStatus === "SURVEY";
+}
+
+/** 現調の現場で「日報を書く」に相当する画面 */
+export function surveyFormHref(siteId: string): string {
+  return `/sites/${siteId}/survey`;
+}
+
+/**
+ * 現調フォーマットがその現場入りの日以降に保存されていれば、その日の記録は済んでいるとみなす。
+ * 現調の現場では日報ではなく現調フォーマットを書くため（フォーマットは現場に1つなので、
+ * 「行った日以降に保存したか」で日ごとの入力を判定する）。
+ * 受注済に変わったあとも、現調期間の現場入りが未入力扱いに戻らないよう、現場の状態は見ない。
+ */
+export function surveyCoversVisit(
+  surveyUpdatedAt: Date | null | undefined,
+  visitDate: Date,
+): boolean {
+  if (!surveyUpdatedAt) return false;
+  const dayStart = dateFromKey(storedDateKey(visitDate));
+  return surveyUpdatedAt.getTime() >= dayStart.getTime();
+}
 
 /**
  * 指定ユーザーの「前日以前・直近 MISSING_LOOKBACK_DAYS 日」の範囲で、
  * 現場入り(SiteVisit)があるのに提出済み日報(SUBMITTED)が無い (現場, 日) を返す。
+ * 現調フォーマットがその日以降に保存されている現場入りは済みとみなす。
  * 下書き(DRAFT)がある場合は draftReportId を添えて編集導線に使う。新しい日付順。
  */
 export async function getMissingPastReports(userId: string): Promise<MissingReport[]> {
@@ -28,7 +56,17 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
   const [visits, reports] = await Promise.all([
     db.siteVisit.findMany({
       where: { userId, date: { gte: lookbackStart, lt: todayStart } },
-      select: { siteId: true, date: true, site: { select: { name: true } } },
+      select: {
+        siteId: true,
+        date: true,
+        site: {
+          select: {
+            name: true,
+            siteStatus: true,
+            survey: { select: { updatedAt: true } },
+          },
+        },
+      },
       orderBy: { date: "desc" },
     }),
     db.dailyReport.findMany({
@@ -51,12 +89,14 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
     const dateKey = storedDateKey(v.date);
     const k = `${v.siteId}:${dateKey}`;
     if (submitted.has(k)) continue;
+    if (surveyCoversVisit(v.site.survey?.updatedAt, v.date)) continue;
     missing.push({
       siteId: v.siteId,
       siteName: v.site.name,
       dateKey,
       dateLabel: fmtDateWithDay(v.date),
       draftReportId: draftByKey.get(k) ?? null,
+      siteInSurvey: isSurveySite(v.site.siteStatus),
     });
   }
   return missing;

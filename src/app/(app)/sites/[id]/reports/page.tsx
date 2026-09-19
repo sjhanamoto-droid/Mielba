@@ -22,9 +22,15 @@ export default async function SiteReportsPage({
     select: {
       id: true,
       name: true,
+      siteStatus: true,
     },
   });
   if (!site) notFound();
+
+  // 現調中の現場は「日報を書く」の代わりに現調フォーマットを開く
+  const writeHref =
+    site.siteStatus === "SURVEY" ? `/sites/${site.id}/survey` : `/reports/new?siteId=${site.id}`;
+  const writeLabel = site.siteStatus === "SURVEY" ? "現調フォーマットを開く" : "日報を書く";
 
   const reports = await db.dailyReport.findMany({
     where: { siteId: id },
@@ -51,8 +57,8 @@ export default async function SiteReportsPage({
         subtitle={site.name}
         backHref={`/sites/${site.id}`}
         right={
-          <LinkButton href={`/reports/new?siteId=${site.id}`} size="sm">
-            <Plus className="h-4 w-4" />日報を書く
+          <LinkButton href={writeHref} size="sm">
+            <Plus className="h-4 w-4" />{writeLabel}
           </LinkButton>
         }
       />
@@ -63,8 +69,8 @@ export default async function SiteReportsPage({
             title="まだ日報がありません"
             description="この現場の最初の日報を作成しましょう"
             action={
-              <LinkButton href={`/reports/new?siteId=${site.id}`} size="sm">
-                <Plus className="h-4 w-4" />日報を書く
+              <LinkButton href={writeHref} size="sm">
+                <Plus className="h-4 w-4" />{writeLabel}
               </LinkButton>
             }
           />

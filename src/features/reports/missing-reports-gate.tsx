@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, ChevronRight, PenLine, Plus } from "lucide-react";
-import type { MissingReport } from "@/lib/missing-reports";
+import { AlertTriangle, ChevronRight, ClipboardList, PenLine, Plus } from "lucide-react";
+import { surveyFormHref, type MissingReport } from "@/lib/missing-reports";
 
 /**
  * 未入力日報の強制ゲート：前日以前に日報が未入力の現場があるとき、
@@ -17,9 +17,11 @@ import type { MissingReport } from "@/lib/missing-reports";
  */
 export function MissingReportsGate({ items }: { items: MissingReport[] }) {
   const pathname = usePathname();
-  // 日報を書く画面（新規/編集）ではゲートを退避してフォームを触れるようにする
+  // 日報を書く画面（新規/編集）と現調フォーマットではゲートを退避してフォームを触れるようにする
   const onWritingRoute =
-    pathname === "/reports/new" || /^\/reports\/[^/]+\/edit$/.test(pathname);
+    pathname === "/reports/new" ||
+    /^\/reports\/[^/]+\/edit$/.test(pathname) ||
+    /^\/sites\/[^/]+\/survey$/.test(pathname);
   const open = items.length > 0 && !onWritingRoute;
 
   // 表示中は背景スクロールをロック
@@ -59,11 +61,21 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
         <div className="mx-auto w-full max-w-3xl space-y-2.5">
           <p className="px-1 pb-1 text-sm leading-relaxed text-ink-soft">
             日を過ぎても入力できます。現場ごとに、その日の作業内容・勤怠を入力してください。
+            現調の現場は、日報の代わりに現調フォーマットを保存してください。
           </p>
           {items.map((m) => {
-            const href = m.draftReportId
-              ? `/reports/${m.draftReportId}/edit`
-              : `/reports/new?siteId=${m.siteId}&date=${m.dateKey}`;
+            // 現調中の現場（下書きの日報が無いもの）は現調フォーマットへ。それ以外は日報へ
+            const toSurvey = m.siteInSurvey && !m.draftReportId;
+            const href = toSurvey
+              ? surveyFormHref(m.siteId)
+              : m.draftReportId
+                ? `/reports/${m.draftReportId}/edit`
+                : `/reports/new?siteId=${m.siteId}&date=${m.dateKey}`;
+            const label = toSurvey
+              ? "現調フォーマットを書く"
+              : m.draftReportId
+                ? "続きを書く"
+                : "日報を書く";
             return (
               <Link
                 key={`${m.siteId}:${m.dateKey}`}
@@ -71,17 +83,23 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
                 className="card flex w-full items-center gap-3 p-4 text-left tap-row hover:border-line-strong hover:shadow-float"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-status-danger dark:bg-red-950/40">
-                  {m.draftReportId ? <PenLine className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                  {toSurvey ? (
+                    <ClipboardList className="h-5 w-5" />
+                  ) : m.draftReportId ? (
+                    <PenLine className="h-5 w-5" />
+                  ) : (
+                    <Plus className="h-5 w-5" />
+                  )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-bold text-ink">{m.siteName}</p>
                   <p className="mt-0.5 text-xs font-medium text-ink-muted">
                     {m.dateLabel}
-                    {m.draftReportId ? "・下書きあり" : ""}
+                    {toSurvey ? "・現調" : m.draftReportId ? "・下書きあり" : ""}
                   </p>
                 </div>
                 <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-brand-600">
-                  {m.draftReportId ? "続きを書く" : "日報を書く"}
+                  {label}
                   <ChevronRight className="h-4 w-4" />
                 </span>
               </Link>

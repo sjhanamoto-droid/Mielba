@@ -10,6 +10,7 @@ import { getAppSettings } from "@/lib/settings";
 import { dedupeByName } from "@/lib/materials";
 import { fmtDateWithDay } from "@/lib/utils";
 import { jstDateKey, dateFromKey, dayRangeForKey } from "@/lib/date";
+import { isSurveySite, surveyFormHref } from "@/lib/missing-reports";
 import { Crown } from "lucide-react";
 
 export default async function NewReportPage({
@@ -23,9 +24,13 @@ export default async function NewReportPage({
 
   const site = await db.site.findUnique({
     where: { id: siteId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, siteStatus: true },
   });
   if (!site) notFound();
+
+  // 現調中の現場は日報ではなく現調フォーマットを書く（ダッシュボード・日報ハブ・通知・
+  // 未入力ゲートのどこから来ても、ここで一律に振り分ける）
+  if (isSurveySite(site.siteStatus)) redirect(surveyFormHref(site.id));
 
   const settings = await getAppSettings();
 

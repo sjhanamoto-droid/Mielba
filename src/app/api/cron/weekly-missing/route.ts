@@ -9,6 +9,8 @@ import { db } from "@/lib/db";
 import { createNotificationForUsers } from "@/lib/notifications";
 import { addDaysKey, dateFromKey, jstDateKey, storedDateKey } from "@/lib/date";
 
+import { surveyCoversVisit } from "@/lib/missing-reports";
+
 export const dynamic = "force-dynamic";
 
 /** Vercel Cron の Authorization ヘッダを検証する（CRON_SECRET 未設定なら不許可） */
@@ -34,6 +36,8 @@ async function handle(req: NextRequest) {
         userId: true,
         date: true,
         user: { select: { name: true } },
+        // 現調の現場は日報の代わりに現調フォーマットを書く（その日以降に保存済みなら未入力にしない）
+        site: { select: { survey: { select: { updatedAt: true } } } },
       },
     }),
     db.dailyReport.findMany({
@@ -50,7 +54,9 @@ async function handle(req: NextRequest) {
   const missingUsers = new Map<string, string>(); // userId -> name
   for (const v of visits) {
     const key = `${v.siteId}:${v.userId}:${storedDateKey(v.date)}`;
-    if (!submitted.has(key)) missingUsers.set(v.userId, v.user.name);
+    if (submitted.has(key)) continue;
+    if (surveyCoversVisit(v.site.survey?.updatedAt, v.date)) continue;
+    missingUsers.set(v.userId, v.user.name);
   }
 
   if (missingUsers.size === 0) {

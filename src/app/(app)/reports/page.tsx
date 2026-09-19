@@ -119,6 +119,11 @@ export default async function ReportsHubPage({
                               <LinkButton href={`/reports/${r!.id}/edit`} variant="accent" size="md" className="w-full">
                                 <PenLine className="h-4 w-4" />下書きの続きを書く
                               </LinkButton>
+                            ) : v.site.siteStatus === "SURVEY" ? (
+                              // 現調中の現場は日報ではなく現調フォーマットを書く
+                              <LinkButton href={`/sites/${v.siteId}/survey`} size="md" className="w-full">
+                                <Plus className="h-4 w-4" />現調フォーマットを書く
+                              </LinkButton>
                             ) : (
                               <LinkButton href={`/reports/new?siteId=${v.siteId}`} size="md" className="w-full">
                                 <Plus className="h-4 w-4" />日報を書く

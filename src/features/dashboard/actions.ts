@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
 import { createNotification } from "@/lib/notifications";
 import { dayRangeForKey, jstDateKey } from "@/lib/date";
+import { surveyCoversVisit } from "@/lib/missing-reports";
 
 export type RemindState = { error?: string; ok?: boolean; count?: number };
 
@@ -19,7 +20,16 @@ export async function remindMissingReports(): Promise<RemindState> {
   const range = dayRangeForKey(dayKey);
 
   const [visits, reports] = await Promise.all([
-    db.siteVisit.findMany({ where: { date: range }, select: { siteId: true, userId: true } }),
+    db.siteVisit.findMany({
+      where: { date: range },
+      select: {
+        siteId: true,
+        userId: true,
+        date: true,
+        // 現調の現場は日報の代わりに現調フォーマットを書く（当日以降に保存済みなら未提出にしない）
+        site: { select: { survey: { select: { updatedAt: true } } } },
+      },
+    }),
     db.dailyReport.findMany({
       where: { workDate: range, status: "SUBMITTED" },
       select: { siteId: true, userId: true },
@@ -31,7 +41,9 @@ export async function remindMissingReports(): Promise<RemindState> {
   // 未提出の「本人」を重複除去（同一人物が複数現場でも通知は1件）
   const pendingUserIds = new Set<string>();
   for (const v of visits) {
-    if (!submitted.has(`${v.siteId}:${v.userId}`)) pendingUserIds.add(v.userId);
+    if (submitted.has(`${v.siteId}:${v.userId}`)) continue;
+    if (surveyCoversVisit(v.site.survey?.updatedAt, v.date)) continue;
+    pendingUserIds.add(v.userId);
   }
 
   if (pendingUserIds.size === 0) {

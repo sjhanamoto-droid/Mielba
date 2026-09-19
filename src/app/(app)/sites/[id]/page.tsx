@@ -991,6 +991,11 @@ export default async function SiteDetailPage({
   );
 
   // ───────────────── タブ③「日報」 ─────────────────
+  // 現調中の現場は「日報を書く」の代わりに現調フォーマットを開く（/reports/new 側でも同じ振り分けをする）
+  const writeReportHref =
+    site.siteStatus === "SURVEY" ? `/sites/${site.id}/survey` : `/reports/new?siteId=${site.id}`;
+  const writeReportLabel = site.siteStatus === "SURVEY" ? "現調フォーマットを開く" : "日報を書く";
+
   const reportsPanel = (
     <section className="space-y-2.5">
       <SectionTitle
@@ -1008,10 +1013,15 @@ export default async function SiteDetailPage({
         <EmptyState
           icon={<FileText className="h-6 w-6" />}
           title="まだ日報がありません"
+          description={
+            site.siteStatus === "SURVEY"
+              ? "現調中は日報の代わりに現調フォーマットに残します"
+              : undefined
+          }
           action={
-            <LinkButton href={`/reports/new?siteId=${site.id}`} size="sm">
+            <LinkButton href={writeReportHref} size="sm">
               <Plus className="h-4 w-4" />
-              日報を書く
+              {writeReportLabel}
             </LinkButton>
           }
         />
@@ -1022,14 +1032,9 @@ export default async function SiteDetailPage({
               <ReportCard key={r.id} report={r} showSite={false} />
             ))}
           </div>
-          <LinkButton
-            href={`/reports/new?siteId=${site.id}`}
-            variant="outline"
-            size="md"
-            className="w-full"
-          >
+          <LinkButton href={writeReportHref} variant="outline" size="md" className="w-full">
             <Plus className="h-4 w-4" />
-            日報を書く
+            {writeReportLabel}
           </LinkButton>
         </>
       )}
