@@ -127,9 +127,13 @@ export default async function AttendanceUserPage({
             >
               <ChevronLeft className="h-5 w-5" />
             </Link>
-            <div className="text-center leading-tight">
-              <p className="text-base font-bold text-ink tnum md:text-lg">{monthLabel}</p>
-              {isCurrent && <p className="text-[11px] font-semibold text-brand-600">今月</p>}
+            <div className="flex items-center gap-2">
+              <p className="text-xl font-bold text-ink tnum">{monthLabel}</p>
+              {isCurrent && (
+                <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                  今月
+                </span>
+              )}
             </div>
             <Link
               href={monthHref(addMonthsKey(ym, 1))}
@@ -144,12 +148,12 @@ export default async function AttendanceUserPage({
           <Card className="flex items-center gap-3 p-4">
             <Avatar name={target.name} color={target.avatarColor} image={target.avatarImage} size="md" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-ink">{target.name}</p>
-              <p className="text-xs text-ink-muted">{monthLabel} の稼働</p>
+              <p className="truncate text-lg font-bold text-ink">{target.name}</p>
+              <p className="text-sm text-ink-muted">{monthLabel} の稼働</p>
             </div>
             <div className="shrink-0 text-right">
-              <p className="text-lg font-bold text-ink tnum">{fmtWorkMinutes(totalMinutes)}</p>
-              <p className="text-[11px] text-ink-muted tnum">{days.length} 日</p>
+              <p className="text-2xl font-bold text-ink tnum">{fmtWorkMinutes(totalMinutes)}</p>
+              <p className="text-sm text-ink-muted tnum">{days.length} 日</p>
             </div>
           </Card>
 
@@ -165,23 +169,23 @@ export default async function AttendanceUserPage({
               {days.map(([key, d]) => (
                 <div key={key} className="space-y-1.5">
                   <div className="flex items-center justify-between px-1">
-                    <p className="text-sm font-bold text-ink">{fmtDateWithDay(dateFromKey(key))}</p>
-                    <p className="text-sm font-bold text-brand-600 tnum">{fmtWorkMinutes(d.minutes)}</p>
+                    <p className="text-lg font-bold text-ink tnum">{fmtDateWithDay(dateFromKey(key))}</p>
+                    <p className="text-base font-bold text-brand-600 tnum">{fmtWorkMinutes(d.minutes)}</p>
                   </div>
-                  <Card className="divide-y divide-line">
+                  <Card className="divide-y divide-line overflow-hidden">
                     {d.rows.map((row) =>
                       row.office ? (
-                        <div key={row.key} className="flex items-center gap-3 px-4 py-3">
+                        <div key={row.key} className="flex items-center gap-3 px-4 py-3.5">
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
                             <Briefcase className="h-5 w-5" />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-bold text-ink">{row.siteName}</p>
-                            <p className="text-[11px] text-ink-muted tnum">
+                            <p className="truncate text-base font-bold text-ink">{row.siteName}</p>
+                            <p className="text-sm text-ink-muted tnum">
                               {row.start}〜{row.end}
                             </p>
                           </div>
-                          <p className="shrink-0 text-sm font-bold text-ink tnum">
+                          <p className="shrink-0 text-base font-bold text-ink tnum">
                             {fmtWorkMinutes(row.minutes)}
                           </p>
                         </div>
@@ -189,18 +193,18 @@ export default async function AttendanceUserPage({
                         <Link
                           key={row.key}
                           href={`/reports/${row.reportId}`}
-                          className="flex items-center gap-3 px-4 py-3 tap-row"
+                          className="flex items-center gap-3 px-4 py-3.5 tap-row"
                         >
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
                             <HardHat className="h-5 w-5" />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-bold text-ink">{row.siteName}</p>
-                            <p className="text-[11px] text-ink-muted tnum">
+                            <p className="truncate text-base font-bold text-ink">{row.siteName}</p>
+                            <p className="text-sm text-ink-muted tnum">
                               {row.start}〜{row.end}
                             </p>
                           </div>
-                          <p className="shrink-0 text-sm font-bold text-ink tnum">
+                          <p className="shrink-0 text-base font-bold text-ink tnum">
                             {fmtWorkMinutes(row.minutes)}
                           </p>
                           <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />

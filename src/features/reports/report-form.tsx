@@ -373,7 +373,7 @@ export function ReportForm({
   }
 
   return (
-    <form ref={formRef} action={action} className="space-y-5">
+    <form ref={formRef} action={action} className="space-y-6">
       {mode === "edit" && initial && (
         <input type="hidden" name="reportId" value={initial.id} />
       )}
@@ -439,20 +439,24 @@ export function ReportForm({
         </div>
       )}
 
-      {/* 現場（自動入力） */}
-      <div className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface-subtle px-4 py-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-          <HardHat className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium text-ink-muted">現場（自動入力）</p>
-          <p className="truncate text-sm font-bold text-ink">{siteName}</p>
-        </div>
-      </div>
+      {/* 現場（自動入力）＋本日の予定。どの現場の日報かを一番大きく見せる */}
+      <div className="card p-4 md:p-5">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-ink-muted">
+          <HardHat className="h-4 w-4 shrink-0" />
+          現場（自動入力）
+        </p>
+        <p
+          className={cn(
+            "mt-1 break-words font-bold leading-tight text-ink",
+            siteName.length > 10 ? "text-2xl" : "text-[1.875rem]",
+          )}
+        >
+          {siteName}
+        </p>
 
       {/* 本日の予定（カレンダー連動）を日報の基盤として表示 */}
       {eventContext && (
-        <div className="rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3">
+        <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-3">
           <div className="flex items-center gap-1.5 text-xs font-bold text-brand-700">
             <CalendarClock className="h-4 w-4" />
             本日の予定（カレンダーより）
@@ -481,8 +485,12 @@ export function ReportForm({
           )}
         </div>
       )}
+      </div>
 
-      {/* 現場詳細（AI下書き） + AIサポート */}
+      {/* 今日の作業：現場詳細（AI下書き）＋AIサポート → 作業内容 */}
+      <section className="space-y-2.5">
+      <SectionTitle>今日の作業</SectionTitle>
+      <div className="card space-y-5 p-4">
       <div className="space-y-2.5">
         <Field
           label="現場詳細"
@@ -529,8 +537,17 @@ export function ReportForm({
           onChange={(e) => setDetail(e.target.value)}
         />
       </Field>
+      </div>
+      </section>
 
       {/* 作業日・作業時間（勤怠内包） */}
+      <section className="space-y-2.5">
+      <SectionTitle>
+        <span className="flex items-center gap-1.5">
+          <Clock className="h-4 w-4" />
+          作業日・時間
+        </span>
+      </SectionTitle>
       <div className="card space-y-3 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="作業日" required htmlFor="workDate" error={fieldErrors.workDate} className="min-w-0">
@@ -545,7 +562,7 @@ export function ReportForm({
             />
           </Field>
           <div className="grid min-w-0 grid-cols-2 gap-3">
-            <Field label="開始時刻" required htmlFor="startTime" hint="勤怠を兼ねます" error={fieldErrors.startTime} className="min-w-0">
+            <Field label="開始時刻" required htmlFor="startTime" error={fieldErrors.startTime} className="min-w-0">
               <Input
                 id="startTime"
                 name="startTime"
@@ -596,15 +613,17 @@ export function ReportForm({
           </Field>
         )}
       </div>
+      </section>
 
       {/* 経費（駐車場代＝固定行 ＋ その他の経費を＋追加） */}
-      <div className="space-y-3">
+      <section className="space-y-2.5">
         <SectionTitle>
-          <span className="flex items-center gap-1.5 text-ink-soft">
+          <span className="flex items-center gap-1.5">
             <Wallet className="h-4 w-4" />
             経費
           </span>
         </SectionTitle>
+        <div className="card space-y-5 p-4">
         {/* 駐車場代（あり/なし＋金額） */}
         <YesNoField
           label="駐車場代"
@@ -690,21 +709,25 @@ export function ReportForm({
             </RowCard>
           ))}
         </DynamicSection>
-      </div>
+        </div>
+      </section>
 
       {/* 使用材料・在庫材料（メインの人のみ入力可） */}
+      <section className="space-y-2.5">
+      <SectionTitle>
+        <span className="flex items-center gap-1.5">
+          <Package className="h-4 w-4" />
+          材料・在庫
+        </span>
+      </SectionTitle>
       {materialsLocked ? (
-        <div className="rounded-2xl border border-line bg-surface-subtle px-4 py-3.5">
-          <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-            <Package className="h-4 w-4 text-ink-muted" />
-            材料・在庫について
-          </span>
-          <p className="mt-1 text-sm text-ink-muted">
+        <div className="card px-4 py-3.5">
+          <p className="text-sm text-ink-muted">
             使用材料・在庫材料はメインの人が入力します。
           </p>
         </div>
       ) : (
-      <>
+      <div className="card space-y-5 p-4">
       <DynamicSection
         title="使用材料"
         icon={<Package className="h-4 w-4" />}
@@ -863,10 +886,19 @@ export function ReportForm({
           />
         </div>
       </YesNoField>
-      </>
+      </div>
       )}
+      </section>
 
       {/* 引き継ぎ事項（あり/なし＋次に入る人への申し送り） */}
+      <section className="space-y-2.5">
+      <SectionTitle>
+        <span className="flex items-center gap-1.5">
+          <ArrowRightLeft className="h-4 w-4" />
+          引き継ぎ
+        </span>
+      </SectionTitle>
+      <div className="card p-4">
       <YesNoField
         label="引き継ぎ事項"
         icon={<ArrowRightLeft className="h-4 w-4 text-ink-muted" />}
@@ -892,12 +924,16 @@ export function ReportForm({
           提出すると現場の引き継ぎとして起票されます。その現場に入る人は、アプリを開いたときに一人ずつ読んで確認するまで先に進めません。
         </p>
       </YesNoField>
+      </div>
+      </section>
 
       {/* 写真 */}
-      <div className="space-y-2">
+      <section className="space-y-2.5">
         <SectionTitle>写真・動画</SectionTitle>
-        <PhotoUploader name="photos" defaultKind="WORK" initial={initial?.photos ?? []} />
-      </div>
+        <div className="card p-4">
+          <PhotoUploader name="photos" defaultKind="WORK" initial={initial?.photos ?? []} />
+        </div>
+      </section>
 
       <div className="rounded-xl border border-line bg-surface-subtle px-3 py-2.5 text-[11px] text-ink-muted">
         <span className="flex items-center gap-1.5 font-semibold text-ink-soft">
@@ -937,10 +973,8 @@ function DynamicSection({
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
   return (
     <div className="space-y-2.5">
-      <SectionTitle>
-        <span className="flex items-center gap-1.5 text-ink-soft">{icon}{title}</span>
-      </SectionTitle>
-      {hint && <p className="px-1 text-[11px] text-ink-faint">{hint}</p>}
+      <span className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft">{icon}{title}</span>
+      {hint && <p className="text-[11px] text-ink-faint">{hint}</p>}
       {hasChildren && <div className="space-y-2.5">{children}</div>}
       <button
         type="button"

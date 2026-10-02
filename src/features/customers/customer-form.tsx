@@ -80,7 +80,7 @@ export function CustomerForm({ customer }: { customer?: CustomerFormValues }) {
       {/* 基本（顧客名・メモのみ） */}
       <section className="space-y-3">
         <SectionTitle>基本情報</SectionTitle>
-        <Card className="space-y-3 p-4">
+        <Card className="space-y-4 p-4">
           <Field label="顧客名" required htmlFor="name">
             <Input
               id="name"
@@ -102,8 +102,8 @@ export function CustomerForm({ customer }: { customer?: CustomerFormValues }) {
       </section>
 
       {/* 詳細情報（任意・折りたたみ） */}
-      <details className="group rounded-2xl border border-line bg-surface">
-        <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-ink-soft [&::-webkit-details-marker]:hidden">
+      <details className="card group">
+        <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-lg font-bold text-ink [&::-webkit-details-marker]:hidden">
           詳細情報（任意）
           <ChevronDown className="h-5 w-5 shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>

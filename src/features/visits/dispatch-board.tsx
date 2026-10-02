@@ -15,6 +15,9 @@ import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { ROLE_LABEL, EVENT_CATEGORY_LABEL, type Role, type EventCategory } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { dateFromKey } from "@/lib/date";
+
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
 type Staff = { id: string; name: string; avatarColor: string; avatarImage?: string | null };
 type DispatchUser = { id: string; name: string; avatarColor: string; avatarImage?: string | null; role: string };
@@ -71,12 +74,16 @@ export function DispatchDateNav({
   nextKey,
   isToday,
   label,
+  dateKey,
 }: {
   prevKey: string;
   nextKey: string;
   isToday: boolean;
   label: string;
+  /** 表示中の日付 "YYYY-MM-DD"（見出しを「10月2日 金曜日」で出す） */
+  dateKey: string;
 }) {
+  const date = dateFromKey(dateKey);
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -98,16 +105,24 @@ export function DispatchDateNav({
         <ChevronLeft className="h-6 w-6" />
       </button>
       <div className="text-center">
-        <p className="flex items-center justify-center gap-1.5 text-base font-bold text-ink tnum md:text-lg">
-          {isPending && <Loader2 className="h-4 w-4 animate-spin text-brand-600" aria-hidden />}
-          {label}
+        <p className="flex items-baseline justify-center gap-2" aria-label={label}>
+          {isPending && <Loader2 className="h-4 w-4 animate-spin self-center text-brand-600" aria-hidden />}
+          <span className="text-xl font-bold tnum text-ink">
+            {date.getMonth() + 1}月{date.getDate()}日
+          </span>
+          <span className="text-sm font-semibold text-ink-muted">{WEEKDAYS[date.getDay()]}曜日</span>
+          {isToday && (
+            <span className="self-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+              今日
+            </span>
+          )}
         </p>
         {!isToday && (
           <button
             type="button"
             onClick={() => go(null)}
             disabled={isPending}
-            className="text-xs font-semibold text-brand-600 disabled:opacity-50"
+            className="mt-0.5 h-8 px-2 text-sm font-semibold text-brand-600 disabled:opacity-50"
           >
             今日に戻る
           </button>
@@ -250,9 +265,9 @@ export function DispatchBoard({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-2xl bg-brand-50 px-4 py-3">
-        <span className="text-sm font-semibold text-brand-700">この日の現場入り 合計</span>
-        <span className="text-lg font-bold tnum text-brand-700">{totalGoing}名</span>
+      <div className="flex items-center justify-between rounded-2xl bg-brand-50 px-4 py-3.5 dark:bg-brand-950/30">
+        <span className="text-[15px] font-bold text-brand-700 dark:text-brand-300">この日の現場入り 合計</span>
+        <span className="text-2xl font-bold tnum text-brand-700 dark:text-brand-300">{totalGoing}名</span>
       </div>
 
       {/* 現場をその場で追加（配員から直接。登録の手間を減らす） */}
@@ -291,7 +306,7 @@ export function DispatchBoard({
         <button
           type="button"
           onClick={() => setSiteAddOpen(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong py-2.5 text-sm font-bold text-brand-600 active:scale-[0.99]"
+          className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong text-[15px] font-bold text-brand-600 active:scale-[0.99]"
         >
           <Plus className="h-4 w-4" /> 現場を追加
         </button>
@@ -305,18 +320,18 @@ export function DispatchBoard({
             <div key={s.id} className="card p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <Link href={`/sites/${s.id}`} className="block truncate text-[15px] font-bold text-ink">
+                  <Link href={`/sites/${s.id}`} className="block truncate text-lg font-bold leading-tight text-ink">
                     {s.name}
                   </Link>
                   {s.siteStatus === "SURVEY" && (
                     <span className="mt-0.5 inline-block"><SiteStatusBadge status={s.siteStatus} /></span>
                   )}
                   {s.customerName && (
-                    <p className="truncate text-xs text-ink-muted">{s.customerName}</p>
+                    <p className="mt-0.5 truncate text-sm text-ink-muted">{s.customerName}</p>
                   )}
                 </div>
                 <span className={cn(
-                  "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold",
+                  "shrink-0 rounded-full px-3 py-1 text-sm font-bold tnum",
                   goingCount > 0
                     ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
                     : "bg-surface-sunken text-ink-muted",
@@ -378,7 +393,7 @@ export function DispatchBoard({
               <button
                 type="button"
                 onClick={() => setEditSiteId(s.id)}
-                className="mt-3 flex items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3 py-1.5 text-xs font-bold text-ink-soft active:scale-95"
+                className="mt-3 flex h-10 items-center gap-1.5 rounded-full border border-brand-200 bg-surface px-4 text-sm font-bold text-brand-700 active:scale-95 dark:border-brand-800"
               >
                 <Users className="h-4 w-4 text-brand-600" aria-hidden />
                 配員を編集
@@ -399,21 +414,21 @@ export function DispatchBoard({
       {untethered.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 px-1">
-            <CalendarClock className="h-4 w-4 text-ink-muted" aria-hidden />
-            <h2 className="text-sm font-bold text-ink-soft">現場未指定の予定（カレンダー）</h2>
+            <CalendarClock className="h-5 w-5 text-ink-muted" aria-hidden />
+            <h2 className="text-lg font-bold text-ink">現場未指定の予定（カレンダー）</h2>
           </div>
           {untethered.map((e) => (
             <div key={e.id} className="card p-4">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
-                  <p className="min-w-0 truncate text-[15px] font-bold text-ink">{e.title}</p>
+                  <p className="min-w-0 truncate text-base font-bold text-ink">{e.title}</p>
                   {e.category && (
                     <span className="shrink-0 rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] font-bold text-ink-muted">
                       {EVENT_CATEGORY_LABEL[e.category as EventCategory] ?? e.category}
                     </span>
                   )}
                 </div>
-                <span className="shrink-0 text-xs font-bold tnum text-ink-muted">
+                <span className="shrink-0 text-sm font-bold tnum text-ink-muted">
                   {e.allDay ? "終日" : `${e.startTime ?? ""}${e.endTime ? `〜${e.endTime}` : ""}`}
                 </span>
               </div>
@@ -433,7 +448,7 @@ export function DispatchBoard({
                 type="button"
                 onClick={() => handleConvert(e.id)}
                 disabled={convertingId === e.id}
-                className="mt-3 flex items-center gap-1.5 rounded-full border border-brand-600 bg-surface px-3 py-1.5 text-xs font-bold text-brand-600 active:scale-95 disabled:opacity-60"
+                className="mt-3 flex h-10 items-center gap-1.5 rounded-full border border-brand-600 bg-surface px-4 text-sm font-bold text-brand-600 active:scale-95 disabled:opacity-60"
               >
                 {convertingId === e.id ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -598,8 +613,8 @@ function VisitSheet({
       >
         <div className="mb-4 flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h2 className="text-base font-bold text-ink">配員を編集</h2>
-            <p className="truncate text-xs text-ink-muted">{site.name}</p>
+            <h2 className="text-lg font-bold text-ink">配員を編集</h2>
+            <p className="truncate text-sm text-ink-muted">{site.name}</p>
           </div>
           <button
             onClick={onClose}

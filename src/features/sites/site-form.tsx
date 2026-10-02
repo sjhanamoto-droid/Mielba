@@ -582,8 +582,8 @@ export function SiteForm({
       </div>
 
       {/* 詳細設定（折りたたみ） */}
-      <details className="group rounded-2xl border border-line bg-surface">
-        <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-ink-soft [&::-webkit-details-marker]:hidden">
+      <details className="card group">
+        <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-lg font-bold text-ink [&::-webkit-details-marker]:hidden">
           詳細設定
           <ChevronDown className="h-5 w-5 shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>

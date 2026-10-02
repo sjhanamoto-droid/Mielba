@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import {
   Clock, Package, Truck, ClipboardList, StickyNote, Sparkles, MessageSquare,
   Pencil, ChevronRight, CalendarDays, Users, Printer, ArrowRightLeft, CircleParking, Wallet,
-  TrainFront, Boxes,
+  TrainFront, Boxes, HardHat,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -12,11 +12,12 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { LinkButton } from "@/components/ui/button";
+import { LinkButton, buttonClass } from "@/components/ui/button";
 import { PhotoGrid } from "@/components/photo-grid";
 import { SearchParamToast } from "@/components/ui/toast";
 import { CommentForm } from "@/features/reports/comment-form";
 import { fmtDateWithDay, fmtDate, fmtDateTime, fmtYen, workHours } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { REPORT_STATUS_LABEL, type ReportStatus } from "@/lib/constants";
 
 export default async function ReportDetailPage({
@@ -68,18 +69,10 @@ export default async function ReportDetailPage({
         subtitle={report.site.name}
         backHref={`/sites/${report.site.id}/reports`}
         right={
-          <span className="flex items-center gap-1">
-            <LinkButton href={`/reports/${report.id}/print`} variant="ghost" size="sm">
-              <Printer className="h-4 w-4" />
-              PDF・印刷
-            </LinkButton>
-            {canEdit && (
-              <LinkButton href={`/reports/${report.id}/edit`} variant="ghost" size="sm">
-                <Pencil className="h-4 w-4" />
-                編集
-              </LinkButton>
-            )}
-          </span>
+          <LinkButton href={`/reports/${report.id}/print`} variant="ghost" size="sm">
+            <Printer className="h-4 w-4" />
+            PDF・印刷
+          </LinkButton>
         }
       />
 
@@ -87,15 +80,76 @@ export default async function ReportDetailPage({
       <SearchParamToast />
 
       <PageContainer>
-        {/* 引き継ぎ事項（次に入る人への申し送り）。日報を開いたとき必ず一番上に出す。
+        <div className="space-y-5 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
+          {/* 右レール（概要カード）。デスクトップは右、モバイルは先頭 */}
+          <aside className="space-y-4 lg:order-2 lg:col-span-1">
+        {/* 概要カード（現場詳細と同じ調子：日付と状態 → 現場名を大きく → 時間・担当 → 次の操作） */}
+        <div className="card p-4 md:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-lg font-bold tnum text-ink">{fmtDateWithDay(report.workDate)}</p>
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1 text-sm font-bold",
+                submitted
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                  : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+              )}
+            >
+              {REPORT_STATUS_LABEL[report.status as ReportStatus]}
+            </span>
+          </div>
+          <h1
+            className={cn(
+              "mt-1.5 break-words font-bold leading-tight text-ink",
+              report.site.name.length > 10 ? "text-2xl" : "text-[1.875rem]",
+            )}
+          >
+            {report.site.name}
+          </h1>
+          <p className="mt-1 flex items-center gap-1.5 text-[15px] text-ink-soft">
+            <Clock className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+            <span className="font-semibold tnum text-ink">
+              {report.startTime} – {report.endTime}
+            </span>
+            <span>実働 {workHours(report.startTime, report.endTime)}</span>
+          </p>
+
+          <div className="mt-3 flex items-center gap-2 text-sm text-ink-muted">
+            <Avatar name={report.user.name} color={report.user.avatarColor} image={report.user.avatarImage} size="sm" />
+            <span className="min-w-0 truncate">{report.user.name}</span>
+          </div>
+
+          {canEdit && (
+            <LinkButton href={`/reports/${report.id}/edit`} size="lg" className="relative mt-4 w-full">
+              <Pencil className="h-5 w-5" aria-hidden />
+              編集する
+              <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
+            </LinkButton>
+          )}
+          <Link
+            href={`/sites/${report.site.id}`}
+            className={buttonClass({
+              variant: "outline",
+              className: cn("w-full border-brand-200 text-brand-700 dark:border-brand-800", canEdit ? "mt-2" : "mt-4"),
+            })}
+          >
+            <HardHat className="h-[18px] w-[18px]" aria-hidden />
+            現場を見る
+          </Link>
+        </div>
+          </aside>
+
+          {/* 主要コンテンツ */}
+          <div className="space-y-5 lg:order-1 lg:col-span-2">
+        {/* 引き継ぎ事項（次に入る人への申し送り）。日報を開いたとき概要カードのすぐ下に必ず出す。
             内容が無くても枠は出す（「無い」のか「見落とし」なのかを判断できるように）。 */}
-        <section className="mb-4 space-y-2.5">
+        <section className="space-y-2.5">
           <SectionTitle
             action={
               canEdit ? (
                 <Link
                   href={`/reports/${report.id}/edit#handover`}
-                  className="text-xs font-semibold text-brand-600"
+                  className="text-sm font-semibold text-brand-600"
                 >
                   {report.handover ? "編集" : "追加"}
                 </Link>
@@ -129,47 +183,9 @@ export default async function ReportDetailPage({
           )}
         </section>
 
-        <div className="space-y-4 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0">
-          {/* 右レール（メタ・メモ・コメント）。デスクトップは右、モバイルは従来通り上→下の順を維持 */}
-          <aside className="space-y-4 lg:order-2 lg:col-span-1">
-        {/* ヘッダーカード */}
-        <Card className="space-y-3 p-4">
-          <div className="flex items-center gap-3">
-            <Avatar name={report.user.name} color={report.user.avatarColor} image={report.user.avatarImage} size="lg" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-base font-bold text-ink">{report.user.name}</span>
-                <Badge tone={submitted ? "active" : "warn"}>
-                  {REPORT_STATUS_LABEL[report.status as ReportStatus]}
-                </Badge>
-              </div>
-              <p className="mt-0.5 text-xs text-ink-muted">{fmtDateWithDay(report.workDate)}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2.5 text-sm">
-            <Clock className="h-4 w-4 text-ink-muted" />
-            <span className="font-bold tnum text-ink">
-              {report.startTime} – {report.endTime}
-            </span>
-            <span className="text-ink-faint">実働 {workHours(report.startTime, report.endTime)}</span>
-          </div>
-
-          <Link
-            href={`/sites/${report.site.id}`}
-            className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5 active:bg-surface-subtle"
-          >
-            <span className="min-w-0 truncate text-sm font-semibold text-brand-600">{report.site.name}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
-          </Link>
-        </Card>
-          </aside>
-
-          {/* 主要コンテンツ */}
-          <div className="space-y-4 lg:order-1 lg:col-span-2">
         {/* 現場詳細 */}
         {report.detail && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>現場詳細</SectionTitle>
             <Card className="p-4">
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{report.detail}</p>
@@ -192,7 +208,7 @@ export default async function ReportDetailPage({
 
         {/* 作業時間の変更理由（8:00-17:00 以外のとき） */}
         {report.timeChangeReason && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><Clock className="h-4 w-4" />作業時間の変更理由</span>
             </SectionTitle>
@@ -204,7 +220,7 @@ export default async function ReportDetailPage({
 
         {/* 使用材料 */}
         {report.materials.length > 0 && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><Package className="h-4 w-4" />使用材料</span>
             </SectionTitle>
@@ -226,7 +242,7 @@ export default async function ReportDetailPage({
 
         {/* 在庫材料の使用（あり/なし＋内容） */}
         {report.stockUsed != null && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><Boxes className="h-4 w-4" />在庫材料の使用</span>
             </SectionTitle>
@@ -264,7 +280,7 @@ export default async function ReportDetailPage({
 
         {/* 経費（駐車場代＋電車賃＋その他） */}
         {hasExpenses && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><Wallet className="h-4 w-4" />経費</span>
             </SectionTitle>
@@ -307,7 +323,7 @@ export default async function ReportDetailPage({
 
         {/* 材料発注 */}
         {report.orders.length > 0 && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><Truck className="h-4 w-4" />材料発注</span>
             </SectionTitle>
@@ -335,7 +351,7 @@ export default async function ReportDetailPage({
 
         {/* 次回工程打合せ */}
         {report.nextProcesses.length > 0 && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><ClipboardList className="h-4 w-4" />次回工程打合せ</span>
             </SectionTitle>
@@ -367,7 +383,7 @@ export default async function ReportDetailPage({
 
         {/* 注意点メモ */}
         {report.memo && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>
               <span className="flex items-center gap-1.5"><StickyNote className="h-4 w-4" />注意点メモ</span>
             </SectionTitle>
@@ -379,14 +395,14 @@ export default async function ReportDetailPage({
 
         {/* 写真 */}
         {report.photos.length > 0 && (
-          <section className="space-y-2">
+          <section className="space-y-2.5">
             <SectionTitle>写真・動画</SectionTitle>
             <PhotoGrid photos={report.photos} />
           </section>
         )}
 
         {/* コメント */}
-        <section className="space-y-2">
+        <section className="space-y-2.5">
           <SectionTitle>
             <span className="flex items-center gap-1.5">
               <MessageSquare className="h-4 w-4" />

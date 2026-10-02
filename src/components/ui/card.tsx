@@ -38,12 +38,12 @@ export function CardLink({
 export function SectionTitle({
   children,
   action,
-  size = "sm",
+  size = "lg",
   className,
 }: {
   children: React.ReactNode;
   action?: React.ReactNode;
-  /** lg = ホーム・現場詳細の大見出し（情報の区切りをはっきり見せる） */
+  /** lg = 画面の大見出し（既定。情報の区切りをはっきり見せる）／ sm = カード内などの小見出し */
   size?: "sm" | "lg";
   className?: string;
 }) {

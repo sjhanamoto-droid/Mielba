@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { ReportCard } from "@/components/report-card";
 import { EmptyState } from "@/components/ui/misc";
+import { SectionTitle } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/button";
 import { fmtDateWithDay } from "@/lib/utils";
 
@@ -75,20 +76,17 @@ export default async function SiteReportsPage({
             }
           />
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-6">
             {[...groups.entries()].map(([key, dayReports]) => (
               <section key={key} className="space-y-2.5">
-                <div className="flex items-center gap-2 px-1">
-                  <h2 className="text-sm font-bold text-ink-soft">
-                    {fmtDateWithDay(dayReports[0].workDate)}
-                  </h2>
-                  <span className="text-xs font-medium text-ink-faint">
-                    {dayReports.length}名
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <SectionTitle
+                  action={<span className="text-sm font-semibold text-ink-muted tnum">{dayReports.length}名</span>}
+                >
+                  <span className="tnum">{fmtDateWithDay(dayReports[0].workDate)}</span>
+                </SectionTitle>
+                <div className="card divide-y divide-line overflow-hidden">
                   {dayReports.map((r) => (
-                    <ReportCard key={r.id} report={r} showSite={false} showDate={false} />
+                    <ReportCard key={r.id} report={r} showSite={false} showDate={false} variant="row" />
                   ))}
                 </div>
               </section>

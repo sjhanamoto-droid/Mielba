@@ -134,7 +134,7 @@ export function SitePhotosSection({
         size="lg"
         action={
           total > 0 ? (
-            <span className="text-xs font-semibold text-ink-muted tnum">{total}件</span>
+            <span className="text-sm font-semibold text-ink-muted tnum">{total}件</span>
           ) : undefined
         }
       >
@@ -152,14 +152,14 @@ export function SitePhotosSection({
           onChange={onPendingChange}
           onBusyChange={setUploading}
         />
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-faint">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
           {saving ? (
-            <span className="flex items-center gap-1 text-ink-muted">
+            <span className="flex items-center gap-1">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
               保存しています…
             </span>
           ) : showRetry ? (
-            <span className="text-ink-muted">保存できていない写真・動画があります。</span>
+            <span>保存できていない写真・動画があります。</span>
           ) : target === "survey" ? (
             <span>追加した写真・動画は「現調」に入ります（現調中のため）。</span>
           ) : (
@@ -169,7 +169,7 @@ export function SitePhotosSection({
         {(error || showRetry) && (
           <p
             role="alert"
-            className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-status-danger"
+            className="flex flex-wrap items-center gap-2 text-xs font-semibold text-status-danger"
           >
             {error && <span>{error}</span>}
             {showRetry && (
@@ -180,7 +180,7 @@ export function SitePhotosSection({
                   void save(pendingRef.current);
                 }}
                 disabled={saving}
-                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-status-danger/40 px-2 text-status-danger"
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-status-danger/40 px-3 text-status-danger"
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                 もう一度保存

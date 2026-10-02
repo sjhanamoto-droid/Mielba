@@ -580,7 +580,16 @@ export default async function SiteDetailPage({
                   }
                 />
               </DataList>
-              {/* 地図・電話のボタンは上部の概要カードにある */}
+              {/* 地図は上部の概要カードにある。電話はここから */}
+              {site.siteContactPhone && (
+                <a
+                  href={`tel:${site.siteContactPhone}`}
+                  className={buttonClass({ size: "md", className: "w-full" })}
+                >
+                  <Phone className="h-5 w-5" />
+                  {site.siteContactName ? `${site.siteContactName}さんに電話` : "現場担当に電話"}
+                </a>
+              )}
             </Card>
           </section>
 
@@ -1028,7 +1037,7 @@ export default async function SiteDetailPage({
         </div>
         <h1
           className={cn(
-            "mt-1.5 break-words font-bold leading-tight text-ink",
+            "mt-1.5 break-words font-bold leading-tight text-ink [text-wrap:pretty]",
             site.name.length > 10 ? "text-2xl" : "text-[1.875rem]",
           )}
         >
@@ -1080,36 +1089,19 @@ export default async function SiteDetailPage({
           {writeReportLabel}
           <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
         </LinkButton>
-        {(mapsUrl || site.siteContactPhone) && (
-          <div className={cn("mt-2 grid gap-2", mapsUrl && site.siteContactPhone ? "grid-cols-2" : "grid-cols-1")}>
-            {mapsUrl && (
-              <a
-                href={mapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonClass({
-                  variant: "outline",
-                  className: "w-full border-brand-200 text-brand-700 dark:border-brand-800",
-                })}
-              >
-                <Map className="h-[18px] w-[18px]" aria-hidden />
-                地図を開く
-              </a>
-            )}
-            {site.siteContactPhone && (
-              <a
-                href={`tel:${site.siteContactPhone}`}
-                aria-label={site.siteContactName ? `${site.siteContactName}さんに電話` : "現場担当に電話"}
-                className={buttonClass({
-                  variant: "outline",
-                  className: "w-full border-brand-200 text-brand-700 dark:border-brand-800",
-                })}
-              >
-                <Phone className="h-[18px] w-[18px]" aria-hidden />
-                電話する
-              </a>
-            )}
-          </div>
+        {mapsUrl && (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonClass({
+              variant: "outline",
+              className: "mt-2 w-full border-brand-200 text-brand-700 dark:border-brand-800",
+            })}
+          >
+            <Map className="h-[18px] w-[18px]" aria-hidden />
+            地図を開く
+          </a>
         )}
       </div>
     </div>

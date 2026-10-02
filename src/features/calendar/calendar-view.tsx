@@ -8,7 +8,6 @@ import {
   Plus,
   Trash2,
   MapPin,
-  Clock,
   X,
   ArrowRight,
   CalendarClock,
@@ -161,19 +160,58 @@ function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compa
   );
 }
 
+// "09:00" → "9:00"（行の左カラム用）
+function shortTime(t: string): string {
+  return t.replace(/^0(\d)/, "$1");
+}
+
+// 日付見出し（「10月2日 金曜日」＋今日なら「今日」ピル）。月ビューの選択日・日ビューで使う。
+function DayHeading({ date, isToday, className }: { date: Date; isToday: boolean; className?: string }) {
+  return (
+    <div className={cn("flex min-w-0 items-baseline gap-2", className)}>
+      <span className="text-xl font-bold tnum text-ink">
+        {date.getMonth() + 1}月{date.getDate()}日
+      </span>
+      <span className="text-sm font-semibold text-ink-muted">{WEEKDAYS[date.getDay()]}曜日</span>
+      {isToday && (
+        <span className="self-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+          今日
+        </span>
+      )}
+    </div>
+  );
+}
+
+// 「予定を追加」ボタン（見出しの右に置く。押しやすい高さ 44px）
+function AddEventButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-brand-600 px-4 text-sm font-bold text-white shadow-card active:scale-95 md:hover:bg-brand-700"
+    >
+      <Plus className="h-4 w-4" />
+      予定を追加
+    </button>
+  );
+}
+
 // リスト表示用（選択日の予定リスト・日ビュー）。現場に入る人をアバターで表示する。
 function VisitRow({ visit }: { visit: CalendarVisitData }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-        <HardHat className="h-4 w-4" aria-hidden />
-      </span>
+    <div className="flex items-center gap-4 px-4 py-3.5">
+      <div className="flex w-12 shrink-0 justify-center">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <HardHat className="h-5 w-5" aria-hidden />
+        </span>
+      </div>
+      <span className="h-10 w-px shrink-0 bg-line" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-ink">{visit.site.name}</p>
-        <p className="text-xs text-ink-muted">現場入り（出面）</p>
+        <p className="truncate text-base font-bold text-ink">{visit.site.name}</p>
+        <p className="mt-0.5 text-sm text-ink-muted">現場入り（出面）・{visit.visitors.length}名</p>
         {visit.visitors.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="flex items-center -space-x-1.5">
+          <div className="mt-1.5 flex min-w-0 items-center gap-2">
+            <span className="flex shrink-0 items-center -space-x-1.5">
               {visit.visitors.slice(0, 8).map((p) => (
                 <Avatar
                   key={p.id}
@@ -185,18 +223,18 @@ function VisitRow({ visit }: { visit: CalendarVisitData }) {
                 />
               ))}
             </span>
-            <span className="min-w-0 truncate text-xs font-medium text-ink-muted">
+            <span className="min-w-0 truncate text-sm text-ink-muted">
               {visit.visitors.map((p) => p.name).join("・")}
             </span>
           </div>
         )}
       </div>
-      <Badge tone="brand">{visit.visitors.length}名</Badge>
     </div>
   );
 }
 
-// 1件の予定サマリー（クリックで詳細モーダルを開く）
+// 1件の予定サマリー（クリックで詳細モーダルを開く）。
+// ホームの「これからの予定」と同じ並び：左に時刻、縦線（出所色）、右に件名と誰の仕事か。
 function EventRow({
   ev,
   onSelect,
@@ -207,18 +245,37 @@ function EventRow({
   const src = ev.source as EventSource;
   const color = eventColor(ev);
   const people = ev.participants.length > 0 ? ev.participants : ev.owner ? [ev.owner] : [];
+  const timed = !ev.allDay && !!ev.startTime;
   return (
     <button
       type="button"
       onClick={() => onSelect(ev)}
-      className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-subtle"
+      className="flex w-full items-center gap-4 px-4 py-3.5 text-left tap-row transition-colors hover:bg-surface-subtle"
     >
-      <span
-        className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
-        style={{ backgroundColor: color }}
-      />
+      <div className="w-12 shrink-0 text-center">
+        {timed ? (
+          <>
+            <p className="text-base font-bold tnum leading-tight text-ink">{shortTime(ev.startTime!)}</p>
+            {ev.endTime && (
+              <p className="whitespace-nowrap text-xs font-semibold tnum text-ink-muted">–{shortTime(ev.endTime)}</p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm font-bold text-ink">終日</p>
+        )}
+      </div>
+      <span className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden />
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <p className="text-base font-bold leading-snug text-ink">{ev.title}</p>
+        <p className="mt-0.5 flex items-center gap-1 text-sm text-ink-muted">
+          {ev.site ? (
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <User className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <span className="min-w-0 truncate">{ownerLabel(ev)}</span>
+        </p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Badge tone={SOURCE_BADGE_TONE[src] ?? "neutral"}>
             {EVENT_SOURCE_LABEL[src] ?? ev.source}
           </Badge>
@@ -233,37 +290,16 @@ function EventRow({
               自分だけ
             </span>
           )}
-          {!ev.allDay && ev.startTime && (
-            <span className="flex items-center gap-1 text-xs font-bold tnum text-ink-soft">
-              <Clock className="h-3 w-3" />
-              {ev.startTime}
-              {ev.endTime ? `〜${ev.endTime}` : ""}
+          {people.length > 0 && (
+            <span className="flex items-center -space-x-1.5">
+              {people.slice(0, 6).map((p) => (
+                <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-5 w-5 text-[9px] ring-1 ring-white" />
+              ))}
             </span>
           )}
-          {ev.allDay && (
-            <span className="text-xs font-bold text-ink-soft">終日</span>
-          )}
         </div>
-        <p className="mt-1 text-sm font-semibold leading-snug text-ink">
-          {ev.title}
-        </p>
-        <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-brand-600">
-          {ev.site ? (
-            <MapPin className="h-3 w-3 shrink-0" />
-          ) : (
-            <User className="h-3 w-3 shrink-0" />
-          )}
-          <span className="min-w-0 truncate">{ownerLabel(ev)}</span>
-        </p>
-        {people.length > 0 && (
-          <div className="mt-1.5 flex items-center -space-x-1.5">
-            {people.slice(0, 6).map((p) => (
-              <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-5 w-5 text-[9px] ring-1 ring-white" />
-            ))}
-          </div>
-        )}
       </div>
-      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-ink-faint" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
     </button>
   );
 }
@@ -297,7 +333,7 @@ function EventDetailModal({
       <div className="relative max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-surface px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-float md:max-w-md md:rounded-3xl md:px-6 md:pb-6 md:pt-5">
         <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-line-strong md:hidden" />
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold text-ink">予定の詳細</h2>
+          <h2 className="text-lg font-bold text-ink">予定の詳細</h2>
           <button
             type="button"
             aria-label="閉じる"
@@ -321,12 +357,12 @@ function EventDetailModal({
         </div>
 
         {/* 件名 */}
-        <h3 className="mt-2 border-l-[3px] pl-2.5 text-lg font-bold leading-snug text-ink" style={{ borderColor: color }}>
+        <h3 className="mt-2 border-l-[3px] pl-2.5 text-xl font-bold leading-snug text-ink" style={{ borderColor: color }}>
           {ev.title}
         </h3>
 
         {/* 詳細 */}
-        <dl className="mt-3 space-y-2.5 text-sm">
+        <dl className="mt-3 space-y-2.5 text-[15px]">
           <div className="flex items-start gap-2">
             <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
             <dd className="font-medium text-ink">
@@ -810,7 +846,7 @@ function MonthView({
         >
           <ChevronLeft className="h-6 w-6" />
         </NavArrow>
-        <p className="text-base font-bold text-ink tnum md:text-xl">
+        <p className="text-xl font-bold text-ink tnum">
           {year}年 {month}月
         </p>
         <NavArrow
@@ -911,24 +947,17 @@ function MonthView({
 
         {/* 選択日の予定リスト（デスクトップは右レール） */}
         <div className="space-y-2.5 lg:col-span-1">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-bold text-ink-soft md:text-base">
-              {fmtDateWithDay(selectedDate)}
+          <div className="flex items-center justify-between gap-3 px-1">
+            <h2 className="min-w-0">
+              <DayHeading date={selectedDate} isToday={selectedKey === todayKey} />
             </h2>
-            <button
-              type="button"
-              onClick={() => onAdd(selectedKey)}
-              className="flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1.5 text-xs font-bold text-white active:scale-95 md:hover:bg-brand-700"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              予定を追加
-            </button>
+            <AddEventButton onClick={() => onAdd(selectedKey)} />
           </div>
 
           {selectedEvents.length === 0 && selectedVisits.length === 0 ? (
             <EmptyState title="この日の予定はありません" description="「＋予定を追加」から登録できます" />
           ) : (
-            <div className="card divide-y divide-line">
+            <div className="card divide-y divide-line overflow-hidden">
               {selectedVisits.map((v) => (
                 <VisitRow key={v.id} visit={v} />
               ))}
@@ -936,7 +965,7 @@ function MonthView({
                 <EventRow key={ev.id} ev={ev} onSelect={onSelect} />
               ))}
               {showPersonalDivider && (
-                <p className="bg-surface-subtle px-4 py-1.5 text-[11px] font-bold text-ink-muted">
+                <p className="bg-surface-subtle px-4 py-2 text-xs font-bold text-ink-muted">
                   その他・休み
                 </p>
               )}
@@ -966,15 +995,15 @@ function WeekEventChip({
     <button
       type="button"
       onClick={() => onSelect(ev)}
-      className="w-full rounded-lg border-l-[3px] px-2 py-1.5 text-left transition-[filter] hover:brightness-95"
+      className="w-full rounded-lg border-l-[3px] px-2.5 py-2 text-left transition-[filter] hover:brightness-95 md:px-2 md:py-1.5"
       style={{ borderColor: color, backgroundColor: `${color}12` }}
     >
-      <p className="flex items-center gap-1 text-[10px] font-bold tnum text-ink-muted">
+      <p className="flex items-center gap-1 text-xs font-bold tnum text-ink-muted md:text-[10px]">
         {ev.isPrivate && <EyeOff className="h-2.5 w-2.5 shrink-0" aria-hidden />}
         {!ev.allDay && ev.startTime ? `${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ""}` : "終日"}
       </p>
-      <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-ink">{ev.title}</p>
-      <p className="mt-0.5 truncate text-[10px] font-medium text-brand-600">{ownerLabel(ev)}</p>
+      <p className="mt-0.5 line-clamp-2 text-[15px] font-bold leading-tight text-ink md:text-[11px] md:font-semibold">{ev.title}</p>
+      <p className="mt-0.5 truncate text-xs font-medium text-brand-600 md:text-[10px]">{ownerLabel(ev)}</p>
       {people.length > 0 && (
         <div className="mt-1 flex items-center -space-x-1.5">
           {people.slice(0, 4).map((p) => (
@@ -1030,7 +1059,7 @@ function WeekView({
         >
           <ChevronLeft className="h-6 w-6" />
         </NavArrow>
-        <p className="text-sm font-bold text-ink tnum md:text-xl">
+        <p className="text-lg font-bold text-ink tnum md:text-xl">
           {weekStart.getMonth() + 1}/{weekStart.getDate()} 〜 {weekEnd.getMonth() + 1}/{weekEnd.getDate()}
         </p>
         <NavArrow
@@ -1051,12 +1080,12 @@ function WeekView({
           const isToday = key === todayKey;
           const dow = d.getDay();
           return (
-            <div key={key} className="overflow-hidden rounded-2xl border border-line bg-surface md:flex md:min-h-[calc(100vh-320px)] md:flex-col">
+            <div key={key} className="card overflow-hidden md:flex md:min-h-[calc(100vh-320px)] md:flex-col">
               {/* 日ヘッダー */}
               <div
                 className={cn(
-                  "flex items-center justify-between border-b border-line px-2 py-1.5",
-                  isToday && "bg-brand-50",
+                  "flex items-center justify-between border-b border-line py-1.5 pl-2 pr-1",
+                  isToday && "bg-brand-50 dark:bg-brand-950/30",
                 )}
               >
                 <div className="flex items-center gap-2 md:flex-col md:items-start md:gap-0">
@@ -1083,14 +1112,19 @@ function WeekView({
                     <span className="md:hidden">{WEEKDAYS[dow]}曜</span>
                     <span className="hidden md:inline">{WEEKDAYS[dow]}</span>
                   </span>
+                  {isToday && (
+                    <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[11px] font-bold text-white md:hidden">
+                      今日
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
                   onClick={() => onAdd(key)}
                   aria-label="この日に予定を追加"
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-brand-600 active:bg-brand-100 md:hover:bg-brand-100"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-brand-600 active:bg-brand-100 md:h-7 md:w-7 md:hover:bg-brand-100"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-5 w-5 md:h-4 md:w-4" />
                 </button>
               </div>
               {/* イベント */}
@@ -1099,7 +1133,7 @@ function WeekView({
                   <VisitChip key={v.id} visit={v} />
                 ))}
                 {list.length === 0 && dayVisits.length === 0 ? (
-                  <p className="px-1 py-2 text-[11px] text-ink-faint">予定なし</p>
+                  <p className="px-1 py-2 text-sm text-ink-faint md:text-[11px]">予定なし</p>
                 ) : (
                   list.map((ev) => <WeekEventChip key={ev.id} ev={ev} onSelect={onSelect} />)
                 )}
@@ -1321,9 +1355,7 @@ function DayView({
         >
           <ChevronLeft className="h-6 w-6" />
         </NavArrow>
-        <p className={cn("text-base font-bold tnum md:text-xl", isToday ? "text-brand-600" : "text-ink")}>
-          {fmtDateWithDay(base)}
-        </p>
+        <DayHeading date={base} isToday={isToday} className="justify-center" />
         <NavArrow
           onClick={() => navigate(`/calendar?view=day&d=${nextKey}`)}
           label="次の日"
@@ -1333,15 +1365,9 @@ function DayView({
         </NavArrow>
       </div>
 
-      <div className="flex justify-end px-1">
-        <button
-          type="button"
-          onClick={() => onAdd(key)}
-          className="flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1.5 text-xs font-bold text-white active:scale-95 md:hover:bg-brand-700"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          予定を追加
-        </button>
+      <div className="flex items-center justify-between gap-3 px-1">
+        <h2 className="text-lg font-bold text-ink">この日の予定</h2>
+        <AddEventButton onClick={() => onAdd(key)} />
       </div>
 
       {list.length === 0 && dayVisits.length === 0 ? (
@@ -1351,9 +1377,9 @@ function DayView({
           {/* スマホ：リスト */}
           <div className="space-y-3 md:hidden">
             {dayVisits.length > 0 && (
-              <div className="space-y-1.5">
-                <h3 className="px-1 text-xs font-bold text-ink-muted">現場入り</h3>
-                <div className="card divide-y divide-line">
+              <div className="space-y-2">
+                <h3 className="px-1 text-base font-bold text-ink-soft">現場入り</h3>
+                <div className="card divide-y divide-line overflow-hidden">
                   {dayVisits.map((v) => (
                     <VisitRow key={v.id} visit={v} />
                   ))}
@@ -1361,9 +1387,9 @@ function DayView({
               </div>
             )}
             {allDayEvents.length > 0 && (
-              <div className="space-y-1.5">
-                <h3 className="px-1 text-xs font-bold text-ink-muted">終日</h3>
-                <div className="card divide-y divide-line">
+              <div className="space-y-2">
+                <h3 className="px-1 text-base font-bold text-ink-soft">終日</h3>
+                <div className="card divide-y divide-line overflow-hidden">
                   {allDayEvents.map((ev) => (
                     <EventRow key={ev.id} ev={ev} onSelect={onSelect} />
                   ))}
@@ -1371,9 +1397,9 @@ function DayView({
               </div>
             )}
             {timedEvents.length > 0 && (
-              <div className="space-y-1.5">
-                <h3 className="px-1 text-xs font-bold text-ink-muted">時刻指定</h3>
-                <div className="card divide-y divide-line">
+              <div className="space-y-2">
+                <h3 className="px-1 text-base font-bold text-ink-soft">時刻指定</h3>
+                <div className="card divide-y divide-line overflow-hidden">
                   {timedEvents.map((ev) => (
                     <EventRow key={ev.id} ev={ev} onSelect={onSelect} />
                   ))}

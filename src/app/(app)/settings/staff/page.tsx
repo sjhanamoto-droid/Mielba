@@ -31,42 +31,46 @@ export default async function StaffListPage() {
         }
       />
       <PageContainer>
-        <div className="space-y-2.5">
+        {/* 1つのカードに行で並べる。スマホでは操作ボタンを下の段に回し、名前・メールを詰めない */}
+        <div className="card divide-y divide-line overflow-hidden">
           {users.map((u) => {
             const isSelf = u.id === me.id;
             const canDelete = u._count.reports === 0 && !isSelf;
             return (
               <div
                 key={u.id}
-                className={`card flex flex-wrap items-center gap-3 p-3.5 sm:flex-nowrap ${!u.active ? "opacity-60" : ""}`}
+                className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3.5 sm:flex-nowrap ${!u.active ? "opacity-60" : ""}`}
               >
-                <Avatar name={u.name} color={u.avatarColor} image={u.avatarImage} size="lg" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-[15px] font-bold text-ink">{u.name}</span>
-                    <Badge tone={u.role === "STAFF" ? "neutral" : "brand"}>
-                      {ROLE_LABEL[u.role as Role]}
-                    </Badge>
-                    {isSelf && <Badge tone="info">あなた</Badge>}
-                    {!u.active && <Badge tone="danger">無効</Badge>}
-                  </div>
-                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-muted">
-                    <Mail className="h-3 w-3 shrink-0" />{u.email}
-                  </p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-ink-faint">
-                    {u.department && <span>{u.department}</span>}
-                    <span className="flex items-center gap-0.5">
-                      <FileText className="h-3 w-3" />日報 {u._count.reports} 件
-                    </span>
+                <div className="flex min-w-0 flex-1 basis-full items-center gap-3 sm:basis-auto">
+                  <Avatar name={u.name} color={u.avatarColor} image={u.avatarImage} size="lg" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate text-base font-bold text-ink">{u.name}</span>
+                      <Badge tone={u.role === "STAFF" ? "neutral" : "brand"}>
+                        {ROLE_LABEL[u.role as Role]}
+                      </Badge>
+                      {isSelf && <Badge tone="info">あなた</Badge>}
+                      {!u.active && <Badge tone="danger">無効</Badge>}
+                    </div>
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-ink-muted">
+                      <Mail className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="min-w-0 truncate">{u.email}</span>
+                    </p>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-ink-muted">
+                      {u.department && <span>{u.department}</span>}
+                      <span className="flex items-center gap-1 tnum">
+                        <FileText className="h-3.5 w-3.5" aria-hidden />日報 {u._count.reports} 件
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="-my-1 ml-auto flex items-center gap-1.5">
                   <Link
                     href={`/settings/staff/${u.id}/edit`}
                     aria-label="編集"
-                    className="flex h-9 items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-brand-600 hover:bg-brand-50"
+                    className="flex h-11 items-center gap-1 rounded-lg px-3 text-sm font-semibold text-brand-600 hover:bg-brand-50"
                   >
-                    <Pencil className="h-3.5 w-3.5" />編集
+                    <Pencil className="h-4 w-4" />編集
                   </Link>
                   <StaffRowActions id={u.id} active={u.active} canDelete={canDelete} />
                 </div>

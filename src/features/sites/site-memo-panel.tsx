@@ -256,7 +256,7 @@ export function SiteMemoPanel({
     <Card className="overflow-hidden">
       {/* 入力欄：開いてすぐ書ける位置 */}
       <div className="space-y-2 border-b border-line bg-brand-50/40 p-3.5">
-        <label htmlFor="site-memo-input" className="flex items-center gap-1.5 text-xs font-bold text-brand-700">
+        <label htmlFor="site-memo-input" className="flex items-center gap-1.5 text-sm font-bold text-brand-700">
           <StickyNote className="h-4 w-4" />
           気づいたことをその場でメモ
         </label>
@@ -284,7 +284,7 @@ export function SiteMemoPanel({
         />
         <div className="flex items-center justify-end gap-2">
           {error && (
-            <p role="alert" className="mr-auto min-w-0 text-[11px] font-semibold text-status-danger">
+            <p role="alert" className="mr-auto min-w-0 text-xs font-semibold text-status-danger">
               {error}
             </p>
           )}
@@ -446,7 +446,7 @@ export function SiteMemoPanel({
                           type="button"
                           onClick={() => beginEdit(m)}
                           disabled={busy}
-                          className="flex min-h-[36px] items-center gap-1 rounded-lg px-2 text-xs font-semibold text-ink-muted hover:bg-surface-sunken"
+                          className="flex min-h-[44px] items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-ink-muted hover:bg-surface-sunken"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                           編集
@@ -455,7 +455,7 @@ export function SiteMemoPanel({
                           type="button"
                           onClick={() => setConfirmDeleteId(m.id)}
                           disabled={busy}
-                          className="flex min-h-[36px] items-center gap-1 rounded-lg px-2 text-xs font-semibold text-ink-muted hover:bg-red-50 hover:text-status-danger"
+                          className="flex min-h-[44px] items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-ink-muted hover:bg-red-50 hover:text-status-danger"
                         >
                           {busy ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

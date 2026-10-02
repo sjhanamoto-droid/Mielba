@@ -7,21 +7,22 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { SectionTitle } from "@/components/ui/card";
 import { MaterialsManager } from "@/features/settings/materials-manager";
 
+// タップで開く設定の行。1つの card の中に divide-y で並べる
 function SettingRow({
   href, icon, title, desc,
 }: {
   href: string; icon: React.ReactNode; title: string; desc: string;
 }) {
   return (
-    <Link href={href} className="card tap-row flex items-center gap-3.5 p-4 transition-all hover:border-line-strong hover:shadow-float">
+    <Link href={href} className="tap-row flex items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-surface-subtle">
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[15px] font-bold text-ink">{title}</p>
-        <p className="truncate text-xs text-ink-muted">{desc}</p>
+        <p className="text-base font-bold text-ink">{title}</p>
+        <p className="truncate text-sm text-ink-muted">{desc}</p>
       </div>
-      <ChevronRight className="h-5 w-5 shrink-0 text-ink-faint" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
     </Link>
   );
 }
@@ -54,7 +55,7 @@ export default async function SettingsPage() {
           {admin && (
             <section className="space-y-2.5">
               <SectionTitle>管理者メニュー</SectionTitle>
-              <div className="space-y-2.5">
+              <div className="card divide-y divide-line overflow-hidden">
                 <SettingRow
                   href="/settings/staff"
                   icon={<Users2 className="h-5 w-5" />}
@@ -76,7 +77,7 @@ export default async function SettingsPage() {
             <section className="space-y-2.5">
               <SectionTitle>
                 <span className="flex items-center gap-1.5">
-                  <Package className="h-4 w-4" />
+                  <Package className="h-5 w-5 text-ink-muted" aria-hidden />
                   在庫材料マスター
                 </span>
               </SectionTitle>
@@ -86,24 +87,28 @@ export default async function SettingsPage() {
 
           <section className="space-y-2.5">
             <SectionTitle>アカウント</SectionTitle>
-            <SettingRow
-              href="/settings/account"
-              icon={<UserCog className="h-5 w-5" />}
-              title="アカウント設定"
-              desc="氏名・部署・アバター色・パスワードの変更"
-            />
+            <div className="card overflow-hidden">
+              <SettingRow
+                href="/settings/account"
+                icon={<UserCog className="h-5 w-5" />}
+                title="アカウント設定"
+                desc="氏名・部署・アバター色・パスワードの変更"
+              />
+            </div>
           </section>
 
           {/* 通知（アプリ内通知センターのみ。端末プッシュのオン/オフは
               アカウント設定の最下部に配置し、気軽にオフにされないようにする） */}
           <section className="space-y-2.5">
             <SectionTitle>通知</SectionTitle>
-            <SettingRow
-              href="/notifications"
-              icon={<Bell className="h-5 w-5" />}
-              title="通知センター"
-              desc="現場・日報のお知らせを確認"
-            />
+            <div className="card overflow-hidden">
+              <SettingRow
+                href="/notifications"
+                icon={<Bell className="h-5 w-5" />}
+                title="通知センター"
+                desc="現場・日報のお知らせを確認"
+              />
+            </div>
           </section>
 
           <section className="space-y-2.5">
@@ -112,9 +117,9 @@ export default async function SettingsPage() {
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-ink-muted">
                 <Info className="h-5 w-5" />
               </span>
-              <div className="text-sm">
-                <p className="font-bold text-ink">シゲ電気 現場管理</p>
-                <p className="text-xs text-ink-muted">現場管理アプリ ・ バージョン 0.3</p>
+              <div>
+                <p className="text-base font-bold text-ink">シゲ電気 現場管理</p>
+                <p className="text-sm text-ink-muted">現場管理アプリ ・ バージョン 0.3</p>
               </div>
             </div>
           </section>

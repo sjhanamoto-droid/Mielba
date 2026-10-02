@@ -318,7 +318,7 @@ export default async function HomePage() {
                     </div>
                     <h3
                       className={cn(
-                        "mt-1.5 break-words font-bold leading-tight text-ink",
+                        "mt-1.5 break-words font-bold leading-tight text-ink [text-wrap:pretty]",
                         // 短い現場名は大きく、長い名前は折り返しても読める大きさに
                         v.site.name.length > 10 ? "text-2xl" : "text-[1.875rem]",
                       )}

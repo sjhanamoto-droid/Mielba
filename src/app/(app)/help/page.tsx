@@ -19,13 +19,13 @@ export default async function HelpPage() {
           {/* 使い方のヒント */}
           <section className="space-y-2.5">
             <div className="flex items-center gap-2 px-1">
-              <Lightbulb className="h-4 w-4 text-accent-500" aria-hidden />
-              <h2 className="text-sm font-bold text-ink-soft">使い方のヒント</h2>
+              <Lightbulb className="h-5 w-5 text-accent-500" aria-hidden />
+              <h2 className="text-lg font-bold text-ink">使い方のヒント</h2>
             </div>
-            <Card className="divide-y divide-line">
+            <Card className="divide-y divide-line overflow-hidden">
               {USAGE_TIPS.map((t, i) => (
-                <div key={i} className="flex items-start gap-2.5 px-4 py-3">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400" />
+                <div key={i} className="flex items-start gap-2.5 px-4 py-3.5">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400" />
                   <p className="text-sm font-medium leading-relaxed text-ink-soft">{t}</p>
                 </div>
               ))}
@@ -35,18 +35,18 @@ export default async function HelpPage() {
           {/* サポート・設定 */}
           <section className="space-y-2.5">
             <div className="flex items-center gap-2 px-1">
-              <LifeBuoy className="h-4 w-4 text-emerald-500" aria-hidden />
-              <h2 className="text-sm font-bold text-ink-soft">サポート・設定</h2>
+              <LifeBuoy className="h-5 w-5 text-emerald-500" aria-hidden />
+              <h2 className="text-lg font-bold text-ink">サポート・設定</h2>
             </div>
-            <Card className="divide-y divide-line">
-              <Link href="/settings" className="flex items-center gap-3 px-4 py-3 tap-row">
+            <Card className="divide-y divide-line overflow-hidden">
+              <Link href="/settings" className="flex items-center gap-3 px-4 py-3.5 tap-row">
                 <IconBadge icon={Settings} tone="emerald" size="sm" />
-                <span className="flex-1 text-sm font-semibold text-ink">アプリの設定</span>
+                <span className="flex-1 text-base font-bold text-ink">アプリの設定</span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
               </Link>
-              <Link href="/settings/account" className="flex items-center gap-3 px-4 py-3 tap-row">
+              <Link href="/settings/account" className="flex items-center gap-3 px-4 py-3.5 tap-row">
                 <IconBadge icon={PenLine} tone="teal" size="sm" />
-                <span className="flex-1 text-sm font-semibold text-ink">アカウント・表示</span>
+                <span className="flex-1 text-base font-bold text-ink">アカウント・表示</span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
               </Link>
             </Card>

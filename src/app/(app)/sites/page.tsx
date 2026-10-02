@@ -151,12 +151,12 @@ export default async function SitesPage({
           <>
             {surveySites.length > 0 && (
               <div className="mb-5">
-                <p className="mb-2 px-1 text-sm font-bold text-ink-soft">
+                <h2 className="mb-2.5 px-1 text-lg font-bold text-ink">
                   現調
-                  <span className="ml-1.5 text-xs font-semibold text-ink-muted">
+                  <span className="ml-2 text-sm font-semibold text-ink-muted tnum">
                     {surveyCount}件
                   </span>
-                </p>
+                </h2>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
                   {surveySites.map((s) => (
                     <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
@@ -166,7 +166,7 @@ export default async function SitesPage({
               </div>
             )}
             {surveySites.length > 0 && otherSites.length > 0 && (
-              <p className="mb-2 px-1 text-sm font-bold text-ink-soft">そのほかの現場</p>
+              <h2 className="mb-2.5 px-1 text-lg font-bold text-ink">そのほかの現場</h2>
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
               {otherSites.map((s) => (

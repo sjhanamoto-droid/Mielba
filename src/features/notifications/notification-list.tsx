@@ -64,12 +64,15 @@ export function NotificationList({ initial }: { initial: NotificationItem[] }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <h2 className="text-lg font-bold text-ink">
+          {hasUnread ? `未読 ${items.filter((n) => !n.read).length}件` : "すべて既読です"}
+        </h2>
         <button
           type="button"
           onClick={readAll}
           disabled={!hasUnread || pending}
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-40 disabled:hover:bg-transparent"
+          className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <CheckCheck className="h-4 w-4" />
           すべて既読
@@ -92,15 +95,15 @@ export function NotificationList({ initial }: { initial: NotificationItem[] }) {
               <IconBadge icon={meta.icon} tone={meta.tone} size="sm" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <p className={cn("min-w-0 flex-1 truncate text-sm text-ink", !n.read ? "font-bold" : "font-semibold")}>
+                  <p className={cn("min-w-0 flex-1 truncate text-base text-ink", !n.read ? "font-bold" : "font-semibold")}>
                     {n.title}
                   </p>
                   {!n.read && <span className="h-2 w-2 shrink-0 rounded-full bg-brand-500" aria-label="未読" />}
                 </div>
                 {n.body && (
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-muted">{n.body}</p>
+                  <p className="mt-0.5 line-clamp-2 text-sm leading-relaxed text-ink-muted">{n.body}</p>
                 )}
-                <p className="mt-1 text-[11px] text-ink-faint">{relativeTime(n.createdAt)}</p>
+                <p className="mt-1 text-xs text-ink-faint">{relativeTime(n.createdAt)}</p>
               </div>
               {n.href && <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-ink-faint" />}
             </button>

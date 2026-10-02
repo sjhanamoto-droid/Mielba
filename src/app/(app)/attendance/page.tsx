@@ -125,9 +125,13 @@ export default async function AttendancePage({
             >
               <ChevronLeft className="h-5 w-5" />
             </Link>
-            <div className="text-center leading-tight">
-              <p className="text-base font-bold text-ink tnum md:text-lg">{monthLabel}</p>
-              {isCurrent && <p className="text-[11px] font-semibold text-brand-600">今月</p>}
+            <div className="flex items-center gap-2">
+              <p className="text-xl font-bold text-ink tnum">{monthLabel}</p>
+              {isCurrent && (
+                <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                  今月
+                </span>
+              )}
             </div>
             <Link
               href={`/attendance?ym=${addMonthsKey(ym, 1)}`}
@@ -145,8 +149,8 @@ export default async function AttendancePage({
                 <Clock className="h-5 w-5" />
               </span>
               <div className="min-w-0">
-                <p className="truncate text-lg font-bold text-ink tnum">{fmtWorkMinutes(totalMinutes)}</p>
-                <p className="text-xs text-ink-muted">総稼働時間</p>
+                <p className="truncate text-xl font-bold text-ink tnum">{fmtWorkMinutes(totalMinutes)}</p>
+                <p className="text-sm text-ink-muted">総稼働時間</p>
               </div>
             </Card>
             <Card className="flex items-center gap-3 p-3.5">
@@ -154,8 +158,8 @@ export default async function AttendancePage({
                 <CalendarDays className="h-5 w-5" />
               </span>
               <div className="min-w-0">
-                <p className="truncate text-lg font-bold text-ink tnum">{totalDays} 日</p>
-                <p className="text-xs text-ink-muted">延べ稼働日数</p>
+                <p className="truncate text-xl font-bold text-ink tnum">{totalDays} 日</p>
+                <p className="text-sm text-ink-muted">延べ稼働日数</p>
               </div>
             </Card>
           </div>
@@ -170,18 +174,18 @@ export default async function AttendancePage({
                 description="日報の提出、または「事務所作業」の予定を入れると、ここに稼働時間が集計されます。"
               />
             ) : (
-              <Card className="divide-y divide-line">
+              <Card className="divide-y divide-line overflow-hidden">
                 {rows.map((r) => (
                   <Link
                     key={r.userId}
                     href={`/attendance/${r.userId}?ym=${ym}`}
-                    className="flex items-center gap-3 px-4 py-3 tap-row"
+                    className="flex items-center gap-3 px-4 py-3.5 tap-row"
                   >
                     <Avatar name={r.name} color={r.avatarColor} image={r.avatarImage} size="md" />
-                    <p className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{r.name}</p>
+                    <p className="min-w-0 flex-1 truncate text-base font-bold text-ink">{r.name}</p>
                     <div className="shrink-0 text-right">
-                      <p className="text-sm font-bold text-ink tnum">{fmtWorkMinutes(r.minutes)}</p>
-                      <p className="text-[11px] text-ink-muted tnum">{r.days} 日</p>
+                      <p className="text-base font-bold text-ink tnum">{fmtWorkMinutes(r.minutes)}</p>
+                      <p className="text-sm text-ink-muted tnum">{r.days} 日</p>
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
                   </Link>

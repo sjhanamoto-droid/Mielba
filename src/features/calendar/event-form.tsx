@@ -8,6 +8,7 @@ import { quickCreateSite } from "@/features/sites/actions";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
+import { SectionTitle } from "@/components/ui/card";
 import {
   EVENT_CATEGORY_OPTIONS,
   EVENT_CATEGORY_LABEL,
@@ -189,10 +190,10 @@ export function EventForm({
         className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
       />
 
-      <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-surface px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-float md:max-w-lg md:rounded-3xl md:px-6 md:pb-6 md:pt-5">
+      <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-surface-subtle px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-float md:max-w-lg md:rounded-3xl md:px-6 md:pb-6 md:pt-5">
         <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-line-strong md:hidden" />
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold text-ink">{isEdit ? "予定を編集" : "予定を登録"}</h2>
+          <h2 className="text-xl font-bold text-ink">{isEdit ? "予定を編集" : "予定を登録"}</h2>
           <button
             type="button"
             aria-label="閉じる"
@@ -206,6 +207,9 @@ export function EventForm({
         <form action={action} className="space-y-4">
           {isEdit && <input type="hidden" name="id" value={event.id} />}
 
+          {/* ── 種類（と現場） ── */}
+          <section className="card space-y-4 p-4">
+          <SectionTitle className="px-0">予定の種類</SectionTitle>
           {/* 予定の種類を先に選ぶ（現場作業/個人予定）。件名だけの現場作業が混ざるのを防ぐ。 */}
           <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-sunken p-1">
             {([["site", "現場の作業"], ["personal", "個人予定"]] as const).map(([m, label]) => (
@@ -214,7 +218,7 @@ export function EventForm({
                 type="button"
                 onClick={() => selectMode(m)}
                 className={cn(
-                  "flex h-9 items-center justify-center rounded-full text-sm font-bold transition-colors",
+                  "flex h-11 items-center justify-center rounded-full text-[15px] font-bold transition-colors",
                   mode === m ? "bg-surface text-ink shadow-sm" : "text-ink-muted active:bg-surface-subtle",
                 )}
               >
@@ -225,7 +229,7 @@ export function EventForm({
 
           {/* 公開範囲（最高管理者の個人予定のみ）。他の人に見せたくない予定のための切り替え。 */}
           {showPrivateChoice && (
-            <div className="rounded-2xl border border-line-strong bg-surface-subtle p-3">
+            <div className="rounded-2xl border border-line bg-surface-subtle p-3">
               <p className="mb-2 text-sm font-bold text-ink">この予定を他の人に表示しますか？</p>
               <div className="grid grid-cols-2 gap-2">
                 {([
@@ -361,8 +365,11 @@ export function EventForm({
             )}
           </Field>
           )}
+          </section>
 
-          {/* 日時 */}
+          {/* ── 日時 ── */}
+          <section className="card space-y-4 p-4">
+          <SectionTitle className="px-0">日時</SectionTitle>
           <Field label="日付" htmlFor="date" required>
             <Input
               id="date"
@@ -373,7 +380,7 @@ export function EventForm({
             />
           </Field>
 
-          <label className="flex items-center justify-between rounded-xl border border-line-strong bg-surface px-3.5 py-3">
+          <label className="flex min-h-[48px] items-center justify-between rounded-xl border border-line-strong bg-surface px-3.5 py-3">
             <span className="text-sm font-semibold text-ink-soft">終日</span>
             <input
               type="checkbox"
@@ -394,7 +401,11 @@ export function EventForm({
               </Field>
             </div>
           )}
+          </section>
 
+          {/* ── 内容 ── */}
+          <section className="card space-y-4 p-4">
+          <SectionTitle className="px-0">内容</SectionTitle>
           {/* カテゴリー */}
           <Field label="カテゴリー" htmlFor="category" hint="任意">
             <Select
@@ -441,7 +452,7 @@ export function EventForm({
           <Field
             label={mode === "site" ? "作業内容・メモ" : "内容"}
             htmlFor="note"
-            hint={mode === "site" ? "任意・一覧の見出しは現場名になります" : "任意"}
+            hint="任意"
           >
             <Textarea
               id="note"
@@ -453,24 +464,34 @@ export function EventForm({
                   : "内容・持ち物・注意点など"
               }
             />
+            {mode === "site" && (
+              <p className="mt-1.5 text-xs text-ink-muted">一覧の見出しは現場名になります</p>
+            )}
           </Field>
+          </section>
 
           {/* 参加者（現場に行く人・複数選択）。
               「表示しない」の予定は本人しか見られないので、参加者は選ばせない。 */}
           {showPrivateChoice && isPrivate ? (
-            <p className="rounded-xl bg-surface-subtle px-3 py-2.5 text-[11px] font-medium text-ink-muted">
+            <p className="card px-4 py-3 text-xs font-medium leading-relaxed text-ink-muted">
               「表示しない」の予定はあなただけのものです。参加者は指定できません。
               {isEdit && (event?.participants.length ?? 0) > 0 &&
                 `保存すると、今の参加者${event?.participants.length}名は外れます。`}
             </p>
           ) : (
-          <div>
-            <p className="mb-1.5 text-sm font-semibold text-ink-soft">
+          <section className="card space-y-3 p-4">
+            <SectionTitle
+              className="px-0"
+              action={
+                participants.size > 0 ? (
+                  <span className="rounded-full bg-brand-50 px-3 py-1 text-sm font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                    {participants.size}名
+                  </span>
+                ) : undefined
+              }
+            >
               参加者（現場に行く人）
-              {participants.size > 0 && (
-                <span className="ml-1.5 font-normal text-brand-600">{participants.size}名</span>
-              )}
-            </p>
+            </SectionTitle>
             <div className="flex flex-wrap gap-2">
               {users.map((u) => {
                 const on = participants.has(u.id);
@@ -478,7 +499,7 @@ export function EventForm({
                   <label
                     key={u.id}
                     className={cn(
-                      "flex cursor-pointer items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-sm font-semibold transition-all active:scale-95",
+                      "flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-sm font-semibold transition-all active:scale-95",
                       on
                         ? "border-brand-600 bg-brand-600 text-white"
                         : "border-line-strong bg-surface text-ink-soft",
@@ -505,10 +526,10 @@ export function EventForm({
                 );
               })}
             </div>
-            <p className="mt-1.5 text-[11px] text-ink-faint">
+            <p className="text-[11px] text-ink-faint">
               現場を選んで参加者を指定すると、その人の「今日の現場入り」に反映され、日報につながります。
             </p>
-          </div>
+          </section>
           )}
 
           {error && (

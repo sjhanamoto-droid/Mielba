@@ -11,7 +11,7 @@ import { ColorPicker } from "./color-picker";
 function Feedback({ state, okText }: { state: SettingsState; okText: string }) {
   if (state.error) {
     return (
-      <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600">
+      <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600 dark:bg-red-950/40 dark:text-red-300">
         <AlertCircle className="h-4 w-4 shrink-0" />
         {state.error}
       </div>
@@ -19,7 +19,7 @@ function Feedback({ state, okText }: { state: SettingsState; okText: string }) {
   }
   if (state.ok) {
     return (
-      <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700">
+      <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
         <CheckCircle2 className="h-4 w-4 shrink-0" />
         {okText}
       </div>
@@ -31,7 +31,7 @@ function Feedback({ state, okText }: { state: SettingsState; okText: string }) {
 function SubmitButton({ children }: { children: React.ReactNode }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className={buttonClass({ className: "w-full" })}>
+    <button type="submit" disabled={pending} className={buttonClass({ size: "lg", className: "w-full" })}>
       {pending ? "保存中..." : children}
     </button>
   );

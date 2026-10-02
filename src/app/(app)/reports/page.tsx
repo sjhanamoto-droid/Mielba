@@ -1,16 +1,15 @@
 import Link from "next/link";
-import { FileText, Plus, Check, PenLine, HardHat, ChevronDown } from "lucide-react";
+import { FileText, Plus, Check, PenLine, HardHat, ChevronDown, ChevronRight } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { SectionTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { LinkButton } from "@/components/ui/button";
+import { LinkButton, buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/misc";
-import { ReportCard } from "@/components/report-card";
+import { ReportCard, ReportStatusPill } from "@/components/report-card";
 import { AddMyVisit } from "@/features/visits/add-my-visit";
-import { fmtDateWithDay } from "@/lib/utils";
+import { cn, fmtDateWithDay } from "@/lib/utils";
 import { todayRange, jstDateKey } from "@/lib/date";
 
 const PAGE_SIZE = 20;
@@ -100,33 +99,57 @@ export default async function ReportsHubPage({
                       return (
                         <div key={v.id} className="card flex flex-col p-4">
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[15px] font-bold text-ink">{v.site.name}</p>
+                            <div className="flex items-start justify-between gap-3">
+                              <p
+                                className={cn(
+                                  "min-w-0 break-words font-bold leading-tight text-ink",
+                                  v.site.name.length > 10 ? "text-xl" : "text-2xl",
+                                )}
+                              >
+                                {v.site.name}
+                              </p>
+                              {status ? (
+                                <ReportStatusPill status={status} className="mt-0.5" />
+                              ) : v.site.siteStatus === "SURVEY" ? null : (
+                                <span className="mt-0.5 shrink-0 rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-600 dark:bg-rose-950/50 dark:text-rose-300">
+                                  未入力
+                                </span>
+                              )}
+                            </div>
                             {v.site.customer && (
-                              <p className="mt-0.5 truncate text-xs font-medium text-brand-600">
+                              <p className="mt-1 truncate text-[15px] text-ink-soft">
                                 {v.site.customer.name}
                               </p>
                             )}
                           </div>
-                          <div className="mt-3">
+                          <div className="mt-4">
                             {status === "SUBMITTED" ? (
                               <Link
                                 href={`/reports/${r!.id}`}
-                                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 py-2.5 text-sm font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                className={buttonClass({
+                                  variant: "outline",
+                                  size: "lg",
+                                  className: "relative w-full border-brand-200 text-brand-700 dark:border-brand-800",
+                                })}
                               >
-                                <Check className="h-4 w-4" />提出済み・確認する
+                                <Check className="h-5 w-5" />提出済み・確認する
+                                <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
                               </Link>
                             ) : status === "DRAFT" ? (
-                              <LinkButton href={`/reports/${r!.id}/edit`} variant="accent" size="md" className="w-full">
-                                <PenLine className="h-4 w-4" />下書きの続きを書く
+                              <LinkButton href={`/reports/${r!.id}/edit`} variant="accent" size="lg" className="relative w-full">
+                                <PenLine className="h-5 w-5" />下書きの続きを書く
+                                <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
                               </LinkButton>
                             ) : v.site.siteStatus === "SURVEY" ? (
                               // 現調中の現場は日報ではなく現調フォーマットを書く
-                              <LinkButton href={`/sites/${v.siteId}/survey`} size="md" className="w-full">
-                                <Plus className="h-4 w-4" />現調フォーマットを書く
+                              <LinkButton href={`/sites/${v.siteId}/survey`} size="lg" className="relative w-full">
+                                <Plus className="h-5 w-5" />現調フォーマットを書く
+                                <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
                               </LinkButton>
                             ) : (
-                              <LinkButton href={`/reports/new?siteId=${v.siteId}`} size="md" className="w-full">
-                                <Plus className="h-4 w-4" />日報を書く
+                              <LinkButton href={`/reports/new?siteId=${v.siteId}`} size="lg" className="relative w-full">
+                                <Plus className="h-5 w-5" />日報を書く
+                                <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
                               </LinkButton>
                             )}
                           </div>
@@ -145,9 +168,9 @@ export default async function ReportsHubPage({
               {myRecent.length === 0 ? (
                 <EmptyState icon={<FileText className="h-6 w-6" />} title="まだ日報がありません" />
               ) : (
-                <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+                <div className="card divide-y divide-line overflow-hidden">
                   {myRecent.map((r) => (
-                    <ReportCard key={r.id} report={r} showSite />
+                    <ReportCard key={r.id} report={r} showSite variant="row" />
                   ))}
                 </div>
               )}
@@ -211,13 +234,14 @@ export default async function ReportsHubPage({
           <div className="space-y-6">
             {groups.map((g) => (
               <section key={g.key} className="space-y-2.5">
-                <div className="flex items-center gap-2 px-1">
-                  <h2 className="text-sm font-bold text-ink-soft">{fmtDateWithDay(g.date)}</h2>
-                  <Badge tone="neutral">{g.items.length}件</Badge>
-                </div>
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                <SectionTitle
+                  action={<span className="text-sm font-semibold text-ink-muted tnum">{g.items.length}件</span>}
+                >
+                  <span className="tnum">{fmtDateWithDay(g.date)}</span>
+                </SectionTitle>
+                <div className="card divide-y divide-line overflow-hidden">
                   {g.items.map((r) => (
-                    <ReportCard key={r.id} report={r} showSite showDate={false} />
+                    <ReportCard key={r.id} report={r} showSite showDate={false} variant="row" />
                   ))}
                 </div>
               </section>

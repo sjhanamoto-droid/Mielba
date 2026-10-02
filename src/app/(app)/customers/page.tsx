@@ -1,9 +1,9 @@
 import { Search, Plus, Building2, MapPin, ChevronRight, ChevronDown } from "lucide-react";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
-import { CardLink } from "@/components/ui/card";
 import { Fab, EmptyState } from "@/components/ui/misc";
 import { Input } from "@/components/ui/form";
 import { LinkButton } from "@/components/ui/button";
@@ -75,36 +75,32 @@ export default async function CustomersPage({
           />
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {/* 1つのカードに行で並べる（主：会社名／副：本社住所・メモ／右：現場数） */}
+            <div className="card divide-y divide-line overflow-hidden">
               {customers.map((c) => (
-                <CardLink key={c.id} href={`/customers/${c.id}`} className="h-full p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="truncate text-[15px] font-bold leading-snug text-ink">
-                        {c.name}
-                      </h3>
-                      {c.headOfficeAddress && (
-                        <p className="mt-1 flex items-center gap-1 truncate text-xs text-ink-muted">
-                          <MapPin className="h-3 w-3 shrink-0" />
-                          <span className="min-w-0 truncate">{c.headOfficeAddress}</span>
-                        </p>
-                      )}
-                      {c.memo && (
-                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-muted">
-                          {c.memo}
-                        </p>
-                      )}
-                    </div>
-                    <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-ink-faint" />
+                <Link
+                  key={c.id}
+                  href={`/customers/${c.id}`}
+                  className="tap-row flex items-center gap-3 px-4 py-3.5 hover:bg-surface-subtle"
+                >
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-base font-bold text-ink">{c.name}</h3>
+                    {c.headOfficeAddress && (
+                      <p className="mt-0.5 flex items-center gap-1.5 text-sm text-ink-muted">
+                        <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="min-w-0 truncate">{c.headOfficeAddress}</span>
+                      </p>
+                    )}
+                    {c.memo && (
+                      <p className="mt-0.5 line-clamp-1 text-sm text-ink-muted">{c.memo}</p>
+                    )}
                   </div>
-
-                  <div className="mt-3 flex items-center gap-4 border-t border-line pt-2.5 text-xs font-medium text-ink-muted">
-                    <span className="flex items-center gap-1">
-                      <Building2 className="h-3.5 w-3.5" />
-                      現場 {c._count.sites}
-                    </span>
-                  </div>
-                </CardLink>
+                  <span className="flex shrink-0 items-center gap-1 text-sm font-semibold text-ink-soft tnum">
+                    <Building2 className="h-4 w-4 text-ink-muted" aria-hidden />
+                    現場 {c._count.sites}
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
+                </Link>
               ))}
             </div>
             {hasMore && (

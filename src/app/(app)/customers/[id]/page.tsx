@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Pencil, Building2, ChevronDown } from "lucide-react";
+import { Pencil, Building2, ChevronDown, MapPin } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
 import { PageHeader } from "@/components/app-shell/page-header";
@@ -15,7 +15,7 @@ import {
   PAYMENT_METHOD_LABEL,
   labelOf,
 } from "@/lib/constants";
-import { fmtDate } from "@/lib/utils";
+import { cn, fmtDate, mapSearchUrl } from "@/lib/utils";
 
 /**
  * 顧客詳細（v0.4 簡素化）。
@@ -79,24 +79,55 @@ export default async function CustomerDetailPage({
       <PageContainer size="narrow">
         <SearchParamToast />
         <div className="space-y-5">
-          {/* メモ */}
-          {customer.memo && (
-            <section className="space-y-2.5">
-              <SectionTitle>メモ</SectionTitle>
-              <Card className="p-4">
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                  {customer.memo}
-                </p>
-              </Card>
-            </section>
-          )}
+          {/* 概要カード（現場詳細と同じ調子）：現場数・取引状態・会社名・メモ・本社住所 */}
+          <Card className="p-4 md:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-lg font-bold tnum text-ink">現場 {customer.sites.length}件</p>
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-3 py-1 text-sm font-bold",
+                  customer.tradeStatus === "SUSPENDED"
+                    ? "bg-surface-sunken text-ink-muted"
+                    : "bg-brand-50 text-brand-700",
+                )}
+              >
+                {labelOf(TRADE_STATUS_LABEL, customer.tradeStatus)}
+              </span>
+            </div>
+            <h2
+              className={cn(
+                "mt-1.5 break-words font-bold leading-tight text-ink",
+                customer.name.length > 10 ? "text-2xl" : "text-[1.875rem]",
+              )}
+            >
+              {customer.name}
+            </h2>
+            {customer.memo && (
+              <p className="mt-1.5 whitespace-pre-wrap text-[15px] leading-relaxed text-ink-soft">
+                {customer.memo}
+              </p>
+            )}
+            {customer.headOfficeAddress && (
+              <div className="mt-3 flex items-center gap-3 text-sm text-ink-muted">
+                <a
+                  href={mapSearchUrl(customer.headOfficeAddress)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex min-w-0 items-center gap-1.5 font-medium text-brand-600"
+                >
+                  <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="truncate">{customer.headOfficeAddress}</span>
+                </a>
+              </div>
+            )}
+          </Card>
 
           {/* この顧客の現場 */}
           <section className="space-y-2.5">
             <SectionTitle
               action={
-                <span className="text-xs font-semibold text-ink-muted">
-                  {customer.sites.length} 件
+                <span className="text-sm font-semibold text-ink-muted tnum">
+                  {customer.sites.length}件
                 </span>
               }
             >
@@ -119,8 +150,8 @@ export default async function CustomerDetailPage({
 
           {/* 詳細情報（折りたたみ） */}
           {hasDetails && (
-            <details className="group rounded-2xl border border-line bg-surface">
-              <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-ink-soft [&::-webkit-details-marker]:hidden">
+            <details className="card group">
+              <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-lg font-bold text-ink [&::-webkit-details-marker]:hidden">
                 詳細情報
                 <ChevronDown className="h-5 w-5 shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
               </summary>

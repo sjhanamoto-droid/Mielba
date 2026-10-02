@@ -261,12 +261,12 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
       />
 
       {!reviewing ? (
-        <div className="rounded-2xl border border-line bg-surface-subtle p-5 text-center">
+        <div className="card p-5 text-center">
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
             <ScanLine className="h-7 w-7" />
           </div>
-          <p className="text-sm font-bold text-ink">納品書・発注書を読み取り</p>
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="text-lg font-bold text-ink">納品書・発注書を読み取り</p>
+          <p className="mt-1 text-sm text-ink-muted">
             撮影またはファイル（JPEG・PNG・PDF）を選ぶと、材料名・数量・金額を自動で読み取ります。<br />
             登録先の現場：<span className="font-bold text-ink">{site.name}</span>
           </p>
@@ -346,7 +346,7 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
           {/* 明細 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-ink">材料明細</span>
+              <span className="text-lg font-bold text-ink">材料明細</span>
               <span className="text-xs text-ink-muted">
                 税抜 <span className="font-bold text-ink">{yen(subtotal)}</span>
               </span>

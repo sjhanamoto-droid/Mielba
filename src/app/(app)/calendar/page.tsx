@@ -172,7 +172,7 @@ export default async function CalendarPage({
 
   return (
     <div>
-      <PageHeader title="カレンダー" fluid />
+      <PageHeader title="予定" fluid />
       <PageContainer size="full">
         <CalendarView
           events={viewEvents}

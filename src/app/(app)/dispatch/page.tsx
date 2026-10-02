@@ -147,6 +147,7 @@ export default async function DispatchPage({
           nextKey={addDaysKey(dateStr, 1)}
           isToday={dateStr === todayStr}
           label={fmtDateWithDay(dateFromKey(dateStr))}
+          dateKey={dateStr}
         />
 
         <DispatchBoard key={dateStr} sites={rows} dateStr={dateStr} allUsers={allUsers} untethered={untethered} />

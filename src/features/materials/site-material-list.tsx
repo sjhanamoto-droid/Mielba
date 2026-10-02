@@ -35,7 +35,7 @@ export function SiteMaterialList({ materials }: { materials: SiteMaterialRow[] }
 
   if (materials.length === 0) {
     return (
-      <p className="rounded-2xl border border-line bg-surface-subtle px-4 py-6 text-center text-sm text-ink-muted">
+      <p className="py-1 text-center text-sm text-ink-muted">
         まだ材料が登録されていません
       </p>
     );
@@ -70,11 +70,11 @@ export function SiteMaterialList({ materials }: { materials: SiteMaterialRow[] }
           <div className="flex items-start gap-2">
             <Package className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-ink">
+              <p className="truncate text-base font-bold text-ink">
                 {m.name}
                 {!m.active && <span className="ml-1.5 text-[11px] font-normal text-ink-faint">（無効）</span>}
               </p>
-              <p className="mt-0.5 text-xs text-ink-muted">
+              <p className="mt-0.5 text-sm text-ink-muted">
                 {[
                   m.quantity ? `数量 ${m.quantity}${m.unit ?? ""}` : m.unit ? `単位 ${m.unit}` : null,
                   m.unitPrice != null ? `単価 ¥${m.unitPrice.toLocaleString()}` : null,
@@ -99,7 +99,7 @@ export function SiteMaterialList({ materials }: { materials: SiteMaterialRow[] }
                 onClick={() => run(() => toggleSiteMaterial(m.id), m.active ? "無効にしました" : "有効にしました")}
                 disabled={pending}
                 aria-label={m.active ? "無効にする" : "有効にする"}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-sunken"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-sunken"
               >
                 {m.active ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -108,7 +108,7 @@ export function SiteMaterialList({ materials }: { materials: SiteMaterialRow[] }
                 onClick={() => setDeleteTarget(m)}
                 disabled={pending}
                 aria-label="削除"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted hover:bg-red-50 hover:text-status-danger"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:bg-red-50 hover:text-status-danger dark:hover:bg-red-950/40"
               >
                 <Trash2 className="h-4 w-4" />
               </button>

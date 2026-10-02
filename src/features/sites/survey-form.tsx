@@ -50,7 +50,7 @@ export function SurveyForm({
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         <div className="space-y-3">
           <SectionTitle>現調内容</SectionTitle>
-          <Card className="space-y-3 p-4">
+          <Card className="space-y-4 p-4">
             <Field label="住所" htmlFor="address">
               <Input id="address" name="address" defaultValue={survey?.address ?? ""} placeholder="東京都◯◯区…" />
             </Field>
@@ -75,13 +75,13 @@ export function SurveyForm({
       </div>
 
       {state.error && (
-        <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600">
+        <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600 dark:bg-red-950/40 dark:text-red-300">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {state.error}
         </div>
       )}
       {state.ok && (
-        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700">
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           現調内容を保存しました
         </div>
