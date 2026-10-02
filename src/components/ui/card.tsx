@@ -38,15 +38,20 @@ export function CardLink({
 export function SectionTitle({
   children,
   action,
+  size = "sm",
   className,
 }: {
   children: React.ReactNode;
   action?: React.ReactNode;
+  /** lg = ホーム・現場詳細の大見出し（情報の区切りをはっきり見せる） */
+  size?: "sm" | "lg";
   className?: string;
 }) {
   return (
     <div className={cn("flex items-center justify-between px-1", className)}>
-      <h2 className="text-sm font-bold text-ink-soft">{children}</h2>
+      <h2 className={size === "lg" ? "text-lg font-bold text-ink" : "text-sm font-bold text-ink-soft"}>
+        {children}
+      </h2>
       {action}
     </div>
   );

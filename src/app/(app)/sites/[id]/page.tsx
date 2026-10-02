@@ -4,7 +4,7 @@ import {
   Pencil, Building2, MapPin, KeyRound, HardHat, CalendarClock,
   FileText, ClipboardList, Plus, ChevronRight, Truck, PackageCheck,
   ClipboardCheck, Wallet, ScrollText, Phone, ArrowRight, Map, CalendarRange,
-  UserRound, CircleParking, AlertTriangle, StickyNote, Link2,
+  UserRound, CircleParking, AlertTriangle, StickyNote, Link2, Users,
 } from "lucide-react";
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -30,8 +30,8 @@ import { SiteMemoPanel, type SiteMemoAuthor, type SiteMemoRow } from "@/features
 import { SitePhotosSection, type SitePhotoItem } from "@/features/sites/site-photos-section";
 import { SiteDetailTabs } from "@/features/sites/site-detail-tabs";
 import { Tabs } from "@/components/ui/tabs";
-import { todayRange } from "@/lib/date";
-import { fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
+import { todayRange, storedDateKey, jstDateKey } from "@/lib/date";
+import { cn, fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
 import {
   PROJECT_TYPE_LABEL,
   BILLING_STATUS_LABEL,
@@ -44,6 +44,24 @@ import {
   type BillingStatus,
   type EventSource,
 } from "@/lib/constants";
+
+/** "09:00" → "9:00" */
+function shortTime(t: string): string {
+  return t.replace(/^0(\d)/, "$1");
+}
+
+/** 住所から市区町村だけを取り出す（「東京都世田谷区…」→「世田谷区」） */
+function areaOf(address: string | null): string | null {
+  if (!address) return null;
+  const rest = address.trim().replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/, "");
+  const m = rest.match(/^(.+?[市区町村郡])/);
+  return m ? m[1] : null;
+}
+
+/** 「河西 茂樹」→「河西」 */
+function familyName(name: string): string {
+  return name.trim().split(/[\s　]+/)[0] || name;
+}
 
 export default async function SiteDetailPage({
   params,
@@ -143,6 +161,7 @@ export default async function SiteDetailPage({
     siteMaterials,
     materialUses,
     reportPhotos,
+    todayCrew,
   ] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
     // 人工は提出済み(SUBMITTED)のみ数える（勤怠・人工超過チェックと同じ基準）
@@ -200,6 +219,12 @@ export default async function SiteDetailPage({
       },
       orderBy: { createdAt: "desc" },
       take: 60,
+    }),
+    // 今日この現場に入る人（上部の概要カードに「今日の担当」として出す）
+    db.siteVisit.findMany({
+      where: { siteId: site.id, date: todayRange() },
+      select: { user: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
 
@@ -365,6 +390,7 @@ export default async function SiteDetailPage({
       {/* 引き継ぎ事項（対応中 → 現場の常設メモ → 対応完了の履歴） */}
       <section className="space-y-2.5">
         <SectionTitle
+          size="lg"
           action={
             <Link
               href={`/sites/${site.id}/edit#handoverNote`}
@@ -405,6 +431,7 @@ export default async function SiteDetailPage({
       {/* 現場メモ（日報に書くほどでない気づき・連絡をその場で残す） */}
       <section className="space-y-2.5">
         <SectionTitle
+          size="lg"
           action={
             memoCount > 0 ? (
               <span className="text-xs font-semibold text-ink-muted tnum">{memoCount}件</span>
@@ -443,25 +470,13 @@ export default async function SiteDetailPage({
       {surveyBanner}
       {provisionalBanner}
 
-      {/* ステータス */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <SiteStatusBadge status={site.siteStatus} />
-        {site.provisional && (
-          <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
-            <AlertTriangle className="h-3 w-3" />
-            仮登録
-          </Badge>
-        )}
-        <Badge tone="neutral">{projectType}</Badge>
-      </div>
-
       {/* PC: 左メイン(2/3) + 右レール(1/3)。スマホは縦積み */}
       <div className="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
         {/* ===== メイン列 ===== */}
         <div className="space-y-5 lg:col-span-2">
           {/* 工程（進捗・工期） */}
           <section className="space-y-2.5">
-            <SectionTitle>工程</SectionTitle>
+            <SectionTitle size="lg">工程</SectionTitle>
             <Card className="space-y-3 p-4">
               <DataList>
                 <DataRow
@@ -502,7 +517,7 @@ export default async function SiteDetailPage({
 
           {/* 現場入り情報（ぱっと見で分かる） */}
           <section className="space-y-2.5">
-            <SectionTitle>現場入り情報</SectionTitle>
+            <SectionTitle size="lg">現場入り情報</SectionTitle>
             <Card className="space-y-4 p-4">
               {/* キーBOX（なし＝理由を表示 / あり＝番号を大きく表示） */}
               {site.keyboxStatus === "NONE" ? (
@@ -565,38 +580,13 @@ export default async function SiteDetailPage({
                   }
                 />
               </DataList>
-
-              {/* 大きなアクションボタン（44px以上） */}
-              {(mapsUrl || site.siteContactPhone) && (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {mapsUrl && (
-                    <a
-                      href={mapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={buttonClass({ variant: "outline", size: "md", className: "w-full" })}
-                    >
-                      <Map className="h-5 w-5" />
-                      地図を開く
-                    </a>
-                  )}
-                  {site.siteContactPhone && (
-                    <a
-                      href={`tel:${site.siteContactPhone}`}
-                      className={buttonClass({ size: "md", className: "w-full" })}
-                    >
-                      <Phone className="h-5 w-5" />
-                      {site.siteContactName ? `${site.siteContactName}さんに電話` : "現場担当に電話"}
-                    </a>
-                  )}
-                </div>
-              )}
+              {/* 地図・電話のボタンは上部の概要カードにある */}
             </Card>
           </section>
 
           {/* 場所 */}
           <section className="space-y-2.5">
-            <SectionTitle>場所</SectionTitle>
+            <SectionTitle size="lg">場所</SectionTitle>
             <Card className="px-4">
               <DataList>
                 <DataRow
@@ -629,7 +619,7 @@ export default async function SiteDetailPage({
 
           {/* 人工（最終=着工実績日以降の日報累計 / 目標） */}
           <section className="space-y-2.5">
-            <SectionTitle>人工</SectionTitle>
+            <SectionTitle size="lg">人工</SectionTitle>
             <Card className="space-y-3 p-4">
               <div className="flex items-end justify-between">
                 <span className="text-xs font-semibold text-ink-muted">最終 / 目標</span>
@@ -687,7 +677,7 @@ export default async function SiteDetailPage({
           {/* 図面・工程表 */}
           {(hasDocuments || !!site.drawingNoneReason || !!site.scheduleNoneReason) && (
             <section className="space-y-2.5">
-              <SectionTitle>図面・工程表</SectionTitle>
+              <SectionTitle size="lg">図面・工程表</SectionTitle>
               <Card className="space-y-4 p-4">
                 {drawingImages.length === 0 && drawingPdfs.length === 0 && site.drawingNoneReason && (
                   <div className="rounded-xl bg-surface-sunken p-3.5">
@@ -740,7 +730,7 @@ export default async function SiteDetailPage({
 
           {/* 登録材料（種類・数量は全員／金額は最高管理者のみ） */}
           <section className="space-y-2.5">
-            <SectionTitle>
+            <SectionTitle size="lg">
               <span className="flex items-center gap-1.5">登録材料</span>
             </SectionTitle>
             <SiteMaterialSummary
@@ -758,7 +748,7 @@ export default async function SiteDetailPage({
 
           {/* 基本情報（事務情報なので下の方） */}
           <section className="space-y-2.5">
-            <SectionTitle>基本情報</SectionTitle>
+            <SectionTitle size="lg">基本情報</SectionTitle>
             <Card className="px-4">
               <DataList>
                 <DataRow label="案件コード" value={site.projectCode} />
@@ -773,7 +763,7 @@ export default async function SiteDetailPage({
 
           {/* 元請企業 */}
           <section className="space-y-2.5">
-            <SectionTitle>元請企業</SectionTitle>
+            <SectionTitle size="lg">元請企業</SectionTitle>
             <CardLink href={`/customers/${site.customer.id}`} className="flex items-center gap-3 p-4">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
                 <Building2 className="h-5 w-5" />
@@ -792,7 +782,7 @@ export default async function SiteDetailPage({
         <div className="mt-5 space-y-5 lg:col-span-1 lg:mt-0">
           {/* 予定 */}
           <section className="space-y-2.5">
-            <SectionTitle>今後の予定</SectionTitle>
+            <SectionTitle size="lg">今後の予定</SectionTitle>
             {site.events.length === 0 ? (
               <div className="rounded-2xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
                 今後の予定はありません
@@ -829,6 +819,7 @@ export default async function SiteDetailPage({
           {/* 現調 */}
           <section className="space-y-2.5">
             <SectionTitle
+          size="lg"
               action={
                 <Link href={`/sites/${site.id}/survey`} className="text-xs font-semibold text-brand-600">
                   {site.survey ? "編集" : "登録"}
@@ -871,7 +862,7 @@ export default async function SiteDetailPage({
 
           {/* その他（優先度の低い情報はタブに畳む）: 協力会社 / 関連現場 / 将来フェーズ */}
           <section className="space-y-2.5">
-            <SectionTitle>その他の情報</SectionTitle>
+            <SectionTitle size="lg">その他の情報</SectionTitle>
             <Tabs
               tabs={[
                 {
@@ -996,9 +987,138 @@ export default async function SiteDetailPage({
     site.siteStatus === "SURVEY" ? `/sites/${site.id}/survey` : `/reports/new?siteId=${site.id}`;
   const writeReportLabel = site.siteStatus === "SURVEY" ? "現調フォーマットを開く" : "日報を書く";
 
+  // ───────────────── 上部の概要カード（ホームの「今日の現場」と同じ調子） ─────────────────
+  // 今日の予定（現場の作業予定）があれば時間帯と作業名を出す
+  const todayKey = jstDateKey();
+  const todayEvent = site.events.find(
+    (e) => e.source === "MANUAL" && storedDateKey(e.date) === todayKey,
+  );
+  const todayTime = todayEvent?.startTime
+    ? todayEvent.endTime
+      ? `${shortTime(todayEvent.startTime)}–${shortTime(todayEvent.endTime)}`
+      : `${shortTime(todayEvent.startTime)}〜`
+    : todayEvent?.allDay
+      ? "終日"
+      : null;
+  const area = areaOf(site.address);
+  const crew = Array.from(new Set(todayCrew.map((v) => familyName(v.user.name))));
+  const subline = [
+    todayEvent && todayEvent.title !== site.name ? todayEvent.title : null,
+    // 作業場所名が現場名に含まれていれば重ねて出さない
+    site.locationName && !site.name.includes(site.locationName) ? site.locationName : null,
+    site.customer.name,
+  ].filter(Boolean).join(" ・ ");
+
+  const summaryCard = (
+    <div className="mx-auto w-full max-w-7xl px-4 pt-4 md:px-8 md:pt-6">
+      <div className="card p-4 md:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-lg font-bold tnum text-ink">
+            {todayTime ? `今日 ${todayTime}` : projectType}
+          </p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {site.provisional && (
+              <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
+                <AlertTriangle className="h-3 w-3" />
+                仮登録
+              </Badge>
+            )}
+            <SiteStatusBadge status={site.siteStatus} />
+          </div>
+        </div>
+        <h1
+          className={cn(
+            "mt-1.5 break-words font-bold leading-tight text-ink",
+            site.name.length > 10 ? "text-2xl" : "text-[1.875rem]",
+          )}
+        >
+          {site.name}
+        </h1>
+        {subline && <p className="mt-1 text-[15px] text-ink-soft">{subline}</p>}
+
+        {(area || crew.length > 0) && (
+          <div className="mt-3 flex items-center gap-3 text-sm text-ink-muted">
+            {area && mapsUrl && (
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-w-0 items-center gap-1.5 font-medium text-brand-600"
+              >
+                <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="truncate">{area}</span>
+              </a>
+            )}
+            {area && crew.length > 0 && <span className="h-5 w-px shrink-0 bg-line" aria-hidden />}
+            {crew.length > 0 && (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Users className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="truncate">今日の担当 {crew.join("・")}</span>
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 現場に着いて最初に要るもの：キーBOX番号 */}
+        {site.keyboxStatus !== "NONE" && site.keyboxNumber && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl bg-surface-sunken px-3.5 py-2.5">
+            <KeyRound className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+            <span className="text-sm font-semibold text-ink-muted">キーBOX</span>
+            <span className="text-xl font-bold tracking-wider text-ink tnum">{site.keyboxNumber}</span>
+            {site.keyboxPlace && (
+              <span className="min-w-0 truncate text-sm text-ink-muted">（{site.keyboxPlace}）</span>
+            )}
+          </div>
+        )}
+
+        <LinkButton href={writeReportHref} size="lg" className="relative mt-4 w-full">
+          {site.siteStatus === "SURVEY" ? (
+            <ClipboardList className="h-5 w-5" aria-hidden />
+          ) : (
+            <FileText className="h-5 w-5" aria-hidden />
+          )}
+          {writeReportLabel}
+          <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
+        </LinkButton>
+        {(mapsUrl || site.siteContactPhone) && (
+          <div className={cn("mt-2 grid gap-2", mapsUrl && site.siteContactPhone ? "grid-cols-2" : "grid-cols-1")}>
+            {mapsUrl && (
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonClass({
+                  variant: "outline",
+                  className: "w-full border-brand-200 text-brand-700 dark:border-brand-800",
+                })}
+              >
+                <Map className="h-[18px] w-[18px]" aria-hidden />
+                地図を開く
+              </a>
+            )}
+            {site.siteContactPhone && (
+              <a
+                href={`tel:${site.siteContactPhone}`}
+                aria-label={site.siteContactName ? `${site.siteContactName}さんに電話` : "現場担当に電話"}
+                className={buttonClass({
+                  variant: "outline",
+                  className: "w-full border-brand-200 text-brand-700 dark:border-brand-800",
+                })}
+              >
+                <Phone className="h-[18px] w-[18px]" aria-hidden />
+                電話する
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const reportsPanel = (
     <section className="space-y-2.5">
       <SectionTitle
+          size="lg"
         action={
           reportCount > 0 ? (
             <Link href={`/sites/${site.id}/reports`} className="text-xs font-semibold text-brand-600">
@@ -1061,6 +1181,8 @@ export default async function SiteDetailPage({
         }
       />
       <SearchParamToast />
+
+      {summaryCard}
 
       {/* 現場を開いたら必ず「連絡・メモ」から。基本情報は上部タブか横スワイプで見る */}
       <SiteDetailTabs

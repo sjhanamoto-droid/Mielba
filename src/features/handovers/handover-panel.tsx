@@ -164,9 +164,11 @@ export function HandoverPanel({
                 const busy = busyId === h.id;
                 return (
                   <li key={h.id} className="px-4 py-3">
-                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink-soft">
-                      {h.content}
-                    </p>
+                    <ClampedText
+                      text={h.content}
+                      className="text-sm leading-relaxed text-ink-soft"
+                      toggleClassName="text-brand-600"
+                    />
                     <p className="mt-1 text-xs text-ink-faint">
                       {meta(h)}
                       {h.resolvedAt && (
@@ -219,9 +221,11 @@ function OpenHandoverItem({
 
   return (
     <li className="rounded-xl border border-amber-200/70 bg-white/70 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
-      <p className="whitespace-pre-wrap break-words text-sm text-amber-900 dark:text-amber-100">
-        {item.content}
-      </p>
+      <ClampedText
+        text={item.content}
+        className="text-sm leading-relaxed text-amber-900 dark:text-amber-100"
+        toggleClassName="text-amber-800 dark:text-amber-300"
+      />
       <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-300/80">{meta(item)}</p>
 
       {/* 確認状況：誰がいつ読んだか／今日入るのにまだの人 */}
@@ -277,5 +281,51 @@ function OpenHandoverItem({
         )}
       </div>
     </li>
+  );
+}
+
+/** 4行を超える長文は畳み、「全文を表示」で開く（長い引き継ぎで画面が埋まらないように） */
+function ClampedText({
+  text,
+  className,
+  toggleClassName,
+}: {
+  text: string;
+  className?: string;
+  toggleClassName?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // 行数は折り返し幅に依存するので、改行数と文字数でおおよそ判定する
+  const long = text.split(/\r?\n/).length > 4 || text.length > 120;
+  return (
+    <div>
+      <p
+        className={cn(
+          "whitespace-pre-wrap break-words",
+          long && !expanded && "line-clamp-4",
+          className,
+        )}
+      >
+        {text}
+      </p>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className={cn(
+            "mt-1 inline-flex min-h-[32px] items-center gap-0.5 text-xs font-bold",
+            toggleClassName,
+          )}
+        >
+          {expanded ? "たたむ" : "全文を表示"}
+          {expanded ? (
+            <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+          )}
+        </button>
+      )}
+    </div>
   );
 }

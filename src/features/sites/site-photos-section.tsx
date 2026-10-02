@@ -131,6 +131,7 @@ export function SitePhotosSection({
   return (
     <section className="space-y-2.5">
       <SectionTitle
+        size="lg"
         action={
           total > 0 ? (
             <span className="text-xs font-semibold text-ink-muted tnum">{total}件</span>
