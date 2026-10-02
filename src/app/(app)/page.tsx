@@ -1,55 +1,71 @@
 import Link from "next/link";
 import {
-  FileText, ChevronRight, HardHat, MapPin, Users, Truck, PackageCheck,
-  CalendarClock, LayoutDashboard, Bell, BellRing, Building2,
+  Bell, Building2, CalendarDays, ChevronRight, Ellipsis, FileText, MapPin, Users,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { isSurveySite, surveyFormHref } from "@/lib/missing-reports";
-import { jstDateKey, todayRange, tomorrowKey, dayRangeForKey, dateFromKey, addDaysKey } from "@/lib/date";
+import { jstDateKey, todayRange, tomorrowKey, dateFromKey, storedDateKey } from "@/lib/date";
 import { PageContainer } from "@/components/app-shell/page-container";
-import { mapSearchUrl } from "@/lib/utils";
-import { ImportantAlerts, type AlertItem } from "@/features/dashboard/important-alerts";
+import { OtherNotices, type NoticeItem } from "@/features/dashboard/other-notices";
 import { RemindReportsButton } from "@/features/dashboard/remind-reports-button";
-import { IconBadge } from "@/components/ui/icon-badge";
-import { SectionTitle } from "@/components/ui/card";
-import { LinkButton } from "@/components/ui/button";
-import { cn, fmtDateWithDay, fmtMonthDay } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
-  EVENT_SOURCE_LABEL, EVENT_SOURCE_COLOR, SITE_STAGES, siteStageIndex,
-  SITE_STATUS_LABEL, isPreOrderSite,
-  type EventSource, type SiteStatus,
+  EVENT_SOURCE_LABEL, SITE_STATUS_LABEL, PROJECT_TYPE_LABEL,
+  type EventSource, type SiteStatus, type ProjectType,
 } from "@/lib/constants";
 import { visibleEventWhere } from "@/lib/event-visibility";
 
-function greeting(): string {
-  // 日本時間の時刻で挨拶を切り替える（サーバーが UTC でもずれないように）
-  const h = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", hour12: false })
-      .format(new Date()),
-  );
-  if (h >= 5 && h < 11) return "おはようございます";
-  return "お疲れさまです";
-}
+// ホーム（スマホで毎朝開く画面）。情報に優先順位をつけ、上から順に
+//   ① 今日の現場（一番大きく。引き継ぎと「現場の詳細を見る」）
+//   ② 今日の日報（帯で区切って次にやること）
+//   ③ これからの予定（行で軽く）
+//   ④ その他の連絡事項（1行）
+// の順に並べる。
+
+// 参考デザインの落ち着いた深緑と、うすい緑の面（ホーム専用。ダークモードはブランドトークン）
+const DEEP = "text-[#245f4b] dark:text-brand-700";
+const TINT = "bg-[#eef4ef] dark:bg-brand-100";
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
-/** 「9月8日（火）」形式（ホーム見出しの日付） */
-function fmtHeaderDate(d: Date): string {
-  return `${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`;
-}
-
-/** 「河西 茂樹」→「河西」。呼びかけは姓だけの方が画面が締まる */
+/** 「河西 茂樹」→「河西」 */
 function familyName(name: string): string {
   return name.trim().split(/[\s　]+/)[0] || name;
 }
 
-/** 見出し右の小さな導線（「配員を見る ›」など） */
+/** "09:00" → "9:00" */
+function shortTime(t: string): string {
+  return t.replace(/^0(\d)/, "$1");
+}
+
+/** 予定の時間帯（「9:00–17:00」「9:00〜」「終日」）。時刻が無ければ null */
+function timeRange(e: { allDay: boolean; startTime: string | null; endTime: string | null } | undefined): string | null {
+  if (!e) return null;
+  if (e.startTime && e.endTime) return `${shortTime(e.startTime)}–${shortTime(e.endTime)}`;
+  if (e.startTime) return `${shortTime(e.startTime)}〜`;
+  return e.allDay ? "終日" : null;
+}
+
+/** 住所から市区町村だけを取り出す（「東京都世田谷区…」→「世田谷区」） */
+function areaOf(address: string | null): string | null {
+  if (!address) return null;
+  const rest = address.trim().replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/, "");
+  const m = rest.match(/^(.+?[市区町村郡])/);
+  return m ? m[1] : null;
+}
+
+/** 本文の1行目（引き継ぎのプレビュー用） */
+function firstLine(text: string): string {
+  return text.trim().split(/\r?\n/).find((l) => l.trim())?.trim() ?? "";
+}
+
+/** 見出し右の小さな導線（「予定を見る ›」など） */
 function SectionLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className="flex items-center gap-0.5 text-xs font-semibold text-brand-600">
+    <Link href={href} className={cn("flex items-center gap-0.5 text-[15px] font-medium", DEEP)}>
       {label}
-      <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+      <ChevronRight className="h-4 w-4" aria-hidden />
     </Link>
   );
 }
@@ -58,54 +74,44 @@ export default async function HomePage() {
   const user = await requireUser();
   const admin = isAdmin(user);
 
-  // 「今日」は日本時間の暦日で判定する（UTC サーバーで朝9時まで前日扱いになるバグの修正）
+  // 「今日」は日本時間の暦日で判定する
   const todayKey = jstDateKey();
   const today = todayRange(); // { gte, lt }
   const tmrwKey = tomorrowKey();
-  const tomorrow = dayRangeForKey(tmrwKey);
+  const tomorrowStart = dateFromKey(tmrwKey);
 
-  // ── 今週のカレンダー範囲（週ストリップ用）。DBアクセス前に確定させる ──
-  const weekStartKey = addDaysKey(todayKey, -dateFromKey(todayKey).getDay());
-  const weekDayKeys = Array.from({ length: 7 }, (_, i) => addDaysKey(weekStartKey, i));
-  const weekStart = dateFromKey(weekStartKey);
-  const weekEnd = dateFromKey(addDaysKey(weekStartKey, 7));
-
-  // ── 互いに独立したクエリはすべて 1 波で並列取得する ──
-  //    本番の PostgreSQL は「1 クエリ = 1 ネットワーク往復」。直列に await すると
-  //    往復回数ぶん待ち時間が積み上がるため、依存の無いものは Promise.all でまとめる。
-  //    （visitSiteIds に依存する引き継ぎ照会だけは後段の第2波で取得）
+  // ── 互いに独立したクエリは 1 波で並列取得する（本番 PostgreSQL は 1 クエリ = 1 往復） ──
   const emptyPairs: { siteId: string; userId: string }[] = [];
   const [
     todayVisits,
     myReportsToday,
     todayEvents,
-    weekEvents,
-    myTomorrowVisits,
+    upcomingVisits,
     allVisitsToday,
     submittedToday,
-    tomorrowGoingCount,
     provisionalSites,
     unreadNotifications,
   ] = await Promise.all([
-    // 今日の現場入り（出面）。日報・未提出はこれに連動（配属ではなく「当日行く現場」）。
+    // 今日の現場入り（出面）。日報・未提出はこれに連動
     db.siteVisit.findMany({
       where: { userId: user.id, date: today },
       include: {
         site: {
-          select: { id: true, name: true, address: true, siteStatus: true, projectStatus: true },
+          select: {
+            id: true, name: true, address: true, siteStatus: true,
+            projectType: true, locationName: true,
+          },
         },
       },
       orderBy: { createdAt: "asc" },
     }),
-    // 本日分の自分の日報（状態判定用）— ステータス込みで取得
+    // 本日分の自分の日報（状態判定用）
     db.dailyReport.findMany({
       where: { userId: user.id, workDate: today },
       select: { id: true, siteId: true, status: true },
     }),
-    // 本日の予定。表示は自分の予定のみに絞るため参加者も取得する
-    // （配達/支給品の連絡は現場単位の情報なので全件のまま使う）
+    // 本日の予定（現場の時間帯・作業名と、配達/支給品の連絡に使う）
     db.calendarEvent.findMany({
-      // 非公開の個人予定（最高管理者）は本人以外に出さない
       where: visibleEventWhere(user.id, { date: today }),
       include: {
         site: { select: { id: true, name: true } },
@@ -113,23 +119,16 @@ export default async function HomePage() {
       },
       orderBy: [{ startTime: "asc" }],
     }),
-    // 今週の予定（週ストリップの出所色ドット用・全員が全現場分）
-    db.calendarEvent.findMany({
-      where: visibleEventWhere(user.id, { date: { gte: weekStart, lt: weekEnd } }),
-      select: { id: true, date: true, source: true },
-    }),
-    // 明日の現場入り（自分の分）
+    // 明日以降の自分の現場入り（「これからの予定」）
     db.siteVisit.findMany({
-      where: { userId: user.id, date: tomorrow },
+      where: { userId: user.id, date: { gte: tomorrowStart } },
       include: { site: { select: { id: true, name: true, address: true } } },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      take: 3,
     }),
     // 管理者向け：今日の全スタッフの現場入り（日報の到着状況用）
     admin
-      ? db.siteVisit.findMany({
-          where: { date: today },
-          select: { siteId: true, userId: true },
-        })
+      ? db.siteVisit.findMany({ where: { date: today }, select: { siteId: true, userId: true } })
       : Promise.resolve(emptyPairs),
     // 管理者向け：今日の提出済み日報
     admin
@@ -138,530 +137,379 @@ export default async function HomePage() {
           select: { siteId: true, userId: true },
         })
       : Promise.resolve(emptyPairs),
-    // 管理者向け：明日の全体現場入り件数
-    admin ? db.siteVisit.count({ where: { date: tomorrow } }) : Promise.resolve(0),
     // 仮登録（本登録に必要な項目が未入力）の現場。作成した本人にだけ知らせる
     db.site.findMany({
       where: { provisional: true, createdById: user.id },
-      select: { id: true, name: true },
-      orderBy: { updatedAt: "desc" },
+      select: { id: true },
       take: 20,
     }),
-    // 通知の未読数（ホームヘッダのベルに赤バッジで表示）
+    // 通知の未読数（ベルの印）
     db.notification.count({ where: { userId: user.id, read: false } }),
   ]);
 
+  // ── 第2波：今日の現場ごとの担当者・引き継ぎ、これからの予定の時間帯 ──
+  const visitSiteIds = Array.from(new Set(todayVisits.map((v) => v.siteId)));
+  const upcomingSiteIds = Array.from(new Set(upcomingVisits.map((v) => v.siteId)));
+  const lastUpcoming = upcomingVisits[upcomingVisits.length - 1]?.date;
+  const [crewVisits, openHandovers, upcomingEvents] = await Promise.all([
+    visitSiteIds.length
+      ? db.siteVisit.findMany({
+          where: { siteId: { in: visitSiteIds }, date: today },
+          select: { siteId: true, user: { select: { name: true } } },
+          orderBy: { createdAt: "asc" },
+        })
+      : Promise.resolve([]),
+    // 対応中の引き継ぎ（全員の画面に残るもの。確認はアプリ起動時のゲートと現場詳細で）
+    visitSiteIds.length
+      ? db.handover.findMany({
+          where: { siteId: { in: visitSiteIds }, resolvedAt: null },
+          orderBy: { createdAt: "desc" },
+          select: { siteId: true, content: true },
+        })
+      : Promise.resolve([]),
+    upcomingSiteIds.length && lastUpcoming
+      ? db.calendarEvent.findMany({
+          where: visibleEventWhere(user.id, {
+            siteId: { in: upcomingSiteIds },
+            date: { gte: tomorrowStart, lte: lastUpcoming },
+          }),
+          select: { siteId: true, date: true, allDay: true, startTime: true, endTime: true },
+          orderBy: [{ startTime: "asc" }],
+        })
+      : Promise.resolve([]),
+  ]);
+
   const reportBySiteId = new Map(myReportsToday.map((r) => [r.siteId, r]));
-  const visitSites = todayVisits.map((v) => ({ id: v.siteId, name: v.site.name }));
-  // スタッフの日報到着状況（自分の当日提出状況）
-  const mySubmittedCount = visitSites.filter(
-    (s) => reportBySiteId.get(s.id)?.status === "SUBMITTED",
+
+  const crewBySite = new Map<string, string[]>();
+  for (const v of crewVisits) {
+    const list = crewBySite.get(v.siteId) ?? [];
+    list.push(familyName(v.user.name));
+    crewBySite.set(v.siteId, list);
+  }
+  const handoversBySite = new Map<string, string[]>();
+  for (const h of openHandovers) {
+    const list = handoversBySite.get(h.siteId) ?? [];
+    list.push(h.content);
+    handoversBySite.set(h.siteId, list);
+  }
+  // 現場の予定（今日）：時間帯と作業名に使う。自分が参加者のものを優先する
+  function siteEventToday(siteId: string) {
+    const events = todayEvents.filter((e) => e.siteId === siteId && e.source === "MANUAL");
+    return events.find((e) => e.participants.some((p) => p.userId === user.id)) ?? events[0];
+  }
+  function siteEventOn(siteId: string, date: Date) {
+    const key = storedDateKey(date);
+    return upcomingEvents.find((e) => e.siteId === siteId && storedDateKey(e.date) === key);
+  }
+
+  // 日報の帯：今日の現場のうち、まだ提出していない最初の現場を対象にする
+  const target =
+    todayVisits.find((v) => reportBySiteId.get(v.siteId)?.status !== "SUBMITTED") ?? todayVisits[0];
+  const submittedCount = todayVisits.filter(
+    (v) => reportBySiteId.get(v.siteId)?.status === "SUBMITTED",
   ).length;
+  const allSubmitted = todayVisits.length > 0 && submittedCount === todayVisits.length;
+  const targetReport = target ? reportBySiteId.get(target.siteId) : undefined;
+  const reportAction = !target
+    ? null
+    : allSubmitted
+      ? { href: targetReport ? `/reports/${targetReport.id}` : "/reports", label: "日報を見る" }
+      : targetReport?.status === "DRAFT"
+        ? { href: `/reports/${targetReport.id}/edit`, label: "続きを書く" }
+        : isSurveySite(target.site.siteStatus)
+          ? { href: surveyFormHref(target.siteId), label: "現調を書く" }
+          : { href: `/reports/new?siteId=${target.siteId}`, label: "日報を書く" };
 
-  // 本日の配達(DELIVERY)/支給品(SUPPLY)は「最初に確認」に載せる連絡
-  const deliveryEvents = todayEvents.filter(
-    (e) => e.source === "DELIVERY" || e.source === "SUPPLY",
-  );
+  // 管理者向け：今日の日報の到着状況
+  const subSet = new Set(submittedToday.map((r) => `${r.siteId}_${r.userId}`));
+  const dispatch = {
+    going: allVisitsToday.length,
+    submitted: allVisitsToday.filter((v) => subSet.has(`${v.siteId}_${v.userId}`)).length,
+  };
+  const dispatchPending = dispatch.going - dispatch.submitted;
 
-  // 「今週の予定」の下段に出す本日の予定はログイン本人のものだけ
-  // （自分が所有者の個人予定＝休み等、または自分が参加者の現場予定）
-  const myTodayEvents = todayEvents.filter(
-    (e) => e.ownerId === user.id || e.participants.some((p) => p.userId === user.id),
-  );
-
-  // 週ストリップの集計（取得済みデータから組み立てる）
-  const weekSourcesByDay = new Map<string, string[]>();
-  for (const e of weekEvents) {
-    const k = jstDateKey(e.date);
-    const arr = weekSourcesByDay.get(k);
-    if (arr) arr.push(e.source);
-    else weekSourcesByDay.set(k, [e.source]);
-  }
-
-  // 管理者向け：今日の日報の到着状況（全スタッフの現場入りと提出状況）
-  let dispatchSummary = { going: 0, submitted: 0, pending: 0 };
-  if (admin && allVisitsToday.length > 0) {
-    const subSet = new Set(submittedToday.map((r) => `${r.siteId}_${r.userId}`));
-    const submitted = allVisitsToday.filter((v) => subSet.has(`${v.siteId}_${v.userId}`)).length;
-    dispatchSummary = {
-      going: allVisitsToday.length,
-      submitted,
-      pending: allVisitsToday.length - submitted,
-    };
-  }
-
-  // 今日行く現場の、自分がまだ確認していない引き継ぎ事項（visitSiteIds に依存するので第2波で取得）
-  // 確認済みのものは現場詳細の「引き継ぎ事項」で読み返せる
-  const visitSiteIds = visitSites.map((s) => s.id);
-  let openHandovers: {
-    id: string; content: string; siteId: string; siteName: string; createdByName?: string;
-  }[] = [];
-  if (visitSiteIds.length > 0) {
-    const handovers = await db.handover.findMany({
-      where: {
-        siteId: { in: visitSiteIds },
-        resolvedAt: null,
-        // 自分で書いたもの・確認済みのものは「最初に確認」に出さない
-        OR: [{ createdById: null }, { createdById: { not: user.id } }],
-        reads: { none: { userId: user.id } },
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true, content: true, siteId: true, createdById: true,
-        site: { select: { name: true } },
-      },
-    });
-    const creatorIds = Array.from(
-      new Set(handovers.map((h) => h.createdById).filter((v): v is string => !!v)),
-    );
-    const creators = creatorIds.length
-      ? await db.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
-      : [];
-    const nameById = new Map(creators.map((u) => [u.id, u.name]));
-    openHandovers = handovers.map((h) => ({
-      id: h.id,
-      content: h.content,
-      siteId: h.siteId,
-      siteName: h.site.name,
-      createdByName: h.createdById ? nameById.get(h.createdById) : undefined,
-    }));
-  }
-
-  // ── 「最初に確認」に載せる連絡（現場に出る前に必ず目を通すものだけ） ──
-  // 日報の入力は下の現場カードのボタンに導線があるため、ここには入れない。
-  const alertItems: AlertItem[] = [
-    ...openHandovers.map((h) => ({
-      key: `handover-${h.id}`,
-      siteName: h.siteName,
-      title: h.content,
-      desc: h.createdByName
-        ? `${h.createdByName}さんからの引き継ぎがあります`
-        : "前の担当者からの引き継ぎがあります",
-      // 現場詳細の最上部に引き継ぎ事項（確認しましたボタンつき）がある
-      href: `/sites/${h.siteId}`,
-    })),
-    ...deliveryEvents.map((e) => ({
+  // その他の連絡事項：本日の配達・支給品
+  const notices: NoticeItem[] = todayEvents
+    .filter((e) => e.source === "DELIVERY" || e.source === "SUPPLY")
+    .map((e) => ({
       key: `event-${e.id}`,
-      siteName: e.site?.name,
-      title: `本日 ${EVENT_SOURCE_LABEL[e.source as EventSource]}：${e.title}`,
-      desc: e.allDay ? "終日の予定です" : e.startTime ? `${e.startTime} 予定` : undefined,
+      title: `${EVENT_SOURCE_LABEL[e.source as EventSource]}：${e.title}`,
+      desc: [e.site?.name, timeRange(e)].filter(Boolean).join(" ・ ") || undefined,
       href: e.site ? `/sites/${e.site.id}` : `/calendar?view=day&d=${todayKey}`,
-    })),
-  ];
-
-  // 現場カードの日報ボタン（状態で文言と遷移先が変わる）。現調中の現場は日報ではなく現調フォーマット
-  function reportLink(siteId: string, siteStatus: string): { href: string; label: string } {
-    const r = reportBySiteId.get(siteId);
-    if (r?.status === "SUBMITTED") return { href: `/reports/${r.id}`, label: "日報を見る" };
-    if (r?.status === "DRAFT") return { href: `/reports/${r.id}/edit`, label: "下書きを開く" };
-    if (isSurveySite(siteStatus)) return { href: surveyFormHref(siteId), label: "現調フォーマットを開く" };
-    return { href: `/reports/new?siteId=${siteId}`, label: "日報を書く" };
-  }
+    }));
 
   const todayDate = dateFromKey(todayKey);
-  const outlineBtn = "border-brand-200 text-brand-700 dark:border-brand-800";
 
   return (
-    <div>
-      {/* スマホはヘッダー非表示のため、ノッチ回避の上余白のみ確保 */}
-      <div aria-hidden className="safe-top md:hidden" />
-      {/* 上部ヘッダーはスマホでは非表示（メニューはボトムナビへ移設）。PC/タブレットのみ表示 */}
-      <header className="sticky top-0 z-30 hidden border-b border-line bg-surface/90 backdrop-blur-md safe-top md:block">
-        <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3 md:px-8 md:py-3.5">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-card md:h-12 md:w-12">
-            <LayoutDashboard className="h-6 w-6" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-bold leading-tight text-ink md:text-2xl">ホーム</h1>
-            <p className="truncate text-xs text-ink-muted md:text-sm">
-              {greeting()}、{user.name} さん ・ {fmtDateWithDay(todayDate)}
-            </p>
-          </div>
-        </div>
-      </header>
-
-      <PageContainer>
-        <div className="space-y-5">
-          {/* ホーム見出し（スマホ）：左に「ホーム」＋日付、右に名前と通知ベル */}
-          <div className="flex items-start justify-between gap-3 md:hidden">
-            <div className="min-w-0">
-              <h1 className="text-2xl font-bold leading-tight text-ink">ホーム</h1>
-              <p className="mt-0.5 text-sm text-ink-muted">{fmtHeaderDate(todayDate)}</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="text-sm font-semibold text-ink-soft">
-                {familyName(user.name)}さん
-              </span>
-              <Link
-                href="/notifications"
-                aria-label={unreadNotifications > 0 ? `通知（未読 ${unreadNotifications} 件）` : "通知"}
-                className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-surface text-ink-soft shadow-card active:bg-surface-subtle"
-              >
-                {unreadNotifications > 0 ? (
-                  <BellRing className="h-5 w-5 text-brand-600" />
-                ) : (
-                  <Bell className="h-5 w-5" />
-                )}
-                {unreadNotifications > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-status-danger px-1 text-[11px] font-bold text-white">
-                    {unreadNotifications > 99 ? "99+" : unreadNotifications}
-                  </span>
-                )}
-              </Link>
-            </div>
-          </div>
-
-          {/* ① 最初に確認（引き継ぎ・当日の配達などの連絡を集約） */}
-          <ImportantAlerts todayKey={todayKey} items={alertItems} />
-
-          {/* ② 今日・明日の現場（縦並び。今日を上に大きく） */}
-          <section className="space-y-2.5">
-            <SectionTitle action={<SectionLink href="/dispatch" label="配員を見る" />}>
-              今日・明日の現場
-            </SectionTitle>
-
-            <div className="card overflow-hidden">
-              {/* 今日 */}
-              <div className="p-4">
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-brand-600 px-3 py-1 text-xs font-bold text-white">
-                    今日
-                  </span>
-                  <span className="text-sm font-semibold text-ink-muted">
-                    {fmtMonthDay(todayDate)}
-                  </span>
-                  {todayVisits.length > 0 && (
-                    <span className="ml-auto text-sm font-bold tnum text-ink-muted">
-                      {todayVisits.length}件
-                    </span>
-                  )}
-                </div>
-
-                {todayVisits.length === 0 ? (
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <p className="text-sm text-ink-muted">現場の予定はありません</p>
-                    <SectionLink href={`/calendar?view=day&d=${todayKey}`} label="予定を確認する" />
-                  </div>
-                ) : (
-                  <div className="mt-3 space-y-5">
-                    {todayVisits.map((v) => {
-                      // 現調・見送りは工程が始まっていないので、工程名ではなく区分を出す
-                      const stage = isPreOrderSite(v.site.siteStatus)
-                        ? SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus]
-                        : SITE_STAGES[siteStageIndex(v.site.siteStatus, v.site.projectStatus)];
-                      const report = reportLink(v.siteId, v.site.siteStatus);
-                      return (
-                        <div key={v.id}>
-                          <Link
-                            href={`/sites/${v.siteId}`}
-                            className="block text-lg font-bold leading-snug text-ink"
-                          >
-                            {v.site.name}
-                          </Link>
-                          {v.site.address && (
-                            <a
-                              href={mapSearchUrl(v.site.address)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 flex items-center gap-1 text-sm font-medium text-brand-600"
-                            >
-                              <MapPin className="h-4 w-4 shrink-0" aria-hidden />
-                              <span className="min-w-0 truncate">{v.site.address}</span>
-                            </a>
-                          )}
-                          <span className="mt-2 inline-flex rounded-lg bg-surface-sunken px-2.5 py-1 text-xs font-bold text-ink-soft">
-                            {stage}
-                          </span>
-                          <div className="mt-3 grid grid-cols-2 gap-2">
-                            <LinkButton
-                              href={`/sites/${v.siteId}`}
-                              variant="outline"
-                              className={outlineBtn}
-                            >
-                              <HardHat className="h-[18px] w-[18px]" aria-hidden />
-                              現場詳細
-                            </LinkButton>
-                            <LinkButton href={report.href} variant="outline" className={outlineBtn}>
-                              <FileText className="h-[18px] w-[18px]" aria-hidden />
-                              {report.label}
-                            </LinkButton>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* 明日 */}
-              <div className="border-t border-line p-4">
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-surface-sunken px-3 py-1 text-xs font-bold text-ink-soft">
-                    明日
-                  </span>
-                  <span className="text-sm font-semibold text-ink-muted">
-                    {fmtMonthDay(dateFromKey(tmrwKey))}
-                  </span>
-                  {myTomorrowVisits.length > 0 && (
-                    <span className="ml-auto text-sm font-bold tnum text-ink-muted">
-                      {myTomorrowVisits.length}件
-                    </span>
-                  )}
-                </div>
-
-                {myTomorrowVisits.length > 0 ? (
-                  <ul className="mt-3 space-y-2.5">
-                    {myTomorrowVisits.map((v) => (
-                      <li key={v.id}>
-                        <Link
-                          href={`/sites/${v.site.id}`}
-                          className="flex items-center gap-2 active:opacity-70"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-[15px] font-bold text-ink">{v.site.name}</p>
-                            {v.site.address && (
-                              <p className="truncate text-xs text-ink-muted">{v.site.address}</p>
-                            )}
-                          </div>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <p className="text-sm text-ink-muted">
-                      {admin && tomorrowGoingCount > 0
-                        ? `自分の予定はありません（全体で${tomorrowGoingCount}名）`
-                        : "現場の予定はありません"}
-                    </p>
-                    <SectionLink
-                      href={admin ? `/dispatch?d=${tmrwKey}` : `/calendar?view=day&d=${tmrwKey}`}
-                      label="予定を確認する"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* ③ 日報の到着状況（提出数と未提出者だけに絞る） */}
-          <section className="space-y-2.5">
-            <SectionTitle
-              action={<SectionLink href={admin ? "/dispatch" : "/reports"} label="一覧を見る" />}
-            >
-              日報の到着状況
-            </SectionTitle>
-
-            {admin ? (
-              <div className="card p-4">
-                {dispatchSummary.going > 0 ? (
-                  <>
-                    <div className="flex items-center gap-3">
-                      <IconBadge icon={FileText} tone="emerald" />
-                      <p className="flex-1 text-base font-bold text-ink">今日の提出</p>
-                      <p className="shrink-0 text-ink-muted">
-                        <span className="text-3xl font-bold tnum leading-none text-brand-700">
-                          {dispatchSummary.submitted}
-                        </span>
-                        <span className="text-sm font-semibold"> / {dispatchSummary.going} 名</span>
-                      </p>
-                    </div>
-                    <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-surface-sunken">
-                      <div
-                        className="h-full rounded-full bg-brand-500 transition-all"
-                        style={{
-                          width: `${Math.round((dispatchSummary.submitted / dispatchSummary.going) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      {dispatchSummary.pending > 0 ? (
-                        <p className="flex items-center gap-1.5 text-sm font-bold text-amber-600 dark:text-amber-400">
-                          <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden />
-                          未提出 {dispatchSummary.pending}名
-                        </p>
-                      ) : (
-                        <p className="text-sm font-bold text-brand-700">全員提出済み</p>
-                      )}
-                      {dispatchSummary.pending > 0 && (
-                        <LinkButton
-                          href={`/dispatch?d=${todayKey}`}
-                          variant="outline"
-                          size="sm"
-                          className={outlineBtn}
-                        >
-                          未提出者を確認
-                          <ChevronRight className="h-4 w-4" aria-hidden />
-                        </LinkButton>
-                      )}
-                    </div>
-                    {dispatchSummary.pending > 0 && (
-                      <RemindReportsButton pendingCount={dispatchSummary.pending} />
-                    )}
-                  </>
-                ) : (
-                  <Link
-                    href={`/dispatch?d=${todayKey}`}
-                    className="flex items-center gap-3 active:opacity-70"
-                  >
-                    <IconBadge icon={Users} tone="slate" />
-                    <span className="flex-1 text-sm text-ink-muted">
-                      本日の配員はまだ組まれていません
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
-                  </Link>
-                )}
-              </div>
-            ) : visitSites.length > 0 ? (
-              <div className="card p-4">
-                <div className="flex items-center gap-3">
-                  <IconBadge icon={FileText} tone="emerald" />
-                  <p className="flex-1 text-base font-bold text-ink">今日の提出</p>
-                  <p className="shrink-0 text-ink-muted">
-                    <span className="text-3xl font-bold tnum leading-none text-brand-700">
-                      {mySubmittedCount}
-                    </span>
-                    <span className="text-sm font-semibold"> / {visitSites.length} 件</span>
-                  </p>
-                </div>
-                <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-surface-sunken">
-                  <div
-                    className="h-full rounded-full bg-brand-500 transition-all"
-                    style={{ width: `${Math.round((mySubmittedCount / visitSites.length) * 100)}%` }}
-                  />
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  {mySubmittedCount < visitSites.length ? (
-                    <p className="flex items-center gap-1.5 text-sm font-bold text-amber-600 dark:text-amber-400">
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden />
-                      未提出 {visitSites.length - mySubmittedCount}件
-                    </p>
-                  ) : (
-                    <p className="text-sm font-bold text-brand-700">本日ぶんは提出済み</p>
-                  )}
-                  <SectionLink href="/reports" label="日報を確認" />
-                </div>
-              </div>
-            ) : (
-              <Link
-                href="/reports"
-                className="card flex items-center gap-3 px-4 py-4 active:bg-surface-subtle"
-              >
-                <IconBadge icon={FileText} tone="slate" />
-                <span className="flex-1 text-sm text-ink-muted">本日の現場入りはありません</span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
-              </Link>
+    <div className="min-h-dvh bg-surface">
+      <div aria-hidden className="safe-top" />
+      <PageContainer size="narrow" className="pb-2 pt-3 md:pt-6">
+        {/* ── ヘッダー：日付ピル・通知・メニュー ── */}
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/calendar?view=day&d=${todayKey}`}
+            className={cn("flex items-center gap-2.5 rounded-full py-2.5 pl-4 pr-6 text-ink active:opacity-80", TINT)}
+          >
+            <CalendarDays className="h-6 w-6 shrink-0" strokeWidth={1.8} aria-hidden />
+            <span className="text-[1.375rem] font-bold tnum">
+              {todayDate.getMonth() + 1}月{todayDate.getDate()}日
+            </span>
+            <span className="text-[15px] font-medium text-ink-soft">
+              {WEEKDAYS[todayDate.getDay()]}曜日
+            </span>
+          </Link>
+          <Link
+            href="/notifications"
+            aria-label={unreadNotifications > 0 ? `通知（未読 ${unreadNotifications} 件）` : "通知"}
+            className="relative ml-auto flex h-12 w-12 items-center justify-center text-ink active:opacity-70"
+          >
+            <Bell className="h-7 w-7" strokeWidth={1.8} />
+            {unreadNotifications > 0 && (
+              <span className="absolute right-2 top-2 h-3 w-3 rounded-full bg-[#2f7a5c] ring-2 ring-surface dark:bg-brand-600" />
             )}
-          </section>
+          </Link>
+          <Link
+            href="/menu"
+            aria-label="メニュー"
+            className="flex h-12 w-12 items-center justify-center text-ink active:opacity-70"
+          >
+            <Ellipsis className="h-7 w-7" strokeWidth={2.2} />
+          </Link>
+        </div>
+        <div className="mt-4 h-[3px] rounded-full bg-[#245f4b] dark:bg-brand-600" aria-hidden />
 
-          {/* ④ 今週の予定（週ストリップ＋本日の予定。詳細はカレンダーへ） */}
-          <section className="space-y-2.5">
-            <SectionTitle action={<SectionLink href="/calendar?view=month" label="月表示" />}>
-              今週の予定
-            </SectionTitle>
+        {/* ── ① 今日の現場 ── */}
+        <section className="pt-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-ink">今日の現場</h2>
+            <SectionLink href={`/calendar?view=day&d=${todayKey}`} label="予定を見る" />
+          </div>
 
-            <div className="card p-4">
-              <div className="grid grid-cols-7 gap-1">
-                {weekDayKeys.map((k) => {
-                  const d = dateFromKey(k);
-                  const dow = d.getDay();
-                  const isToday = k === todayKey;
-                  const hasEvent = (weekSourcesByDay.get(k)?.length ?? 0) > 0;
-                  return (
-                    <Link
-                      key={k}
-                      href={`/calendar?view=day&d=${k}`}
-                      className="flex flex-col items-center gap-1.5 rounded-xl py-1 active:bg-surface-subtle"
-                    >
-                      <span
-                        className={cn(
-                          "text-xs font-bold",
-                          dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-ink-muted",
-                        )}
-                      >
-                        {WEEKDAYS[dow]}
-                      </span>
-                      <span
-                        className={cn(
-                          "flex h-9 w-9 items-center justify-center rounded-full text-[15px] font-bold tnum",
-                          isToday ? "bg-brand-600 text-white" : "text-ink",
-                        )}
-                      >
-                        {d.getDate()}
-                      </span>
-                      <span className="flex h-1.5 items-center justify-center">
-                        {hasEvent && (
-                          <span
-                            className={cn(
-                              "h-1.5 w-1.5 rounded-full",
-                              isToday ? "bg-brand-500" : "bg-blue-500",
-                            )}
-                          />
-                        )}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-
-              {/* 本日の予定（自分のぶんだけ。詳細はカレンダーで見る） */}
-              <div className="mt-3 border-t border-line pt-3">
-                {myTodayEvents.length === 0 ? (
-                  <p className="text-sm text-ink-muted">本日の予定はありません</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {myTodayEvents.slice(0, 3).map((e) => {
-                      const color = EVENT_SOURCE_COLOR[e.source as EventSource];
-                      const Icon =
-                        e.source === "DELIVERY" ? Truck : e.source === "SUPPLY" ? PackageCheck : CalendarClock;
-                      return (
-                        <li key={e.id} className="flex items-center gap-3">
-                          <span
-                            className="shrink-0 text-sm font-bold tnum text-brand-700"
-                            style={{ minWidth: "5.5rem" }}
-                          >
-                            本日 {e.allDay ? "終日" : (e.startTime ?? "—")}
-                          </span>
-                          <span className="h-5 w-px shrink-0 bg-line" aria-hidden />
-                          <Icon className="h-4 w-4 shrink-0" style={{ color }} aria-hidden />
-                          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
-                            {e.title}
-                          </p>
-                        </li>
-                      );
-                    })}
-                    {myTodayEvents.length > 3 && (
-                      <li className="pt-0.5">
-                        <SectionLink
-                          href={`/calendar?view=day&d=${todayKey}`}
-                          label={`ほか${myTodayEvents.length - 3}件を見る`}
-                        />
-                      </li>
+          {todayVisits.length === 0 ? (
+            <p className="py-8 text-[15px] text-ink-muted">今日の現場の予定はありません</p>
+          ) : (
+            todayVisits.map((v, i) => {
+              const ev = siteEventToday(v.siteId);
+              const time = timeRange(ev);
+              const area = areaOf(v.site.address);
+              const crew = crewBySite.get(v.siteId) ?? [];
+              const handovers = handoversBySite.get(v.siteId) ?? [];
+              // 作業名：今日の予定の件名 → 作業場所 → 工事種別
+              const work =
+                (ev?.title && ev.title !== v.site.name ? ev.title : null) ??
+                v.site.locationName ??
+                PROJECT_TYPE_LABEL[v.site.projectType as ProjectType];
+              return (
+                <div key={v.id} className={cn("pb-1", i === 0 ? "pt-5" : "mt-6 border-t border-line pt-6")}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xl font-bold tnum text-ink">{time ?? " "}</p>
+                    <span className="shrink-0 rounded-full bg-[#dcebe0] px-4 py-1.5 text-[15px] font-medium text-[#245f4b] dark:bg-brand-200 dark:text-brand-800">
+                      {SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus] ?? v.site.siteStatus}
+                    </span>
+                  </div>
+                  <h3
+                    className={cn(
+                      "mt-2 break-words font-black leading-tight tracking-tight text-ink",
+                      // 短い現場名（「田村邸」など）は大きく、長い名前は折り返しても読める大きさに
+                      v.site.name.length > 10 ? "text-[2rem]" : "text-[2.75rem]",
                     )}
-                  </ul>
-                )}
+                  >
+                    {v.site.name}
+                  </h3>
+                  {work && <p className="mt-1.5 text-lg text-ink-soft">{work}</p>}
+                  {(area || crew.length > 0) && (
+                    <div className="mt-4 flex items-center gap-4 text-[15px] text-ink-soft">
+                      {area && (
+                        <span className="flex min-w-0 items-center gap-2">
+                          <MapPin className="h-5 w-5 shrink-0" strokeWidth={1.8} aria-hidden />
+                          <span className="truncate">{area}</span>
+                        </span>
+                      )}
+                      {area && crew.length > 0 && <span className="h-7 w-px shrink-0 bg-line-strong" aria-hidden />}
+                      {crew.length > 0 && (
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Users className="h-5 w-5 shrink-0" strokeWidth={1.8} aria-hidden />
+                          <span className="truncate">担当　{crew.join("・")}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {handovers.length > 0 && (
+                    <Link
+                      href={`/sites/${v.siteId}`}
+                      className="mt-5 flex items-center gap-4 rounded-lg bg-amber-50 px-5 py-4 active:opacity-80 dark:bg-amber-950/40"
+                    >
+                      <FileText className="h-8 w-8 shrink-0 text-amber-700 dark:text-amber-400" strokeWidth={1.6} aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base font-bold text-amber-800 dark:text-amber-300">
+                          引き継ぎ {handovers.length}件
+                        </p>
+                        <p className="mt-0.5 truncate text-[15px] text-ink-soft">{firstLine(handovers[0])}</p>
+                      </div>
+                      <ChevronRight className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+                    </Link>
+                  )}
+
+                  <Link
+                    href={`/sites/${v.siteId}`}
+                    className="relative mt-3 flex min-h-[56px] items-center justify-center rounded-lg bg-[#245f4b] px-12 text-lg font-bold text-white active:bg-[#1b4a3a] dark:bg-brand-600 dark:text-brand-950"
+                  >
+                    現場の詳細を見る
+                    <ChevronRight className="absolute right-5 h-6 w-6" aria-hidden />
+                  </Link>
+                </div>
+              );
+            })
+          )}
+        </section>
+
+        {/* ── ② 今日の日報（帯で区切る） ── */}
+        {target && reportAction && (
+          <section className={cn("-mx-4 mt-6 px-4 py-6 md:-mx-8 md:px-8", TINT)}>
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <h2 className="text-xl font-bold text-ink">今日の日報</h2>
+                  {allSubmitted ? (
+                    <span className="rounded-full bg-[#dcebe0] px-3.5 py-1 text-sm font-medium text-[#245f4b] dark:bg-brand-200 dark:text-brand-800">
+                      提出済み
+                    </span>
+                  ) : targetReport?.status === "DRAFT" ? (
+                    <span className="rounded-full bg-amber-100 px-3.5 py-1 text-sm font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                      下書き
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-red-100 px-3.5 py-1 text-sm font-medium text-red-700 dark:bg-red-950/60 dark:text-red-300">
+                      未提出
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 text-[15px] text-ink-muted">
+                  {allSubmitted
+                    ? "今日の内容は記録済みです"
+                    : todayVisits.length > 1
+                      ? `${target.site.name}（${submittedCount}/${todayVisits.length} 提出）`
+                      : "作業後に今日の内容を記録"}
+                </p>
               </div>
+              <Link
+                href={reportAction.href}
+                className="flex min-h-[52px] shrink-0 items-center gap-2 rounded-lg border-2 border-[#245f4b] bg-surface px-4 text-base font-bold text-ink active:bg-[#eef4ef] dark:border-brand-600"
+              >
+                {reportAction.label}
+                <ChevronRight className="h-5 w-5" aria-hidden />
+              </Link>
             </div>
           </section>
+        )}
 
-          {/* ⑤ 仮登録の現場（本登録に必要な項目が未入力） */}
-          {provisionalSites.length > 0 && (
-            <Link
-              href={provisionalSites.length === 1 ? `/sites/${provisionalSites[0].id}` : "/sites"}
-              className="card flex items-center gap-3 px-4 py-3.5 active:bg-surface-subtle"
-            >
-              <IconBadge icon={Building2} tone="brand" />
-              <span className="min-w-0 flex-1 text-sm font-semibold text-ink">
-                現場の登録内容を確認
-              </span>
-              <span className="shrink-0 rounded-full bg-surface-sunken px-2.5 py-1 text-xs font-bold tnum text-ink-soft">
-                {provisionalSites.length}件
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
-            </Link>
+        {/* 管理者：全体の日報の到着状況（同じ帯の形で） */}
+        {admin && (
+          <section
+            className={cn(
+              "-mx-4 px-4 py-6 md:-mx-8 md:px-8",
+              TINT,
+              target ? "border-t border-[#dcebe0] dark:border-brand-200" : "mt-6",
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <h2 className="text-xl font-bold text-ink">日報の到着</h2>
+                  {dispatch.going > 0 &&
+                    (dispatchPending > 0 ? (
+                      <span className="rounded-full bg-red-100 px-3.5 py-1 text-sm font-medium text-red-700 dark:bg-red-950/60 dark:text-red-300">
+                        未提出 {dispatchPending}名
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-[#dcebe0] px-3.5 py-1 text-sm font-medium text-[#245f4b] dark:bg-brand-200 dark:text-brand-800">
+                        全員提出
+                      </span>
+                    ))}
+                </div>
+                <p className="mt-1.5 text-[15px] text-ink-muted">
+                  {dispatch.going > 0
+                    ? `提出 ${dispatch.submitted} / ${dispatch.going} 名`
+                    : "本日の配員はまだ組まれていません"}
+                </p>
+              </div>
+              <Link
+                href={`/dispatch?d=${todayKey}`}
+                className="flex min-h-[52px] shrink-0 items-center gap-2 rounded-lg border-2 border-[#245f4b] bg-surface px-4 text-base font-bold text-ink active:bg-[#eef4ef] dark:border-brand-600"
+              >
+                {dispatch.going > 0 ? "状況を見る" : "配員する"}
+                <ChevronRight className="h-5 w-5" aria-hidden />
+              </Link>
+            </div>
+            {dispatchPending > 0 && <RemindReportsButton pendingCount={dispatchPending} />}
+          </section>
+        )}
+
+        {/* ── ③ これからの予定 ── */}
+        <section className="pt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-ink">これからの予定</h2>
+            <SectionLink href="/calendar" label="すべて見る" />
+          </div>
+          {upcomingVisits.length === 0 ? (
+            <p className="border-b border-line py-6 text-[15px] text-ink-muted">
+              これからの現場の予定はありません
+            </p>
+          ) : (
+            <ul className="mt-3">
+              {upcomingVisits.map((v) => {
+                const key = storedDateKey(v.date);
+                const d = dateFromKey(key);
+                const time = timeRange(siteEventOn(v.siteId, v.date));
+                const area = areaOf(v.site.address);
+                return (
+                  <li key={v.id} className="border-b border-line">
+                    <Link
+                      href={`/sites/${v.siteId}`}
+                      className="flex items-center gap-5 py-4 active:opacity-70"
+                    >
+                      <div className="w-12 shrink-0 text-center">
+                        <p className={cn("text-sm", DEEP)}>
+                          {key === tmrwKey ? "明日" : WEEKDAYS[d.getDay()]}
+                        </p>
+                        <p className="text-xl font-medium tnum text-ink">
+                          {d.getMonth() + 1}/{d.getDate()}
+                        </p>
+                      </div>
+                      <span className="h-14 w-px shrink-0 bg-line-strong" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-lg font-bold text-ink">{v.site.name}</p>
+                        {(time || area) && (
+                          <p className="mt-1 truncate text-[15px] text-ink-muted tnum">
+                            {[time, area].filter(Boolean).join("  •  ")}
+                          </p>
+                        )}
+                      </div>
+                      <ChevronRight className="h-6 w-6 shrink-0 text-ink" aria-hidden />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </div>
+        </section>
+
+        {/* ── ④ その他の連絡事項 ── */}
+        <OtherNotices todayKey={todayKey} items={notices} />
+
+        {/* 仮登録の現場（作成した本人にだけ） */}
+        {provisionalSites.length > 0 && (
+          <Link
+            href={provisionalSites.length === 1 ? `/sites/${provisionalSites[0].id}` : "/sites"}
+            className="flex items-center gap-3 border-t border-line py-4 text-sm text-ink-soft active:opacity-70"
+          >
+            <Building2 className="h-6 w-6 shrink-0 text-ink-faint" strokeWidth={1.6} aria-hidden />
+            <span className="flex-1">現場の登録内容を確認（{provisionalSites.length}件）</span>
+            <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
+          </Link>
+        )}
       </PageContainer>
     </div>
   );

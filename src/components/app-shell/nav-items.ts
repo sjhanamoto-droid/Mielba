@@ -1,5 +1,5 @@
 import {
-  Home, HardHat, CalendarDays, Building2, FileText, Users, Clock, Package,
+  Home, MapPin, CalendarDays, Building2, FileText, Users, Clock, Package,
   type LucideIcon,
 } from "lucide-react";
 
@@ -12,8 +12,8 @@ export type NavItem = {
 
 const HOME: NavItem = { href: "/", label: "ホーム", icon: Home, match: (p) => p === "/" };
 const REPORTS: NavItem = { href: "/reports", label: "日報", icon: FileText, match: (p) => p.startsWith("/reports") };
-const SITES: NavItem = { href: "/sites", label: "現場", icon: HardHat, match: (p) => p.startsWith("/sites") };
-const CALENDAR: NavItem = { href: "/calendar", label: "カレンダー", icon: CalendarDays, match: (p) => p.startsWith("/calendar") };
+const SITES: NavItem = { href: "/sites", label: "現場", icon: MapPin, match: (p) => p.startsWith("/sites") };
+const CALENDAR: NavItem = { href: "/calendar", label: "予定", icon: CalendarDays, match: (p) => p.startsWith("/calendar") };
 const CUSTOMERS: NavItem = { href: "/customers", label: "顧客", icon: Building2, match: (p) => p.startsWith("/customers") };
 const DISPATCH: NavItem = { href: "/dispatch", label: "配員", icon: Users, match: (p) => p.startsWith("/dispatch") };
 const ATTENDANCE: NavItem = { href: "/attendance", label: "稼働時間", icon: Clock, match: (p) => p.startsWith("/attendance") };
@@ -29,11 +29,11 @@ function isAdminRole(role: string): boolean {
 // スタッフ：日報を中心に（メイン業務）。管理者：現場・配員・全体確認を中心に。
 export function navForRole(role: string): NavItem[] {
   if (isAdminRole(role)) {
-    // 管理者：ホーム・現場・配員・日報・カレンダー（5個ちょうど）
+    // 管理者：ホーム・現場・配員・日報・予定（5個ちょうど）
     return [HOME, SITES, DISPATCH, REPORTS, CALENDAR];
   }
-  // スタッフ：日報を2番目に置き、最短で日報入力へ到達できるように
-  return [HOME, REPORTS, SITES, CALENDAR];
+  // スタッフ：ホーム・現場・日報・予定（日報の入口はホームの「今日の日報」が最短）
+  return [HOME, SITES, REPORTS, CALENDAR];
 }
 
 // PC サイドバー用（幅があるので全項目を出す）。材料登録は最高管理者のみ。
