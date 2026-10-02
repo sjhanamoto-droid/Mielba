@@ -56,28 +56,34 @@ export function OtherNotices({ todayKey, items }: { todayKey: string; items: Not
 
   if (unread.length === 0) {
     return (
-      <p className="flex items-center gap-3 py-4 text-sm text-ink-muted">
-        <CheckCircle2 className="h-6 w-6 shrink-0 text-ink-faint" strokeWidth={1.6} aria-hidden />
-        {items.length === 0 ? "その他の連絡事項はありません" : "その他の連絡事項は確認済み"}
-      </p>
+      <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300">
+          <CheckCircle2 className="h-5 w-5" aria-hidden />
+        </span>
+        <p className="text-sm font-semibold text-ink-soft">
+          {items.length === 0 ? "その他の連絡事項はありません" : "その他の連絡事項は確認済み"}
+        </p>
+      </div>
     );
   }
 
   return (
-    <ul className="divide-y divide-line">
+    <ul className="divide-y divide-amber-200/70 overflow-hidden rounded-2xl border border-amber-200 bg-amber-50 dark:divide-amber-900/50 dark:border-amber-900/60 dark:bg-amber-950/40">
       {unread.map((i) => (
         <li key={i.key}>
           <Link
             href={i.href}
             onClick={() => markChecked(i.key)}
-            className="flex items-center gap-3 py-4 active:opacity-70"
+            className="flex items-center gap-3 px-4 py-3.5 active:opacity-70"
           >
-            <Truck className="h-6 w-6 shrink-0 text-amber-600" strokeWidth={1.8} aria-hidden />
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300">
+              <Truck className="h-[18px] w-[18px]" aria-hidden />
+            </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-bold text-ink">{i.title}</p>
-              {i.desc && <p className="truncate text-sm text-ink-muted">{i.desc}</p>}
+              <p className="truncate text-[15px] font-bold text-amber-900 dark:text-amber-100">{i.title}</p>
+              {i.desc && <p className="truncate text-xs text-amber-700/80 dark:text-amber-300/80">{i.desc}</p>}
             </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-ink-soft" aria-hidden />
+            <ChevronRight className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
           </Link>
         </li>
       ))}

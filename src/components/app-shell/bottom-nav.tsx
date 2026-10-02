@@ -7,14 +7,13 @@ import { cn } from "@/lib/utils";
 
 // スマホ用のボトムナビ（md 未満のみ表示。md 以上は Sidebar）。
 // 設定・ログアウト等のメニューはホーム右上の「…」（/menu）から開く。
-// 選択中のタブは塗りアイコン＋ラベル下のバーで示す。
 export function BottomNav({ role }: { role: string; unreadCount?: number }) {
   const pathname = usePathname();
   const items = navForRole(role);
 
   return (
-    <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-app -translate-x-1/2 border-t border-line bg-surface safe-bottom md:hidden">
-      <ul className="flex items-stretch justify-around px-2">
+    <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-app -translate-x-1/2 border-t border-line bg-surface/95 shadow-nav backdrop-blur-md safe-bottom md:hidden">
+      <ul className="flex items-stretch justify-around px-1">
         {items.map((item) => {
           const active = item.match(pathname);
           const Icon = item.icon;
@@ -24,23 +23,19 @@ export function BottomNav({ role }: { role: string; unreadCount?: number }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-1 pb-1.5 pt-3 transition-colors",
-                  active ? "text-[#245f4b] dark:text-brand-700" : "text-ink-soft",
+                  "flex flex-col items-center gap-0.5 py-2 pt-2.5 transition-colors",
+                  active ? "text-brand-600" : "text-ink-faint",
                 )}
               >
                 <Icon
-                  className="h-7 w-7"
-                  strokeWidth={active ? 2.2 : 1.7}
+                  className="h-6 w-6"
+                  strokeWidth={active ? 2.4 : 1.9}
                   fill={active ? "currentColor" : "none"}
-                  fillOpacity={active ? 1 : 0}
+                  fillOpacity={active ? 0.12 : 0}
                 />
-                <span className={cn("text-xs", active ? "font-bold" : "font-medium")}>
+                <span className={cn("text-[10px]", active ? "font-bold" : "font-medium")}>
                   {item.label}
                 </span>
-                <span
-                  aria-hidden
-                  className={cn("mt-0.5 h-1 w-7 rounded-full", active ? "bg-[#245f4b] dark:bg-brand-700" : "bg-transparent")}
-                />
               </Link>
             </li>
           );

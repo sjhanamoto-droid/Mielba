@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  Bell, Building2, CalendarDays, ChevronRight, Ellipsis, FileText, MapPin, Users,
+  AlertTriangle, Bell, BellRing, Building2, CalendarDays, ChevronRight, Ellipsis, HardHat, MapPin, Users,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -9,7 +9,9 @@ import { jstDateKey, todayRange, tomorrowKey, dateFromKey, storedDateKey } from 
 import { PageContainer } from "@/components/app-shell/page-container";
 import { OtherNotices, type NoticeItem } from "@/features/dashboard/other-notices";
 import { RemindReportsButton } from "@/features/dashboard/remind-reports-button";
-import { cn } from "@/lib/utils";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { LinkButton } from "@/components/ui/button";
+import { cn, mapSearchUrl } from "@/lib/utils";
 import {
   EVENT_SOURCE_LABEL, SITE_STATUS_LABEL, PROJECT_TYPE_LABEL,
   type EventSource, type SiteStatus, type ProjectType,
@@ -18,14 +20,10 @@ import { visibleEventWhere } from "@/lib/event-visibility";
 
 // ホーム（スマホで毎朝開く画面）。情報に優先順位をつけ、上から順に
 //   ① 今日の現場（一番大きく。引き継ぎと「現場の詳細を見る」）
-//   ② 今日の日報（帯で区切って次にやること）
+//   ② 今日の日報（状態と次にやること1つ）
 //   ③ これからの予定（行で軽く）
 //   ④ その他の連絡事項（1行）
 // の順に並べる。
-
-// 参考デザインの落ち着いた深緑と、うすい緑の面（ホーム専用。ダークモードはブランドトークン）
-const DEEP = "text-[#245f4b] dark:text-brand-700";
-const TINT = "bg-[#eef4ef] dark:bg-brand-100";
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -63,7 +61,7 @@ function firstLine(text: string): string {
 /** 見出し右の小さな導線（「予定を見る ›」など） */
 function SectionLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className={cn("flex items-center gap-0.5 text-[15px] font-medium", DEEP)}>
+    <Link href={href} className="flex items-center gap-0.5 text-sm font-semibold text-brand-600">
       {label}
       <ChevronRight className="h-4 w-4" aria-hidden />
     </Link>
@@ -240,153 +238,168 @@ export default async function HomePage() {
     }));
 
   const todayDate = dateFromKey(todayKey);
+  const outlineBtn = "shrink-0 border-brand-200 text-brand-700 dark:border-brand-800";
 
   return (
-    <div className="min-h-dvh bg-surface">
+    <div>
+      {/* スマホはヘッダー非表示のため、ノッチ回避の上余白のみ確保 */}
       <div aria-hidden className="safe-top" />
-      <PageContainer size="narrow" className="pb-2 pt-3 md:pt-6">
-        {/* ── ヘッダー：日付ピル・通知・メニュー ── */}
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/calendar?view=day&d=${todayKey}`}
-            className={cn("flex items-center gap-2.5 rounded-full py-2.5 pl-4 pr-6 text-ink active:opacity-80", TINT)}
-          >
-            <CalendarDays className="h-6 w-6 shrink-0" strokeWidth={1.8} aria-hidden />
-            <span className="text-[1.375rem] font-bold tnum">
-              {todayDate.getMonth() + 1}月{todayDate.getDate()}日
-            </span>
-            <span className="text-[15px] font-medium text-ink-soft">
-              {WEEKDAYS[todayDate.getDay()]}曜日
-            </span>
-          </Link>
-          <Link
-            href="/notifications"
-            aria-label={unreadNotifications > 0 ? `通知（未読 ${unreadNotifications} 件）` : "通知"}
-            className="relative ml-auto flex h-12 w-12 items-center justify-center text-ink active:opacity-70"
-          >
-            <Bell className="h-7 w-7" strokeWidth={1.8} />
-            {unreadNotifications > 0 && (
-              <span className="absolute right-2 top-2 h-3 w-3 rounded-full bg-[#2f7a5c] ring-2 ring-surface dark:bg-brand-600" />
-            )}
-          </Link>
-          <Link
-            href="/menu"
-            aria-label="メニュー"
-            className="flex h-12 w-12 items-center justify-center text-ink active:opacity-70"
-          >
-            <Ellipsis className="h-7 w-7" strokeWidth={2.2} />
-          </Link>
-        </div>
-        <div className="mt-4 h-[3px] rounded-full bg-[#245f4b] dark:bg-brand-600" aria-hidden />
-
-        {/* ── ① 今日の現場 ── */}
-        <section className="pt-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-ink">今日の現場</h2>
-            <SectionLink href={`/calendar?view=day&d=${todayKey}`} label="予定を見る" />
+      <PageContainer size="narrow">
+        <div className="space-y-5">
+          {/* ── ヘッダー：日付・通知・メニュー ── */}
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/calendar?view=day&d=${todayKey}`}
+              className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface py-2.5 pl-3.5 pr-5 shadow-card active:bg-surface-subtle"
+            >
+              <CalendarDays className="h-5 w-5 shrink-0 text-brand-600" aria-hidden />
+              <span className="text-xl font-bold tnum text-ink">
+                {todayDate.getMonth() + 1}月{todayDate.getDate()}日
+              </span>
+              <span className="text-sm font-semibold text-ink-muted">
+                {WEEKDAYS[todayDate.getDay()]}曜日
+              </span>
+            </Link>
+            <Link
+              href="/notifications"
+              aria-label={unreadNotifications > 0 ? `通知（未読 ${unreadNotifications} 件）` : "通知"}
+              className="relative ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-surface text-ink-soft shadow-card active:bg-surface-subtle"
+            >
+              {unreadNotifications > 0 ? (
+                <BellRing className="h-5 w-5 text-brand-600" />
+              ) : (
+                <Bell className="h-5 w-5" />
+              )}
+              {unreadNotifications > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-status-danger px-1 text-[11px] font-bold text-white">
+                  {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/menu"
+              aria-label="メニュー"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-surface text-ink-soft shadow-card active:bg-surface-subtle"
+            >
+              <Ellipsis className="h-5 w-5" />
+            </Link>
           </div>
 
-          {todayVisits.length === 0 ? (
-            <p className="py-8 text-[15px] text-ink-muted">今日の現場の予定はありません</p>
-          ) : (
-            todayVisits.map((v, i) => {
-              const ev = siteEventToday(v.siteId);
-              const time = timeRange(ev);
-              const area = areaOf(v.site.address);
-              const crew = crewBySite.get(v.siteId) ?? [];
-              const handovers = handoversBySite.get(v.siteId) ?? [];
-              // 作業名：今日の予定の件名 → 作業場所 → 工事種別
-              const work =
-                (ev?.title && ev.title !== v.site.name ? ev.title : null) ??
-                v.site.locationName ??
-                PROJECT_TYPE_LABEL[v.site.projectType as ProjectType];
-              return (
-                <div key={v.id} className={cn("pb-1", i === 0 ? "pt-5" : "mt-6 border-t border-line pt-6")}>
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xl font-bold tnum text-ink">{time ?? " "}</p>
-                    <span className="shrink-0 rounded-full bg-[#dcebe0] px-4 py-1.5 text-[15px] font-medium text-[#245f4b] dark:bg-brand-200 dark:text-brand-800">
-                      {SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus] ?? v.site.siteStatus}
-                    </span>
-                  </div>
-                  <h3
-                    className={cn(
-                      "mt-2 break-words font-black leading-tight tracking-tight text-ink",
-                      // 短い現場名（「田村邸」など）は大きく、長い名前は折り返しても読める大きさに
-                      v.site.name.length > 10 ? "text-[2rem]" : "text-[2.75rem]",
-                    )}
-                  >
-                    {v.site.name}
-                  </h3>
-                  {work && <p className="mt-1.5 text-lg text-ink-soft">{work}</p>}
-                  {(area || crew.length > 0) && (
-                    <div className="mt-4 flex items-center gap-4 text-[15px] text-ink-soft">
-                      {area && (
-                        <span className="flex min-w-0 items-center gap-2">
-                          <MapPin className="h-5 w-5 shrink-0" strokeWidth={1.8} aria-hidden />
-                          <span className="truncate">{area}</span>
-                        </span>
-                      )}
-                      {area && crew.length > 0 && <span className="h-7 w-px shrink-0 bg-line-strong" aria-hidden />}
-                      {crew.length > 0 && (
-                        <span className="flex min-w-0 items-center gap-2">
-                          <Users className="h-5 w-5 shrink-0" strokeWidth={1.8} aria-hidden />
-                          <span className="truncate">担当　{crew.join("・")}</span>
-                        </span>
-                      )}
+          {/* ── ① 今日の現場（一番大きく） ── */}
+          <section className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-xl font-bold text-ink">今日の現場</h2>
+              <SectionLink href={`/calendar?view=day&d=${todayKey}`} label="予定を見る" />
+            </div>
+
+            {todayVisits.length === 0 ? (
+              <div className="card px-4 py-6">
+                <p className="text-[15px] text-ink-muted">今日の現場の予定はありません</p>
+              </div>
+            ) : (
+              todayVisits.map((v) => {
+                const ev = siteEventToday(v.siteId);
+                const time = timeRange(ev);
+                const area = areaOf(v.site.address);
+                const crew = crewBySite.get(v.siteId) ?? [];
+                const handovers = handoversBySite.get(v.siteId) ?? [];
+                // 作業名：今日の予定の件名 → 作業場所 → 工事種別
+                const work =
+                  (ev?.title && ev.title !== v.site.name ? ev.title : null) ??
+                  v.site.locationName ??
+                  PROJECT_TYPE_LABEL[v.site.projectType as ProjectType];
+                return (
+                  <div key={v.id} className="card p-4 md:p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xl font-bold tnum text-ink">{time ?? " "}</p>
+                      <span className="shrink-0 rounded-full bg-brand-50 px-3 py-1 text-sm font-bold text-brand-700">
+                        {SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus] ?? v.site.siteStatus}
+                      </span>
                     </div>
-                  )}
-
-                  {handovers.length > 0 && (
-                    <Link
-                      href={`/sites/${v.siteId}`}
-                      className="mt-5 flex items-center gap-4 rounded-lg bg-amber-50 px-5 py-4 active:opacity-80 dark:bg-amber-950/40"
+                    <h3
+                      className={cn(
+                        "mt-1.5 break-words font-bold leading-tight text-ink",
+                        // 短い現場名は大きく、長い名前は折り返しても読める大きさに
+                        v.site.name.length > 10 ? "text-[1.75rem]" : "text-[2.25rem]",
+                      )}
                     >
-                      <FileText className="h-8 w-8 shrink-0 text-amber-700 dark:text-amber-400" strokeWidth={1.6} aria-hidden />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-base font-bold text-amber-800 dark:text-amber-300">
-                          引き継ぎ {handovers.length}件
-                        </p>
-                        <p className="mt-0.5 truncate text-[15px] text-ink-soft">{firstLine(handovers[0])}</p>
+                      {v.site.name}
+                    </h3>
+                    {work && <p className="mt-1 text-base text-ink-soft">{work}</p>}
+                    {(area || crew.length > 0) && (
+                      <div className="mt-3 flex items-center gap-3 text-sm text-ink-muted">
+                        {area &&
+                          (v.site.address ? (
+                            <a
+                              href={mapSearchUrl(v.site.address)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex min-w-0 items-center gap-1.5 font-medium text-brand-600"
+                            >
+                              <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+                              <span className="truncate">{area}</span>
+                            </a>
+                          ) : null)}
+                        {area && crew.length > 0 && <span className="h-5 w-px shrink-0 bg-line" aria-hidden />}
+                        {crew.length > 0 && (
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <Users className="h-4 w-4 shrink-0" aria-hidden />
+                            <span className="truncate">担当 {crew.join("・")}</span>
+                          </span>
+                        )}
                       </div>
-                      <ChevronRight className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
-                    </Link>
-                  )}
+                    )}
 
-                  <Link
-                    href={`/sites/${v.siteId}`}
-                    className="relative mt-3 flex min-h-[56px] items-center justify-center rounded-lg bg-[#245f4b] px-12 text-lg font-bold text-white active:bg-[#1b4a3a] dark:bg-brand-600 dark:text-brand-950"
-                  >
-                    現場の詳細を見る
-                    <ChevronRight className="absolute right-5 h-6 w-6" aria-hidden />
-                  </Link>
-                </div>
-              );
-            })
-          )}
-        </section>
+                    {handovers.length > 0 && (
+                      <Link
+                        href={`/sites/${v.siteId}`}
+                        className="mt-4 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 active:opacity-80 dark:border-amber-900/60 dark:bg-amber-950/40"
+                      >
+                        <IconBadge icon={AlertTriangle} tone="amber" size="sm" className="bg-white/80 dark:bg-amber-950/60" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-bold text-amber-800 dark:text-amber-300">
+                            引き継ぎ {handovers.length}件
+                          </p>
+                          <p className="truncate text-sm text-amber-900/80 dark:text-amber-100/80">
+                            {firstLine(handovers[0])}
+                          </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+                      </Link>
+                    )}
 
-        {/* ── ② 今日の日報（帯で区切る） ── */}
-        {target && reportAction && (
-          <section className={cn("-mx-4 mt-6 px-4 py-6 md:-mx-8 md:px-8", TINT)}>
-            <div className="flex items-center gap-3">
+                    <LinkButton href={`/sites/${v.siteId}`} size="lg" className="relative mt-3 w-full">
+                      <HardHat className="h-5 w-5" aria-hidden />
+                      現場の詳細を見る
+                      <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
+                    </LinkButton>
+                  </div>
+                );
+              })
+            )}
+          </section>
+
+          {/* ── ② 今日の日報 ── */}
+          {target && reportAction && (
+            <section className="card flex items-center gap-3 p-4">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h2 className="text-xl font-bold text-ink">今日の日報</h2>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h2 className="text-lg font-bold text-ink">今日の日報</h2>
                   {allSubmitted ? (
-                    <span className="rounded-full bg-[#dcebe0] px-3.5 py-1 text-sm font-medium text-[#245f4b] dark:bg-brand-200 dark:text-brand-800">
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                       提出済み
                     </span>
                   ) : targetReport?.status === "DRAFT" ? (
-                    <span className="rounded-full bg-amber-100 px-3.5 py-1 text-sm font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                    <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
                       下書き
                     </span>
                   ) : (
-                    <span className="rounded-full bg-red-100 px-3.5 py-1 text-sm font-medium text-red-700 dark:bg-red-950/60 dark:text-red-300">
+                    <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-600 dark:bg-rose-950/50 dark:text-rose-300">
                       未提出
                     </span>
                   )}
                 </div>
-                <p className="mt-1.5 text-[15px] text-ink-muted">
+                <p className="mt-0.5 text-sm text-ink-muted">
                   {allSubmitted
                     ? "今日の内容は記録済みです"
                     : todayVisits.length > 1
@@ -394,122 +407,123 @@ export default async function HomePage() {
                       : "作業後に今日の内容を記録"}
                 </p>
               </div>
-              <Link
-                href={reportAction.href}
-                className="flex min-h-[52px] shrink-0 items-center gap-2 rounded-lg border-2 border-[#245f4b] bg-surface px-4 text-base font-bold text-ink active:bg-[#eef4ef] dark:border-brand-600"
-              >
+              <LinkButton href={reportAction.href} variant="outline" className={outlineBtn}>
                 {reportAction.label}
-                <ChevronRight className="h-5 w-5" aria-hidden />
-              </Link>
-            </div>
-          </section>
-        )}
-
-        {/* 管理者：全体の日報の到着状況（同じ帯の形で） */}
-        {admin && (
-          <section
-            className={cn(
-              "-mx-4 px-4 py-6 md:-mx-8 md:px-8",
-              TINT,
-              target ? "border-t border-[#dcebe0] dark:border-brand-200" : "mt-6",
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h2 className="text-xl font-bold text-ink">日報の到着</h2>
-                  {dispatch.going > 0 &&
-                    (dispatchPending > 0 ? (
-                      <span className="rounded-full bg-red-100 px-3.5 py-1 text-sm font-medium text-red-700 dark:bg-red-950/60 dark:text-red-300">
-                        未提出 {dispatchPending}名
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-[#dcebe0] px-3.5 py-1 text-sm font-medium text-[#245f4b] dark:bg-brand-200 dark:text-brand-800">
-                        全員提出
-                      </span>
-                    ))}
-                </div>
-                <p className="mt-1.5 text-[15px] text-ink-muted">
-                  {dispatch.going > 0
-                    ? `提出 ${dispatch.submitted} / ${dispatch.going} 名`
-                    : "本日の配員はまだ組まれていません"}
-                </p>
-              </div>
-              <Link
-                href={`/dispatch?d=${todayKey}`}
-                className="flex min-h-[52px] shrink-0 items-center gap-2 rounded-lg border-2 border-[#245f4b] bg-surface px-4 text-base font-bold text-ink active:bg-[#eef4ef] dark:border-brand-600"
-              >
-                {dispatch.going > 0 ? "状況を見る" : "配員する"}
-                <ChevronRight className="h-5 w-5" aria-hidden />
-              </Link>
-            </div>
-            {dispatchPending > 0 && <RemindReportsButton pendingCount={dispatchPending} />}
-          </section>
-        )}
-
-        {/* ── ③ これからの予定 ── */}
-        <section className="pt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-ink">これからの予定</h2>
-            <SectionLink href="/calendar" label="すべて見る" />
-          </div>
-          {upcomingVisits.length === 0 ? (
-            <p className="border-b border-line py-6 text-[15px] text-ink-muted">
-              これからの現場の予定はありません
-            </p>
-          ) : (
-            <ul className="mt-3">
-              {upcomingVisits.map((v) => {
-                const key = storedDateKey(v.date);
-                const d = dateFromKey(key);
-                const time = timeRange(siteEventOn(v.siteId, v.date));
-                const area = areaOf(v.site.address);
-                return (
-                  <li key={v.id} className="border-b border-line">
-                    <Link
-                      href={`/sites/${v.siteId}`}
-                      className="flex items-center gap-5 py-4 active:opacity-70"
-                    >
-                      <div className="w-12 shrink-0 text-center">
-                        <p className={cn("text-sm", DEEP)}>
-                          {key === tmrwKey ? "明日" : WEEKDAYS[d.getDay()]}
-                        </p>
-                        <p className="text-xl font-medium tnum text-ink">
-                          {d.getMonth() + 1}/{d.getDate()}
-                        </p>
-                      </div>
-                      <span className="h-14 w-px shrink-0 bg-line-strong" aria-hidden />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-lg font-bold text-ink">{v.site.name}</p>
-                        {(time || area) && (
-                          <p className="mt-1 truncate text-[15px] text-ink-muted tnum">
-                            {[time, area].filter(Boolean).join("  •  ")}
-                          </p>
-                        )}
-                      </div>
-                      <ChevronRight className="h-6 w-6 shrink-0 text-ink" aria-hidden />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </LinkButton>
+            </section>
           )}
-        </section>
 
-        {/* ── ④ その他の連絡事項 ── */}
-        <OtherNotices todayKey={todayKey} items={notices} />
+          {/* 管理者：全体の日報の到着状況 */}
+          {admin && (
+            <section className="card p-4">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <h2 className="text-lg font-bold text-ink">日報の到着</h2>
+                    {dispatch.going > 0 &&
+                      (dispatchPending > 0 ? (
+                        <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-600 dark:bg-rose-950/50 dark:text-rose-300">
+                          未提出 {dispatchPending}名
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                          全員提出
+                        </span>
+                      ))}
+                  </div>
+                  <p className="mt-0.5 text-sm text-ink-muted">
+                    {dispatch.going > 0
+                      ? `提出 ${dispatch.submitted} / ${dispatch.going} 名`
+                      : "本日の配員はまだ組まれていません"}
+                  </p>
+                </div>
+                <LinkButton href={`/dispatch?d=${todayKey}`} variant="outline" className={outlineBtn}>
+                  {dispatch.going > 0 ? "状況を見る" : "配員する"}
+                  <ChevronRight className="h-4 w-4" aria-hidden />
+                </LinkButton>
+              </div>
+              {dispatch.going > 0 && (
+                <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-surface-sunken">
+                  <div
+                    className="h-full rounded-full bg-brand-500 transition-all"
+                    style={{ width: `${Math.round((dispatch.submitted / dispatch.going) * 100)}%` }}
+                  />
+                </div>
+              )}
+              {dispatchPending > 0 && <RemindReportsButton pendingCount={dispatchPending} />}
+            </section>
+          )}
 
-        {/* 仮登録の現場（作成した本人にだけ） */}
-        {provisionalSites.length > 0 && (
-          <Link
-            href={provisionalSites.length === 1 ? `/sites/${provisionalSites[0].id}` : "/sites"}
-            className="flex items-center gap-3 border-t border-line py-4 text-sm text-ink-soft active:opacity-70"
-          >
-            <Building2 className="h-6 w-6 shrink-0 text-ink-faint" strokeWidth={1.6} aria-hidden />
-            <span className="flex-1">現場の登録内容を確認（{provisionalSites.length}件）</span>
-            <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
-          </Link>
-        )}
+          {/* ── ③ これからの予定 ── */}
+          <section className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-xl font-bold text-ink">これからの予定</h2>
+              <SectionLink href="/calendar" label="すべて見る" />
+            </div>
+            {upcomingVisits.length === 0 ? (
+              <div className="card px-4 py-5">
+                <p className="text-sm text-ink-muted">これからの現場の予定はありません</p>
+              </div>
+            ) : (
+              <ul className="card divide-y divide-line overflow-hidden">
+                {upcomingVisits.map((v) => {
+                  const key = storedDateKey(v.date);
+                  const d = dateFromKey(key);
+                  const time = timeRange(siteEventOn(v.siteId, v.date));
+                  const area = areaOf(v.site.address);
+                  return (
+                    <li key={v.id}>
+                      <Link
+                        href={`/sites/${v.siteId}`}
+                        className="flex items-center gap-4 px-4 py-3.5 tap-row"
+                      >
+                        <div className="w-11 shrink-0 text-center">
+                          <p className="text-xs font-bold text-brand-600">
+                            {key === tmrwKey ? "明日" : WEEKDAYS[d.getDay()]}
+                          </p>
+                          <p className="text-lg font-bold tnum text-ink">
+                            {d.getMonth() + 1}/{d.getDate()}
+                          </p>
+                        </div>
+                        <span className="h-10 w-px shrink-0 bg-line" aria-hidden />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-bold text-ink">{v.site.name}</p>
+                          {(time || area) && (
+                            <p className="mt-0.5 truncate text-sm text-ink-muted tnum">
+                              {[time, area].filter(Boolean).join(" ・ ")}
+                            </p>
+                          )}
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          {/* ── ④ その他の連絡事項 ── */}
+          <OtherNotices todayKey={todayKey} items={notices} />
+
+          {/* 仮登録の現場（作成した本人にだけ） */}
+          {provisionalSites.length > 0 && (
+            <Link
+              href={provisionalSites.length === 1 ? `/sites/${provisionalSites[0].id}` : "/sites"}
+              className="card flex items-center gap-3 px-4 py-3.5 active:bg-surface-subtle"
+            >
+              <IconBadge icon={Building2} tone="brand" />
+              <span className="min-w-0 flex-1 text-sm font-semibold text-ink">
+                現場の登録内容を確認
+              </span>
+              <span className="shrink-0 rounded-full bg-surface-sunken px-2.5 py-1 text-xs font-bold tnum text-ink-soft">
+                {provisionalSites.length}件
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
+            </Link>
+          )}
+        </div>
       </PageContainer>
     </div>
   );
