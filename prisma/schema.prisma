@@ -509,7 +509,8 @@ model SiteMaterial {
 }
 
 // ──────────────────────── Handover（引き継ぎ事項） ────────────────────────
-// 現場ごとの申し送り。日報提出時に起票され、次の担当者が「確認して停止」で解決する。
+// 現場ごとの申し送り。日報提出時に起票され、当日の配員が一人ずつ読んで確認する（HandoverRead）。
+// resolvedAt は「対応完了」— 起票者か管理者が閉じたら、もう誰にも読ませない。
 model Handover {
   id           String    @id @default(cuid())
   siteId       String
@@ -520,11 +521,25 @@ model Handover {
   resolvedAt   DateTime? // 解決日時（null = 未解決）
   resolvedById String? // 解決者
 
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site  Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  reads HandoverRead[]
 
   @@index([siteId])
   @@index([resolvedAt])
   @@index([siteId, resolvedAt])
+}
+
+// 引き継ぎの既読（人ごと）。当日の配員は全員が読んで確認するまで先に進めない。
+model HandoverRead {
+  id         String   @id @default(cuid())
+  handoverId String
+  userId     String // 確認した人（createdById と同じく緩い参照）
+  readAt     DateTime @default(now())
+
+  handover Handover @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+
+  @@unique([handoverId, userId])
+  @@index([userId])
 }
 
 // ──────────────────────── CalendarEvent（現場・個人予定） ────────────────────────

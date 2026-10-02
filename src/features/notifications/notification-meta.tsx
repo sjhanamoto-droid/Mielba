@@ -1,4 +1,13 @@
-import { FileWarning, FileX, CalendarClock, TrendingUp, Bell, type LucideIcon } from "lucide-react";
+import {
+  FileWarning,
+  FileX,
+  CalendarClock,
+  TrendingUp,
+  Bell,
+  MessageSquareWarning,
+  CheckCheck,
+  type LucideIcon,
+} from "lucide-react";
 import type { IconTone } from "@/components/ui/icon-badge";
 
 // 通知タイプごとのアイコン・色・ラベル。通知センターと起動ゲートで共有する。
@@ -10,6 +19,8 @@ const META: Record<string, NotificationMeta> = {
   REPORT_MISSING: { icon: FileX, tone: "rose", label: "日報未提出" },
   WEEKLY_MISSING: { icon: CalendarClock, tone: "violet", label: "週報未提出" },
   MANDAYS_OVER: { icon: TrendingUp, tone: "sky", label: "工数超過" },
+  HANDOVER_UNREAD: { icon: MessageSquareWarning, tone: "amber", label: "引き継ぎ" },
+  HANDOVER_ALL_READ: { icon: CheckCheck, tone: "emerald", label: "引き継ぎ確認" },
 };
 
 const DEFAULT_META: NotificationMeta = { icon: Bell, tone: "brand", label: "お知らせ" };

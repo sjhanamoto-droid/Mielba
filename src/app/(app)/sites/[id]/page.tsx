@@ -155,8 +155,8 @@ export default async function SiteDetailPage({
           },
         })
       : Promise.resolve(0),
-    getOpenHandovers(site.id),
-    // 確認済みの引き継ぎ（誤って停止しても戻せるよう履歴として表示する）
+    getOpenHandovers(site.id, user),
+    // 対応完了の引き継ぎ（誤って閉じても戻せるよう履歴として表示する）
     getResolvedHandovers(site.id),
     db.photo.findMany({
       where: { siteId: site.id },
@@ -362,7 +362,7 @@ export default async function SiteDetailPage({
       {surveyBanner}
       {provisionalBanner}
 
-      {/* 引き継ぎ事項（未確認 → 現場の常設メモ → 確認済みの履歴） */}
+      {/* 引き継ぎ事項（対応中 → 現場の常設メモ → 対応完了の履歴） */}
       <section className="space-y-2.5">
         <SectionTitle
           action={

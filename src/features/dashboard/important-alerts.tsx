@@ -24,7 +24,7 @@ import { LinkButton } from "@/components/ui/button";
  *
  * 確認状態は日付単位で localStorage に持つ（キー: home-checked-<todayKey>）。
  * 日付が変わればまた未確認に戻るため、翌日も必ず目を通すことになる。
- * サーバー状態を増やさないので、引き継ぎ自体の解決（確認して停止）は現場詳細で行う。
+ * サーバー状態を増やさないので、引き継ぎの「確認しました」と「対応完了」は現場詳細（と強制ゲート）で行う。
  */
 
 export type AlertItem = {

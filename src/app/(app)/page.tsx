@@ -190,14 +190,21 @@ export default async function HomePage() {
     };
   }
 
-  // 今日行く現場の未解決の引き継ぎ事項（visitSiteIds に依存するので第2波で取得）
+  // 今日行く現場の、自分がまだ確認していない引き継ぎ事項（visitSiteIds に依存するので第2波で取得）
+  // 確認済みのものは現場詳細の「引き継ぎ事項」で読み返せる
   const visitSiteIds = visitSites.map((s) => s.id);
   let openHandovers: {
     id: string; content: string; siteId: string; siteName: string; createdByName?: string;
   }[] = [];
   if (visitSiteIds.length > 0) {
     const handovers = await db.handover.findMany({
-      where: { siteId: { in: visitSiteIds }, resolvedAt: null },
+      where: {
+        siteId: { in: visitSiteIds },
+        resolvedAt: null,
+        // 自分で書いたもの・確認済みのものは「最初に確認」に出さない
+        OR: [{ createdById: null }, { createdById: { not: user.id } }],
+        reads: { none: { userId: user.id } },
+      },
       orderBy: { createdAt: "desc" },
       select: {
         id: true, content: true, siteId: true, createdById: true,
@@ -230,7 +237,7 @@ export default async function HomePage() {
       desc: h.createdByName
         ? `${h.createdByName}さんからの引き継ぎがあります`
         : "前の担当者からの引き継ぎがあります",
-      // 現場詳細の最上部に引き継ぎ事項（確認して停止つき）がある
+      // 現場詳細の最上部に引き継ぎ事項（確認しましたボタンつき）がある
       href: `/sites/${h.siteId}`,
     })),
     ...deliveryEvents.map((e) => ({

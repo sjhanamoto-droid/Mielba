@@ -6,13 +6,16 @@
 //     提出済み日報件数が目標人工を超えたら、全ADMIN へ通知する。
 // (C) 動画の掃除: どの写真レコードからも参照されていない Blob を消す。
 //     動画を選んだあと日報を保存せず離脱すると Blob だけが残るため。
-// (A)(B) の dedupeKey は現場・当日単位で、同日の重複通知を防ぐ。
+// (D) 引き継ぎの未確認: 今日の配員のうち、その現場の対応中の引き継ぎをまだ確認していない人へ通知する。
+//     アプリを開けば強制ゲートで読ませるが、開く前に気づけるよう Push でも知らせる。
+// (A)(B)(D) の dedupeKey は現場・当日単位で、同日の重複通知を防ぐ。
 
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createNotificationForUsers } from "@/lib/notifications";
-import { dateFromKey, jstDateKey } from "@/lib/date";
+import { dateFromKey, jstDateKey, todayRange } from "@/lib/date";
 import { sweepOrphanBlobs } from "@/lib/media";
+import { handoverGateSince } from "@/lib/pending-handovers";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +91,41 @@ async function handle(req: NextRequest) {
         href: `/sites/${site.id}`,
         siteId: site.id,
         dedupeKey: `mandays-${site.id}-${dayKey}`,
+      });
+    }
+  }
+
+  // ── (D) 今日の配員への引き継ぎ未確認の通知 ──
+  const todayVisits = await db.siteVisit.findMany({
+    where: { date: todayRange() },
+    select: { siteId: true, userId: true, site: { select: { name: true } } },
+  });
+  if (todayVisits.length > 0) {
+    const openHandovers = await db.handover.findMany({
+      where: {
+        siteId: { in: Array.from(new Set(todayVisits.map((v) => v.siteId))) },
+        resolvedAt: null,
+        createdAt: { gte: handoverGateSince() }, // 強制ゲートと同じ対象
+      },
+      select: { siteId: true, createdById: true, reads: { select: { userId: true } } },
+    });
+    for (const v of todayVisits) {
+      // 自分で書いたもの・確認済みのものは数えない（強制ゲートと同じ基準）
+      const unread = openHandovers.filter(
+        (h) =>
+          h.siteId === v.siteId &&
+          h.createdById !== v.userId &&
+          !h.reads.some((r) => r.userId === v.userId),
+      ).length;
+      if (unread === 0) continue;
+
+      created += await createNotificationForUsers([v.userId], {
+        type: "HANDOVER_UNREAD",
+        title: "引き継ぎを確認してから現場へ",
+        body: `${v.site.name} に未確認の引き継ぎが${unread}件あります`,
+        href: `/sites/${v.siteId}`,
+        siteId: v.siteId,
+        dedupeKey: `handover-unread-${v.siteId}-${dayKey}`,
       });
     }
   }

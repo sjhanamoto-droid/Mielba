@@ -889,7 +889,7 @@ export function ReportForm({
           />
         </div>
         <p className="text-xs text-ink-muted">
-          提出すると現場の引き継ぎとして起票され、次の担当者が「確認して停止」するまで表示されます。
+          提出すると現場の引き継ぎとして起票されます。その現場に入る人は、アプリを開いたときに一人ずつ読んで確認するまで先に進めません。
         </p>
       </YesNoField>
 

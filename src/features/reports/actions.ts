@@ -291,14 +291,18 @@ async function syncHandover(
 ) {
   const existing = await tx.handover.findFirst({
     where: { reportId, resolvedAt: null },
-    select: { id: true },
+    select: { id: true, content: true },
   });
   if (content) {
     if (existing) {
-      await tx.handover.update({
-        where: { id: existing.id },
-        data: { content },
-      });
+      if (existing.content !== content) {
+        await tx.handover.update({
+          where: { id: existing.id },
+          data: { content },
+        });
+        // 内容が変わったら、前の内容での「確認しました」は無効にして読み直してもらう
+        await tx.handoverRead.deleteMany({ where: { handoverId: existing.id } });
+      }
     } else {
       await tx.handover.create({
         data: { siteId, reportId, content, createdById: userId },

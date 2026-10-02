@@ -6,6 +6,8 @@ import { AppFrame, SIDEBAR_COOKIE } from "@/components/app-shell/app-frame";
 import { StartupGate } from "@/features/notifications/startup-gate";
 import { MissingReportsGate } from "@/features/reports/missing-reports-gate";
 import { getMissingPastReports } from "@/lib/missing-reports";
+import { HandoverGate } from "@/features/handovers/handover-gate";
+import { getPendingHandovers } from "@/lib/pending-handovers";
 
 export default async function AppLayout({
   children,
@@ -16,8 +18,8 @@ export default async function AppLayout({
   const store = await cookies();
   const collapsed = store.get(SIDEBAR_COOKIE)?.value === "1";
 
-  // 起動ゲート＆通知バッジ用の未読データ＋前日以前の未入力日報（本人のみ）。
-  const [unreadCount, unread, missingReports] = await Promise.all([
+  // 起動ゲート＆通知バッジ用の未読データ＋前日以前の未入力日報＋今日の現場の未確認の引き継ぎ（本人のみ）。
+  const [unreadCount, unread, missingReports, pendingHandovers] = await Promise.all([
     db.notification.count({ where: { userId: user.id, read: false } }),
     db.notification.findMany({
       where: { userId: user.id, read: false },
@@ -34,6 +36,7 @@ export default async function AppLayout({
       },
     }),
     getMissingPastReports(user.id),
+    getPendingHandovers(user.id),
   ]);
 
   return (
@@ -48,6 +51,10 @@ export default async function AppLayout({
 
       {/* 起動ゲート：未読があれば全画面で最前面に表示し、既読化までブロック */}
       <StartupGate items={unread} />
+
+      {/* 引き継ぎの強制ゲート：今日入る現場の引き継ぎを、1件ずつ読んで確認するまで先に進めない
+          （z-[85]：未読ゲートより前面、未入力日報ゲートより後ろ） */}
+      <HandoverGate items={pendingHandovers} />
 
       {/* 未入力日報の強制ゲート：前日以前の未入力があれば、書き終えるまで先に進めない
           （z-[90] で未読ゲートより前面。日報の入力・編集画面では自動退避する） */}
