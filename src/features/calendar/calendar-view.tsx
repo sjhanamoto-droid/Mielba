@@ -36,6 +36,7 @@ import {
   type EventCategory,
 } from "@/lib/constants";
 import { cn, fmtDateWithDay } from "@/lib/utils";
+import { dayTone, holidayName } from "@/lib/holidays";
 
 export type CalendarViewMode = "day" | "week" | "month";
 
@@ -165,14 +166,44 @@ function shortTime(t: string): string {
   return t.replace(/^0(\d)/, "$1");
 }
 
-// 日付見出し（「10月2日 金曜日」＋今日なら「今日」ピル）。月ビューの選択日・日ビューで使う。
-function DayHeading({ date, isToday, className }: { date: Date; isToday: boolean; className?: string }) {
+// 日付の文字色：祝日・日曜＝赤、土曜＝青（祝日は土曜でも赤）。平日は fallback
+const TONE_TEXT = {
+  holiday: "text-red-500",
+  sunday: "text-red-500",
+  saturday: "text-blue-500",
+} as const;
+function toneText(dateKey: string, dow: number, fallback: string): string {
+  const tone = dayTone(dateKey, dow);
+  return tone ? TONE_TEXT[tone] : fallback;
+}
+
+// 祝日名のピル（赤）
+function HolidayPill({ name, className }: { name: string; className?: string }) {
   return (
-    <div className={cn("flex min-w-0 items-baseline gap-2", className)}>
-      <span className="text-xl font-bold tnum text-ink">
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/40 dark:text-red-300",
+        className,
+      )}
+    >
+      {name}
+    </span>
+  );
+}
+
+// 日付見出し（「10月2日 金曜日」＋今日なら「今日」ピル＋祝日なら祝日名）。月ビューの選択日・日ビューで使う。
+function DayHeading({ date, isToday, className }: { date: Date; isToday: boolean; className?: string }) {
+  const dateKey = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const holiday = holidayName(dateKey);
+  return (
+    <div className={cn("flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1", className)}>
+      <span className={cn("text-xl font-bold tnum", toneText(dateKey, date.getDay(), "text-ink"))}>
         {date.getMonth() + 1}月{date.getDate()}日
       </span>
-      <span className="text-sm font-semibold text-ink-muted">{WEEKDAYS[date.getDay()]}曜日</span>
+      <span className={cn("text-sm font-semibold", toneText(dateKey, date.getDay(), "text-ink-muted"))}>
+        {WEEKDAYS[date.getDay()]}曜日
+      </span>
+      {holiday && <HolidayPill name={holiday} className="self-center" />}
       {isToday && (
         <span className="self-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
           今日
@@ -889,10 +920,12 @@ function MonthView({
               const isSelected = day === selectedDay;
               const isToday = key === todayKey;
               const dow = idx % 7;
+              const holiday = holidayName(key);
               return (
                 <div
                   key={key}
                   onClick={() => setSelectedDay(day)}
+                  title={holiday ?? undefined}
                   className={cn(
                     "flex aspect-square cursor-pointer flex-col items-center justify-start rounded-xl p-1 transition-colors active:bg-surface-sunken md:aspect-auto md:min-h-[88px] md:items-stretch md:gap-0.5 md:p-1.5 md:hover:bg-surface-sunken lg:min-h-[120px] xl:min-h-[132px]",
                     isSelected && "bg-brand-50 ring-2 ring-brand-300",
@@ -903,15 +936,17 @@ function MonthView({
                       "flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-semibold tnum md:h-7 md:w-7 md:self-start md:text-sm",
                       isToday
                         ? "bg-brand-600 text-white"
-                        : dow === 0
-                          ? "text-red-500"
-                          : dow === 6
-                            ? "text-blue-500"
-                            : "text-ink",
+                        : toneText(key, dow, "text-ink"),
                     )}
                   >
                     {day}
                   </span>
+                  {/* 祝日名（md 以上はセル内に。スマホは日付をタップすると下の見出しに出る） */}
+                  {holiday && (
+                    <span className="hidden truncate px-0.5 text-[11px] font-bold leading-tight text-red-500 md:block">
+                      {holiday}
+                    </span>
+                  )}
                   {/* スマホ：現場入りはヘルメット、予定は出所色のドット（最大4個） */}
                   <span className="mt-0.5 flex min-h-[8px] flex-wrap items-center justify-center gap-0.5 md:hidden">
                     {dayVisits.length > 0 && (
@@ -1079,6 +1114,7 @@ function WeekView({
           const dayVisits = visitsByDay.get(key) ?? [];
           const isToday = key === todayKey;
           const dow = d.getDay();
+          const holiday = holidayName(key);
           return (
             <div key={key} className="card overflow-hidden md:flex md:min-h-[calc(100vh-320px)] md:flex-col">
               {/* 日ヘッダー */}
@@ -1094,24 +1130,20 @@ function WeekView({
                       "flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold tnum",
                       isToday
                         ? "bg-brand-600 text-white"
-                        : dow === 0
-                          ? "text-red-500"
-                          : dow === 6
-                            ? "text-blue-500"
-                            : "text-ink",
+                        : toneText(key, dow, "text-ink"),
                     )}
                   >
                     {d.getDate()}
                   </span>
-                  <span
-                    className={cn(
-                      "text-xs font-bold",
-                      dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-ink-soft",
-                    )}
-                  >
+                  <span className={cn("text-xs font-bold", toneText(key, dow, "text-ink-soft"))}>
                     <span className="md:hidden">{WEEKDAYS[dow]}曜</span>
                     <span className="hidden md:inline">{WEEKDAYS[dow]}</span>
                   </span>
+                  {holiday && (
+                    <span className="truncate text-[11px] font-bold text-red-500 md:max-w-full">
+                      {holiday}
+                    </span>
+                  )}
                   {isToday && (
                     <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[11px] font-bold text-white md:hidden">
                       今日
