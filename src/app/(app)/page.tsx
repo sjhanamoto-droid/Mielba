@@ -17,6 +17,7 @@ import {
   type EventSource, type SiteStatus, type ProjectType,
 } from "@/lib/constants";
 import { visibleEventWhere } from "@/lib/event-visibility";
+import { dayTone, holidayName } from "@/lib/holidays";
 
 // ホーム（スマホで毎朝開く画面）。情報に優先順位をつけ、上から順に
 //   ① 今日の現場（一番大きく。引き継ぎと「現場の詳細を見る」）
@@ -56,6 +57,12 @@ function areaOf(address: string | null): string | null {
 /** 本文の1行目（引き継ぎのプレビュー用） */
 function firstLine(text: string): string {
   return text.trim().split(/\r?\n/).find((l) => l.trim())?.trim() ?? "";
+}
+
+/** 日付の文字色：祝日・日曜＝赤、土曜＝青（予定画面と同じ）。平日は fallback */
+function toneText(dateKey: string, dow: number, fallback: string): string {
+  const tone = dayTone(dateKey, dow);
+  return tone === "saturday" ? "text-blue-500" : tone ? "text-red-500" : fallback;
 }
 
 /** 見出し右の小さな導線（「予定を見る ›」など） */
@@ -238,6 +245,7 @@ export default async function HomePage() {
     }));
 
   const todayDate = dateFromKey(todayKey);
+  const todayHoliday = holidayName(todayKey);
   const outlineBtn = "shrink-0 border-brand-200 text-brand-700 dark:border-brand-800";
 
   return (
@@ -253,12 +261,17 @@ export default async function HomePage() {
               className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface py-2.5 pl-3.5 pr-5 shadow-card active:bg-surface-subtle"
             >
               <CalendarDays className="h-5 w-5 shrink-0 text-brand-600" aria-hidden />
-              <span className="text-xl font-bold tnum text-ink">
+              <span className={cn("text-xl font-bold tnum", toneText(todayKey, todayDate.getDay(), "text-ink"))}>
                 {todayDate.getMonth() + 1}月{todayDate.getDate()}日
               </span>
-              <span className="text-sm font-semibold text-ink-muted">
+              <span className={cn("text-sm font-semibold", toneText(todayKey, todayDate.getDay(), "text-ink-muted"))}>
                 {WEEKDAYS[todayDate.getDay()]}曜日
               </span>
+              {todayHoliday && (
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600 dark:bg-red-950/40 dark:text-red-300">
+                  {todayHoliday}
+                </span>
+              )}
             </Link>
             <Link
               href="/notifications"
@@ -472,6 +485,7 @@ export default async function HomePage() {
                   const d = dateFromKey(key);
                   const time = timeRange(siteEventOn(v.siteId, v.date));
                   const area = areaOf(v.site.address);
+                  const holiday = holidayName(key);
                   return (
                     <li key={v.id}>
                       <Link
@@ -479,18 +493,24 @@ export default async function HomePage() {
                         className="flex items-center gap-4 px-4 py-3.5 tap-row"
                       >
                         <div className="w-11 shrink-0 text-center">
-                          <p className="text-xs font-bold text-brand-600">
+                          <p className={cn("text-xs font-bold", toneText(key, d.getDay(), "text-brand-600"))}>
                             {key === tmrwKey ? "明日" : WEEKDAYS[d.getDay()]}
                           </p>
-                          <p className="text-lg font-bold tnum text-ink">
+                          <p className={cn("text-lg font-bold tnum", toneText(key, d.getDay(), "text-ink"))}>
                             {d.getMonth() + 1}/{d.getDate()}
                           </p>
                         </div>
                         <span className="h-10 w-px shrink-0 bg-line" aria-hidden />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-base font-bold text-ink">{v.site.name}</p>
-                          {(time || area) && (
+                          {(holiday || time || area) && (
                             <p className="mt-0.5 truncate text-sm text-ink-muted tnum">
+                              {holiday && (
+                                <span className="font-bold text-red-500">
+                                  {holiday}
+                                  {(time || area) && " ・ "}
+                                </span>
+                              )}
                               {[time, area].filter(Boolean).join(" ・ ")}
                             </p>
                           )}
