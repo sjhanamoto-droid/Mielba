@@ -59,6 +59,7 @@ export type SiteFormData = {
   actualStartDate: Date | string | null;
   actualEndDate: Date | string | null;
   handoverNote: string | null;
+  memo: string | null; // 備考
 };
 
 /** 現場に直付けされた既存写真（kind ごとにアップローダーへ渡す） */
@@ -334,32 +335,19 @@ export function SiteForm({
               placeholder="090-1234-5678"
             />
           </Field>
+          <Field label="備考" htmlFor="memo" hint="（日報の前後に残しておきたいこと・注意点など）" className="sm:col-span-2">
+            <Textarea
+              id="memo"
+              name="memo"
+              defaultValue={site?.memo ?? ""}
+              placeholder="例：現調は午前中のみ入れます。鍵は管理人室。"
+            />
+          </Field>
         </Card>
       </div>
 
-      {/* 現調のメモは現場メモ（連絡・メモの時系列）に1件として残す。
-          修正画面では出さない（追記は現場詳細の現場メモから行う）。 */}
       {surveyMode && (
         <div className="space-y-3">
-          {!isEdit && (
-            <>
-              <SectionTitle>メモ</SectionTitle>
-              <Card className="p-4">
-                <Field
-                  label="メモ"
-                  htmlFor="siteMemo"
-                  hint="任意・現場の「連絡・メモ」に残ります"
-                >
-                  <Textarea
-                    id="siteMemo"
-                    name="siteMemo"
-                    placeholder="例：現調は午前中のみ入れます。鍵は管理人室。"
-                  />
-                </Field>
-              </Card>
-            </>
-          )}
-
           {/* 写真・動画。置き場所は現調フォーマットと同じなので、後から現調フォーマットでも増やせる。 */}
           <SectionTitle>写真・動画</SectionTitle>
           <Card className="p-4">

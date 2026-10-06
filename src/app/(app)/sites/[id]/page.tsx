@@ -26,7 +26,6 @@ import { RelationControl } from "@/features/sites/relation-control";
 import { PartnerControl } from "@/features/sites/partner-control";
 import { SiteMaterialSummary } from "@/features/materials/site-material-summary";
 import { SiteAnalysisCard } from "@/features/sites/site-analysis-card";
-import { SiteMemoPanel, type SiteMemoAuthor, type SiteMemoRow } from "@/features/sites/site-memo-panel";
 import { SitePhotosSection, type SitePhotoItem } from "@/features/sites/site-photos-section";
 import { SiteDetailTabs } from "@/features/sites/site-detail-tabs";
 import { Tabs } from "@/components/ui/tabs";
@@ -120,12 +119,12 @@ export default async function SiteDetailPage({
       },
       relationsA: { include: { siteB: { select: { id: true, name: true, address: true, siteStatus: true } } } },
       relationsB: { include: { siteA: { select: { id: true, name: true, address: true, siteStatus: true } } } },
-      // 現場メモ（日報以外の気づき・連絡）。新しい順。投稿者は退職等で null になりうる。
+      // 旧・現場メモ（UIは廃止し本文は備考へ移植済み）。添付の写真・動画だけを「写真・動画」に出す。
       memos: {
         orderBy: { createdAt: "desc" },
         take: 200,
-        include: {
-          createdBy: { select: { id: true, name: true, avatarColor: true, avatarImage: true } },
+        select: {
+          atSurvey: true,
           // メモに添えた写真・動画（base64 は載せず {id} 参照で渡し、実体は /api/photos/[id] から）
           photos: {
             select: {
@@ -142,7 +141,6 @@ export default async function SiteDetailPage({
           },
         },
       },
-      _count: { select: { memos: true } },
     },
   });
 
@@ -320,22 +318,6 @@ export default async function SiteDetailPage({
 
   const projectType = labelOf(PROJECT_TYPE_LABEL, site.projectType as ProjectType);
 
-  // 現場メモ: 投稿者（アバター画像＝data URL）を行ごとに重複して RSC ペイロードに載せないよう、
-  // 投稿者は id→情報のマップで1回だけ渡し、行には createdById のみ持たせる。
-  const memoAuthors: Record<string, SiteMemoAuthor> = {};
-  const memoRows: SiteMemoRow[] = site.memos.map((m) => {
-    if (m.createdBy) memoAuthors[m.createdBy.id] = m.createdBy;
-    return {
-      id: m.id,
-      content: m.content,
-      createdAt: m.createdAt,
-      updatedAt: m.updatedAt,
-      createdById: m.createdById,
-      atSurvey: m.atSurvey,
-      photos: m.photos,
-    };
-  });
-  const memoCount = site._count.memos;
 
   // AI分析（管理者のみ）: 人工超過の原因分析 と 工事完了の振り返り分析
   const aiEnabled = Boolean(process.env.ANTHROPIC_API_KEY);
@@ -430,37 +412,6 @@ export default async function SiteDetailPage({
         </HandoverPanel>
       </section>
 
-      {/* 現場メモ（日報に書くほどでない気づき・連絡をその場で残す） */}
-      <section className="space-y-2.5">
-        <SectionTitle
-          size="lg"
-          action={
-            memoCount > 0 ? (
-              <span className="text-xs font-semibold text-ink-muted tnum">{memoCount}件</span>
-            ) : undefined
-          }
-        >
-          <span className="flex items-center gap-1.5">
-            <StickyNote className="h-4 w-4 text-brand-600" />
-            現場メモ
-          </span>
-        </SectionTitle>
-        <SiteMemoPanel
-          siteId={site.id}
-          memos={memoRows}
-          authors={memoAuthors}
-          totalCount={memoCount}
-          currentUser={{
-            id: user.id,
-            name: user.name,
-            avatarColor: user.avatarColor,
-            avatarImage: user.avatarImage,
-          }}
-          canManageAll={admin}
-          siteInSurvey={site.siteStatus === "SURVEY"}
-        />
-      </section>
-
       {/* 写真・動画（「現場情報」タブと同じ内容。定義は photosSection） */}
       {photosSection}
     </div>
@@ -476,6 +427,29 @@ export default async function SiteDetailPage({
       <div className="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
         {/* ===== メイン列 ===== */}
         <div className="space-y-5 lg:col-span-2">
+          {/* 備考（現場情報に常設。編集は現場の編集画面から） */}
+          <section className="space-y-2.5">
+            <SectionTitle
+              size="lg"
+              action={
+                <Link href={`/sites/${site.id}/edit#memo`} className="text-xs font-semibold text-brand-600">
+                  {site.memo ? "編集" : "追加"}
+                </Link>
+              }
+            >
+              備考
+            </SectionTitle>
+            {site.memo ? (
+              <Card className="p-4">
+                <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-ink">{site.memo}</p>
+              </Card>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-line-strong px-4 py-4 text-center text-sm text-ink-muted">
+                備考はありません
+              </div>
+            )}
+          </section>
+
           {/* 工程（進捗・工期） */}
           <section className="space-y-2.5">
             <SectionTitle size="lg">工程</SectionTitle>
@@ -1186,7 +1160,7 @@ export default async function SiteDetailPage({
             id: "notes",
             label: "連絡・メモ",
             icon: <StickyNote className="h-4 w-4" />,
-            count: openHandovers.length || memoCount,
+            count: openHandovers.length,
             alert: openHandovers.length > 0,
             content: notesPanel,
           },

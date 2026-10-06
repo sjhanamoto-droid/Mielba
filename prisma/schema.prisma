@@ -167,7 +167,7 @@ model Site {
   scheduleNoneReason String? // 工程表が無い理由（工程表なし時に必須）
   provisional      Boolean @default(false) // 仮登録（必須項目が未入力）
 
-  memo             String? // 旧メモ（0015 で SiteMemo へ移行済み・フォームからは更新しない）
+  memo             String? // 備考（現場情報に常設）。0024 で旧・現場メモ（SiteMemo）の本文を移植
 
   // ── AI分析（人工超過・工事完了）。再分析で上書き（最新のみ保持） ──
   overrunAnalysis      String?   // 人工超過のAI分析

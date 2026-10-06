@@ -68,6 +68,7 @@ const siteSchema = z.object({
   actualStartDate: optionalDate,
   actualEndDate: optionalDate,
   handoverNote: optionalText,
+  memo: optionalText, // 備考（現場情報に常設。現調・受注済どちらでも書ける）
 });
 
 function toDate(v?: string): Date | null {
@@ -103,6 +104,7 @@ function parseSiteForm(formData: FormData) {
     actualStartDate: formData.get("actualStartDate"),
     actualEndDate: formData.get("actualEndDate"),
     handoverNote: formData.get("handoverNote"),
+    memo: formData.get("memo"),
   });
 }
 
@@ -136,6 +138,7 @@ function toData(d: z.infer<typeof siteSchema>) {
     actualStartDate: toDate(d.actualStartDate),
     actualEndDate: toDate(d.actualEndDate),
     handoverNote: d.handoverNote ?? null,
+    memo: d.memo?.replace(/\r\n/g, "\n").trim() || null,
   };
 }
 
@@ -314,13 +317,6 @@ export async function createSite(formData: FormData) {
     : { kept: [], added: [] };
   if ("error" in surveyPhotos) return { error: surveyPhotos.error };
 
-  // 現調のメモ（現場メモとして残す。2000文字はメモ側の上限に合わせる）
-  const rawMemo = formData.get("siteMemo");
-  const surveyMemo =
-    survey && typeof rawMemo === "string"
-      ? rawMemo.replace(/\r\n/g, "\n").trim().slice(0, 2000)
-      : "";
-
   let siteId: string;
   let customerId: string;
   try {
@@ -338,12 +334,6 @@ export async function createSite(formData: FormData) {
       await applySitePhotoSets(tx, created.id, photoSets);
       if (survey && surveyPhotos.added.length > 0) {
         await applySurveyPhotos(tx, created.id, surveyPhotos);
-      }
-      // 現調で書いたメモは、現場詳細「連絡・メモ」の現場メモに1件として残す
-      if (surveyMemo) {
-        await tx.siteMemo.create({
-          data: { siteId: created.id, content: surveyMemo, createdById: user.id, atSurvey: true },
-        });
       }
       return created;
     });
@@ -519,6 +509,7 @@ export async function updateSite(siteId: string, formData: FormData) {
         address: d.address ?? null,
         siteContactName: d.siteContactName ?? null,
         siteContactPhone: d.siteContactPhone ?? null,
+        memo: d.memo?.replace(/\r\n/g, "\n").trim() || null,
       }
     : toData(d);
 
