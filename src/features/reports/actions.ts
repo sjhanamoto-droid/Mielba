@@ -558,6 +558,7 @@ export async function addComment(formData: FormData) {
   return { ok: true };
 }
 
+// 日報の削除は管理者以上のみ（日報詳細の削除ボタン＋確認ダイアログから）。
 export async function deleteReport(id: string) {
   const user = await requireUser();
   let report;
@@ -571,13 +572,15 @@ export async function deleteReport(id: string) {
     return { error: GENERIC_ERROR };
   }
   if (!report) return { error: "日報が見つかりません" };
-  if (report.userId !== user.id && !isAdmin(user)) {
-    return { error: "削除権限がありません" };
+  if (!isAdmin(user)) {
+    return { error: "日報の削除は管理者のみ可能です" };
   }
   try {
-    // 起票元の日報が消えるのに引き継ぎ掲示だけ残らないよう、未解決の引き継ぎも一緒に削除する
+    // 起票元の日報が消えるのに引き継ぎ掲示だけ残らないよう、未解決の引き継ぎも一緒に削除する。
+    // 日報から作られた予定（配達・次回工程など）も出所が消えるので一緒に削除する。
     await db.$transaction([
       db.handover.deleteMany({ where: { reportId: id, resolvedAt: null } }),
+      db.calendarEvent.deleteMany({ where: { reportId: id } }),
       db.dailyReport.delete({ where: { id } }),
     ]);
   } catch (e) {
@@ -585,5 +588,5 @@ export async function deleteReport(id: string) {
     return { error: "削除に失敗しました。もう一度お試しください。" };
   }
   revalidateReport(null, report.siteId);
-  redirect(`/sites/${report.siteId}/reports`);
+  redirect(`/sites/${report.siteId}/reports?toast=${encodeURIComponent("日報を削除しました")}`);
 }

@@ -8,6 +8,7 @@ import { ReportCard } from "@/components/report-card";
 import { EmptyState } from "@/components/ui/misc";
 import { SectionTitle } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/button";
+import { SearchParamToast } from "@/components/ui/toast";
 import { fmtDateWithDay } from "@/lib/utils";
 
 export default async function SiteReportsPage({
@@ -63,6 +64,7 @@ export default async function SiteReportsPage({
           </LinkButton>
         }
       />
+      <SearchParamToast />
       <PageContainer>
         {reports.length === 0 ? (
           <EmptyState

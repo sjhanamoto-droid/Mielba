@@ -16,6 +16,7 @@ import { LinkButton, buttonClass } from "@/components/ui/button";
 import { PhotoGrid } from "@/components/photo-grid";
 import { SearchParamToast } from "@/components/ui/toast";
 import { CommentForm } from "@/features/reports/comment-form";
+import { DeleteReportButton } from "@/features/reports/delete-report-button";
 import { fmtDateWithDay, fmtDate, fmtDateTime, fmtYen, workHours } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { REPORT_STATUS_LABEL, type ReportStatus } from "@/lib/constants";
@@ -137,6 +138,12 @@ export default async function ReportDetailPage({
             現場を見る
           </Link>
         </div>
+        {isAdmin(user) && (
+          <DeleteReportButton
+            reportId={report.id}
+            label={`${fmtDateWithDay(report.workDate)}・${report.site.name}・${report.user.name}`}
+          />
+        )}
           </aside>
 
           {/* 主要コンテンツ */}
