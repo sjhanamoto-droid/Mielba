@@ -7,6 +7,14 @@ import { SiteStageStepper } from "@/components/site-card";
 import { siteStageIndex } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
+// 選択画面のタブ。既定は進行中（開くたびに進行中から）
+const TABS = [
+  { status: "ACTIVE", label: "進行中" },
+  { status: "SURVEY", label: "現調" },
+  { status: "PAST", label: "過去" },
+] as const;
+type TabStatus = (typeof TABS)[number]["status"];
+
 export type PickerSite = {
   id: string;
   name: string;
@@ -32,6 +40,8 @@ export function SitePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState<TabStatus>("ACTIVE");
+  const countOf = (st: TabStatus) => sites.filter((s) => (s.siteStatus ?? "ACTIVE") === st).length;
   const selected = sites.find((s) => s.id === value) ?? null;
 
   // 開いている間は Esc で閉じる
@@ -46,11 +56,12 @@ export function SitePicker({
 
   const norm = (s: string) => s.replace(/\s/g, "").toLowerCase();
   const t = norm(q);
+  const inTab = sites.filter((s) => (s.siteStatus ?? "ACTIVE") === tab);
   const filtered = t
-    ? sites.filter((s) =>
+    ? inTab.filter((s) =>
         [s.name, s.address ?? "", s.customerName ?? ""].some((v) => norm(v).includes(t)),
       )
-    : sites;
+    : inTab;
 
   function pick(id: string) {
     onChange(id);
@@ -64,7 +75,10 @@ export function SitePicker({
       <button
         id="siteId"
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setTab("ACTIVE");
+          setOpen(true);
+        }}
         className={cn(
           "flex min-h-[56px] w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors active:scale-[0.99]",
           selected
@@ -105,7 +119,6 @@ export function SitePicker({
           <div className="border-b border-line bg-surface px-4 pb-3 pt-3 safe-top">
             <div className="mx-auto flex w-full max-w-6xl items-center gap-2">
               <h2 className="flex-1 text-lg font-bold text-ink">現場を選択</h2>
-              <span className="text-xs font-semibold text-ink-muted tnum">進行中 {sites.length}件</span>
               <button
                 type="button"
                 aria-label="閉じる"
@@ -140,6 +153,29 @@ export function SitePicker({
                   </button>
                 )}
               </label>
+              {/* 状態タブ（既定は進行中） */}
+              <div className="mt-2 flex gap-2" role="tablist" aria-label="現場の状態">
+                {TABS.map((tb) => (
+                  <button
+                    key={tb.status}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === tb.status}
+                    onClick={() => setTab(tb.status)}
+                    className={cn(
+                      "flex h-9 items-center gap-1.5 rounded-full border px-4 text-sm font-bold transition-colors",
+                      tab === tb.status
+                        ? "border-brand-600 bg-brand-600 text-white"
+                        : "border-line-strong bg-surface text-ink-soft active:bg-surface-sunken",
+                    )}
+                  >
+                    {tb.label}
+                    <span className={cn("text-xs tnum", tab === tb.status ? "text-white/80" : "text-ink-faint")}>
+                      {countOf(tb.status)}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -148,7 +184,9 @@ export function SitePicker({
             <div className="mx-auto w-full max-w-6xl">
               {filtered.length === 0 ? (
                 <p className="py-10 text-center text-sm text-ink-muted">
-                  {q ? "該当する現場がありません" : "進行中の現場がありません"}
+                  {q
+                    ? "該当する現場がありません"
+                    : `${TABS.find((tb) => tb.status === tab)?.label}の現場がありません`}
                 </p>
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -185,7 +223,7 @@ export function SitePicker({
                             <span className="truncate">{s.address}</span>
                           </p>
                         )}
-                        {s.siteStatus && s.projectStatus && (
+                        {s.siteStatus && s.siteStatus !== "SURVEY" && s.projectStatus && (
                           <SiteStageStepper
                             index={siteStageIndex(s.siteStatus, s.projectStatus)}
                             className="mt-3"

@@ -99,9 +99,9 @@ export default async function CalendarPage({
       },
       orderBy: { date: "asc" },
     }),
-    // 予定追加用の現場候補：進行中(ACTIVE)の現場のみ（担当でなくても誰でも選べる）
+    // 予定追加用の現場候補：進行中・現調・過去（選択画面のタブで切替。既定は進行中）。見送りは出さない
     db.site.findMany({
-      where: { siteStatus: "ACTIVE" },
+      where: { siteStatus: { in: ["ACTIVE", "SURVEY", "PAST"] } },
       select: {
         id: true,
         name: true,
