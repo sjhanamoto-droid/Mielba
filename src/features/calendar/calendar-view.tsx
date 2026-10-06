@@ -1158,17 +1158,13 @@ function WeekEventChip({
         {ev.isPrivate && <EyeOff className="h-2.5 w-2.5 shrink-0" aria-hidden />}
         {!ev.allDay && ev.startTime ? `${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ""}` : "終日"}
       </p>
-      <p className="mt-0.5 line-clamp-2 text-[15px] font-bold leading-tight text-ink md:text-[11px] md:font-semibold">{ev.title}</p>
-      <p className="mt-0.5 truncate text-xs font-medium text-brand-600 md:text-[10px]">{ownerLabel(ev)}</p>
+      {/* 週表示でも省略しない：件名・誰の仕事か・行く人（全員の名前）を折り返して全部出す */}
+      <p className="mt-0.5 break-words text-[15px] font-bold leading-tight text-ink md:text-[11px] md:font-semibold">{ev.title}</p>
+      <p className="mt-0.5 break-words text-xs font-medium text-brand-600 md:text-[10px]">{ownerLabel(ev)}</p>
       {people.length > 0 && (
-        <div className="mt-1 flex items-center -space-x-1.5">
-          {people.slice(0, 4).map((p) => (
-            <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-4 w-4 text-[8px] ring-1 ring-white" />
-          ))}
-          {people.length > 4 && (
-            <span className="pl-2 text-[9px] font-bold text-ink-muted">+{people.length - 4}</span>
-          )}
-        </div>
+        <p className="mt-0.5 break-words text-xs leading-snug text-ink-muted md:text-[10px]">
+          {people.map((p) => p.name).join("・")}
+        </p>
       )}
     </button>
   );
@@ -1282,8 +1278,9 @@ function WeekView({
               </div>
               {/* イベント */}
               <div className="space-y-1.5 p-1.5 md:flex-1">
+                {/* 週表示も現場入りは省略せず、現場名と行く人を折り返して全部出す */}
                 {dayVisits.map((v) => (
-                  <VisitChip key={v.id} visit={v} />
+                  <VisitChip key={v.id} visit={v} compact />
                 ))}
                 {list.length === 0 && dayVisits.length === 0 ? (
                   <p className="px-1 py-2 text-sm text-ink-faint md:text-[11px]">予定なし</p>
