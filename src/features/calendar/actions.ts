@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser, isSuperAdmin } from "@/lib/session";
+import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { dateFromKey } from "@/lib/date";
 import {
   EVENT_CATEGORY_LABEL,
@@ -339,7 +339,7 @@ export async function deleteEvent(
 ): Promise<{ ok?: boolean; error?: string }> {
   try {
     const user = await requireUser();
-    // 手動予定のみ削除可能（日報由来は削除させない）。参加者は cascade で削除。
+    // 手動予定は誰でも削除可能。日報由来（配達・工程など）は管理者のみ削除可。参加者は cascade で削除。
     const event = await db.calendarEvent.findUnique({
       where: { id },
       select: {
@@ -357,7 +357,7 @@ export async function deleteEvent(
     if (event.isPrivate && event.ownerId !== user.id) {
       return { error: "予定が見つかりません" };
     }
-    if (event.source !== "MANUAL") return { error: "この予定は削除できません" };
+    if (event.source !== "MANUAL" && !isAdmin(user)) return { error: "この予定は削除できません" };
     const participantIds = event.participants.map((p) => p.userId);
     await db.calendarEvent.delete({ where: { id } });
     // 現場作業予定なら、紐づく現場入り(配員)も掃除してカレンダーと一致させる
@@ -370,5 +370,28 @@ export async function deleteEvent(
   } catch (e) {
     console.error("deleteEvent failed:", e);
     return { error: "予定の削除に失敗しました。通信環境をご確認のうえ、もう一度お試しください。" };
+  }
+}
+
+// 管理者がカレンダーの「現場入り」チップ（予定に紐づかない配員）を削除する。
+// 表示中の人（userIds）の現場入りだけを消す。日報・予定には触れない。
+export async function deleteVisitGroup(
+  siteId: string,
+  dateIso: string,
+  userIds: string[],
+): Promise<{ ok?: boolean; error?: string }> {
+  try {
+    const user = await requireUser();
+    if (!isAdmin(user)) return { error: "削除は管理者のみ可能です" };
+    const date = new Date(dateIso);
+    if (Number.isNaN(date.getTime()) || userIds.length === 0) {
+      return { error: "対象が見つかりません" };
+    }
+    await db.siteVisit.deleteMany({ where: { siteId, date, userId: { in: userIds } } });
+    revalidateCalendar(siteId);
+    return { ok: true };
+  } catch (e) {
+    console.error("deleteVisitGroup failed:", e);
+    return { error: "現場入りの削除に失敗しました。通信環境をご確認のうえ、もう一度お試しください。" };
   }
 }

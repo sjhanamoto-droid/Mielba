@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { CalendarView, type CalendarViewMode } from "@/features/calendar/calendar-view";
-import { requireUser, isSuperAdmin } from "@/lib/session";
+import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
 import { isNonWorkEventCategory } from "@/lib/constants";
@@ -185,6 +185,7 @@ export default async function CalendarPage({
           users={users}
           currentUserId={me.id}
           canSetPrivate={isSuperAdmin(me)}
+          canDelete={isAdmin(me)}
         />
       </PageContainer>
     </div>

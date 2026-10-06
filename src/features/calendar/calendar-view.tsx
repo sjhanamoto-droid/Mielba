@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { createContext, useContext, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -19,7 +19,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { EventForm } from "./event-form";
-import { deleteEvent } from "./actions";
+import { deleteEvent, deleteVisitGroup } from "./actions";
 import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -126,13 +126,22 @@ function categoryTone(category: string | null): "neutral" | "past" {
 // ─────────────────── 現場入り（読み取り専用チップ） ───────────────────
 // EVENT 色とは別の識別：ブランド色の破線ボーダー＋ヘルメットアイコン。
 // 配員・自己申告でその現場に入る人を、末尾にアバターで添える。
+// 現場入りチップ/行のタップで詳細（管理者は削除）を開く。各ビューへ props を通さず context で渡す。
+const VisitSelectContext = createContext<((v: CalendarVisitData) => void) | null>(null);
+
 function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compact?: boolean }) {
   const names = visit.visitors.map((p) => p.name).join("・");
+  const onSelectVisit = useContext(VisitSelectContext);
   return (
-    <span
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelectVisit?.(visit);
+      }}
       title={names ? `現場入り：${visit.site.name}（${names}）` : `現場入り：${visit.site.name}`}
       className={cn(
-        "flex items-center gap-1 rounded-md border border-dashed border-brand-400 bg-brand-50/60 text-brand-700",
+        "flex w-full items-center gap-1 rounded-md border border-dashed border-brand-400 bg-brand-50/60 text-left text-brand-700 md:hover:bg-brand-50",
         compact ? "px-1 py-0.5 text-[10px] font-semibold" : "px-2 py-1 text-[11px] font-semibold",
       )}
     >
@@ -157,7 +166,7 @@ function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compa
           )}
         </span>
       )}
-    </span>
+    </button>
   );
 }
 
@@ -229,8 +238,13 @@ function AddEventButton({ onClick }: { onClick: () => void }) {
 
 // リスト表示用（選択日の予定リスト・日ビュー）。現場に入る人をアバターで表示する。
 function VisitRow({ visit }: { visit: CalendarVisitData }) {
+  const onSelectVisit = useContext(VisitSelectContext);
   return (
-    <div className="flex items-center gap-4 px-4 py-3.5">
+    <button
+      type="button"
+      onClick={() => onSelectVisit?.(visit)}
+      className="flex w-full items-center gap-4 px-4 py-3.5 text-left active:bg-surface-sunken md:hover:bg-surface-subtle"
+    >
       <div className="flex w-12 shrink-0 justify-center">
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-600">
           <HardHat className="h-5 w-5" aria-hidden />
@@ -260,7 +274,7 @@ function VisitRow({ visit }: { visit: CalendarVisitData }) {
           </div>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -341,11 +355,13 @@ function EventDetailModal({
   onClose,
   onEdit,
   onDelete,
+  canDelete,
 }: {
   event: CalendarEventData | null;
   onClose: () => void;
   onEdit: (ev: CalendarEventData) => void;
   onDelete: (ev: CalendarEventData) => void;
+  canDelete: boolean; // 管理者：日報由来の予定も削除できる
 }) {
   if (!event) return null;
   const ev = event;
@@ -460,21 +476,103 @@ function EventDetailModal({
               <ArrowRight className="h-5 w-5" />
             </LinkButton>
           )}
-          {ev.source === "MANUAL" && (
+          {(ev.source === "MANUAL" || canDelete) && (
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => onEdit(ev)}>
-                <Pencil className="h-4 w-4" />
-                編集
-              </Button>
+              {ev.source === "MANUAL" && (
+                <Button variant="outline" className="flex-1" onClick={() => onEdit(ev)}>
+                  <Pencil className="h-4 w-4" />
+                  編集
+                </Button>
+              )}
               <Button
                 variant="ghost"
-                className="text-status-danger hover:bg-red-50"
+                className={cn("text-status-danger hover:bg-red-50", ev.source !== "MANUAL" && "flex-1")}
                 onClick={() => onDelete(ev)}
               >
                 <Trash2 className="h-4 w-4" />
                 削除
               </Button>
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 現場入り（配員）の詳細。管理者には削除ボタンを出す（onDelete があるときだけ）。
+function VisitDetailModal({
+  visit,
+  onClose,
+  onDelete,
+}: {
+  visit: CalendarVisitData | null;
+  onClose: () => void;
+  onDelete?: (v: CalendarVisitData) => void;
+}) {
+  if (!visit) return null;
+  const v = visit;
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end md:items-center md:justify-center md:p-6">
+      <button
+        type="button"
+        aria-label="閉じる"
+        onClick={onClose}
+        className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
+      />
+      <div className="relative max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-surface px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-float md:max-w-md md:rounded-3xl md:px-6 md:pb-6 md:pt-5">
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-line-strong md:hidden" />
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-ink">現場入り（配員）</h2>
+          <button
+            type="button"
+            aria-label="閉じる"
+            onClick={onClose}
+            className="-mr-1 flex h-10 w-10 items-center justify-center rounded-full text-ink-soft active:bg-surface-sunken"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <h3 className="flex items-center gap-2 text-xl font-bold leading-snug text-ink">
+          <HardHat className="h-5 w-5 shrink-0 text-brand-600" aria-hidden />
+          {v.site.name}
+        </h3>
+
+        <dl className="mt-3 space-y-2.5 text-[15px]">
+          <div className="flex items-start gap-2">
+            <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
+            <dd className="font-medium text-ink">{fmtDateWithDay(new Date(v.date))}</dd>
+          </div>
+          {v.visitors.length > 0 && (
+            <div>
+              <dt className="mb-1 text-xs font-semibold text-ink-muted">現場に入る人</dt>
+              <dd className="flex flex-wrap gap-1.5">
+                {v.visitors.map((p) => (
+                  <span key={p.id} className="flex items-center gap-1.5 rounded-full bg-surface-sunken py-1 pl-1 pr-3">
+                    <Avatar name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" />
+                    <span className="text-sm font-semibold text-ink">{p.name}</span>
+                  </span>
+                ))}
+              </dd>
+            </div>
+          )}
+        </dl>
+
+        <div className="mt-5 space-y-2">
+          <LinkButton href={`/sites/${v.site.id}`} size="lg" className="w-full">
+            現場詳細を見る
+            <ArrowRight className="h-5 w-5" />
+          </LinkButton>
+          {onDelete && (
+            <Button
+              variant="ghost"
+              className="w-full text-status-danger hover:bg-red-50"
+              onClick={() => onDelete(v)}
+            >
+              <Trash2 className="h-4 w-4" />
+              削除
+            </Button>
           )}
         </div>
       </div>
@@ -582,6 +680,7 @@ export function CalendarView({
   users,
   currentUserId,
   canSetPrivate = false,
+  canDelete = false,
 }: {
   events: CalendarEventData[];
   visits?: CalendarVisitData[];
@@ -593,6 +692,7 @@ export function CalendarView({
   users: UserOption[];
   currentUserId: string;
   canSetPrivate?: boolean; // 最高管理者のみ true（個人予定を「他の人に表示しない」にできる）
+  canDelete?: boolean; // 管理者のみ true（日報由来の予定・現場入りも削除できる）
 }) {
   const todayKey = jstDateKey();
   const router = useRouter();
@@ -639,6 +739,22 @@ export function CalendarView({
   // 削除は確認ダイアログを挟む（確認なし即削除の修正）
   const [deleteTarget, setDeleteTarget] = useState<CalendarEventData | null>(null);
 
+  const [selectedVisit, setSelectedVisit] = useState<CalendarVisitData | null>(null);
+  const [visitDeleteTarget, setVisitDeleteTarget] = useState<CalendarVisitData | null>(null);
+
+  async function handleVisitDeleteConfirm() {
+    if (!visitDeleteTarget) return;
+    const v = visitDeleteTarget;
+    const r = await deleteVisitGroup(v.site.id, v.date, v.visitors.map((p) => p.id));
+    if (r?.error) {
+      toast(r.error, { type: "error" });
+    } else {
+      toast("現場入りを削除しました");
+      setSelectedVisit(null);
+    }
+    setVisitDeleteTarget(null);
+  }
+
   async function handleDeleteConfirm() {
     if (!deleteTarget) return;
     const r = await deleteEvent(deleteTarget.id);
@@ -680,6 +796,7 @@ export function CalendarView({
   const dayHref = `/calendar?view=day&d=${activeDayKey}`;
 
   return (
+    <VisitSelectContext.Provider value={setSelectedVisit}>
     <div className="space-y-4">
       {/* ビュー切替（デスクトップでは間延びしないよう幅を抑える） */}
       <div className="relative grid grid-cols-3 gap-1 rounded-full bg-surface-sunken p-1 md:mx-auto md:w-80">
@@ -793,6 +910,30 @@ export function CalendarView({
         onClose={() => setSelectedEvent(null)}
         onEdit={handleEdit}
         onDelete={(ev) => setDeleteTarget(ev)}
+        canDelete={canDelete}
+      />
+
+      <VisitDetailModal
+        visit={selectedVisit}
+        onClose={() => setSelectedVisit(null)}
+        onDelete={canDelete ? (v) => setVisitDeleteTarget(v) : undefined}
+      />
+
+      <ConfirmDialog
+        open={visitDeleteTarget !== null}
+        onClose={() => setVisitDeleteTarget(null)}
+        onConfirm={handleVisitDeleteConfirm}
+        title="現場入りを削除しますか？"
+        description={
+          visitDeleteTarget ? (
+            <>
+              「{visitDeleteTarget.site.name}」の現場入り（
+              {visitDeleteTarget.visitors.map((p) => p.name).join("・") || "0名"}）を削除します。日報・予定は消えません。
+            </>
+          ) : undefined
+        }
+        confirmLabel="削除する"
+        danger
       />
 
       <ConfirmDialog
@@ -811,6 +952,7 @@ export function CalendarView({
         danger
       />
     </div>
+    </VisitSelectContext.Provider>
   );
 }
 
