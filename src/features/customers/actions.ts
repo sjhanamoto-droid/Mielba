@@ -195,22 +195,38 @@ export async function setContactInactive(formData: FormData) {
   revalidatePath(`/customers/${contact.customerId}`);
 }
 
-export async function deleteCustomer(formData: FormData) {
+// 顧客の削除（管理者）。紐づく現場は消さず、デフォルト顧客「その他」へ付け替えてから削除する
+// （現場・日報などの実績は残す）。「その他」自体は現場の受け皿なので削除不可。
+const DEFAULT_CUSTOMER_NAME = "その他";
+
+export async function deleteCustomer(id: string): Promise<{ error?: string }> {
   await requireAdmin();
-  const id = formData.get("id");
-  if (typeof id !== "string" || !id) return { error: "顧客が見つかりません" };
-  // 紐づく現場が1件以上ある場合は削除不可（先に現場を整理する）
-  const siteCount = await db.site.count({ where: { customerId: id } });
-  if (siteCount > 0) {
-    return {
-      error: `紐づく現場が ${siteCount} 件あるため削除できません。先に紐づく現場を削除してください`,
-    };
+  if (!id) return { error: "顧客が見つかりません" };
+  const customer = await db.customer.findUnique({ where: { id }, select: { name: true } });
+  if (!customer) return { error: "顧客が見つかりません" };
+  if (customer.name === DEFAULT_CUSTOMER_NAME) {
+    return { error: "「その他」は現場の受け皿のため削除できません" };
   }
   try {
-    await db.customer.delete({ where: { id } });
-  } catch {
+    await db.$transaction(async (tx) => {
+      const siteCount = await tx.site.count({ where: { customerId: id } });
+      if (siteCount > 0) {
+        const fallback =
+          (await tx.customer.findFirst({ where: { name: DEFAULT_CUSTOMER_NAME }, select: { id: true } })) ??
+          (await tx.customer.create({
+            data: { name: DEFAULT_CUSTOMER_NAME, memo: "顧客登録に該当しない現場の受け皿（デフォルト）" },
+            select: { id: true },
+          }));
+        await tx.site.updateMany({ where: { customerId: id }, data: { customerId: fallback.id } });
+      }
+      await tx.customer.delete({ where: { id } });
+    });
+  } catch (e) {
+    console.error("deleteCustomer failed:", e);
     return { error: "顧客の削除に失敗しました。時間をおいて再度お試しください" };
   }
   revalidatePath("/customers");
+  revalidatePath("/sites");
+  revalidatePath("/");
   redirect(`/customers?toast=${encodeURIComponent("顧客を削除しました")}`);
 }
