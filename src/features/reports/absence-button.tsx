@@ -33,7 +33,7 @@ export function AbsenceButton({
         type="button"
         variant="outline"
         size="lg"
-        className="w-full border-line-strong text-ink-soft"
+        className="w-full border-red-500 text-red-600 hover:bg-red-50 dark:border-red-500 dark:text-red-400 dark:hover:bg-red-950/30"
         onClick={() => setOpen(true)}
       >
         <UserX className="h-5 w-5" aria-hidden />
