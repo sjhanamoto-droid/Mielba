@@ -1100,8 +1100,9 @@ function MonthView({
           </div>
         </div>
 
-        {/* 選択日の予定リスト（デスクトップは右レール） */}
-        <div className="space-y-2.5 lg:col-span-1">
+        {/* 選択日の予定リスト（デスクトップは右レール）。月表示が縦に長くてもスクロールに追従し、
+            件数が多いときはレール内でスクロールする（上端はページ見出しの下） */}
+        <div className="space-y-2.5 lg:sticky lg:top-24 lg:col-span-1 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:pb-2">
           <div className="flex items-center justify-between gap-3 px-1">
             <h2 className="min-w-0">
               <DayHeading date={selectedDate} isToday={selectedKey === todayKey} />
