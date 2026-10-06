@@ -124,12 +124,11 @@ export default async function HomePage() {
       },
       orderBy: [{ startTime: "asc" }],
     }),
-    // 明日以降の自分の現場入り（「これからの予定」）
+    // 明日以降の自分の現場入り（「これからの予定」）。件数で切らず全部出す
     db.siteVisit.findMany({
       where: { userId: user.id, date: { gte: tomorrowStart } },
       include: { site: { select: { id: true, name: true, address: true } } },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-      take: 3,
     }),
     // 管理者向け：今日の全スタッフの現場入り（日報の到着状況用）
     admin
@@ -156,7 +155,7 @@ export default async function HomePage() {
   const visitSiteIds = Array.from(new Set(todayVisits.map((v) => v.siteId)));
   const upcomingSiteIds = Array.from(new Set(upcomingVisits.map((v) => v.siteId)));
   const lastUpcoming = upcomingVisits[upcomingVisits.length - 1]?.date;
-  const [crewVisits, openHandovers, upcomingEvents] = await Promise.all([
+  const [crewVisits, openHandovers, upcomingEvents, upcomingCrewVisits] = await Promise.all([
     visitSiteIds.length
       ? db.siteVisit.findMany({
           where: { siteId: { in: visitSiteIds }, date: today },
@@ -182,6 +181,14 @@ export default async function HomePage() {
           orderBy: [{ startTime: "asc" }],
         })
       : Promise.resolve([]),
+    // これからの予定：その日その現場に一緒に行く人（自分を含む全員）
+    upcomingSiteIds.length && lastUpcoming
+      ? db.siteVisit.findMany({
+          where: { siteId: { in: upcomingSiteIds }, date: { gte: tomorrowStart, lte: lastUpcoming } },
+          select: { siteId: true, date: true, user: { select: { name: true } } },
+          orderBy: { createdAt: "asc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   const reportBySiteId = new Map(myReportsToday.map((r) => [r.siteId, r]));
@@ -202,6 +209,12 @@ export default async function HomePage() {
   function siteEventToday(siteId: string) {
     const events = todayEvents.filter((e) => e.siteId === siteId && e.source === "MANUAL");
     return events.find((e) => e.participants.some((p) => p.userId === user.id)) ?? events[0];
+  }
+  function crewOn(siteId: string, date: Date): string[] {
+    const key = storedDateKey(date);
+    return upcomingCrewVisits
+      .filter((v) => v.siteId === siteId && storedDateKey(v.date) === key)
+      .map((v) => v.user.name);
   }
   function siteEventOn(siteId: string, date: Date) {
     const key = storedDateKey(date);
@@ -486,6 +499,7 @@ export default async function HomePage() {
                   const time = timeRange(siteEventOn(v.siteId, v.date));
                   const area = areaOf(v.site.address);
                   const holiday = holidayName(key);
+                  const crew = crewOn(v.siteId, v.date);
                   return (
                     <li key={v.id}>
                       <Link
@@ -502,9 +516,10 @@ export default async function HomePage() {
                         </div>
                         <span className="h-10 w-px shrink-0 bg-line" aria-hidden />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-bold text-ink">{v.site.name}</p>
+                          {/* 省略せず全部出す：現場名・時間・場所・行く人 */}
+                          <p className="break-words text-base font-bold text-ink">{v.site.name}</p>
                           {(holiday || time || area) && (
-                            <p className="mt-0.5 truncate text-sm text-ink-muted tnum">
+                            <p className="mt-0.5 break-words text-sm text-ink-muted tnum">
                               {holiday && (
                                 <span className="font-bold text-red-500">
                                   {holiday}
@@ -513,6 +528,9 @@ export default async function HomePage() {
                               )}
                               {[time, area].filter(Boolean).join(" ・ ")}
                             </p>
+                          )}
+                          {crew.length > 0 && (
+                            <p className="mt-0.5 break-words text-sm text-ink-soft">行く人 {crew.join("・")}</p>
                           )}
                         </div>
                         <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
