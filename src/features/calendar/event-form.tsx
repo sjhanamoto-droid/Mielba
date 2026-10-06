@@ -82,7 +82,12 @@ export function EventForm({
     new Set(event?.participants.map((p) => p.id) ?? []),
   );
   // 現場をその場で追加（登録の手間を減らす簡易導線）
-  const [siteList, setSiteList] = useState<SiteOption[]>(sites);
+  // 候補は進行中の現場のみ。編集中の予定の現場が進行中でなくても、選択が外れないよう候補に残す
+  const [siteList, setSiteList] = useState<SiteOption[]>(() =>
+    event?.site && !sites.some((s) => s.id === event.site!.id)
+      ? [{ id: event.site.id, name: event.site.name }, ...sites]
+      : sites,
+  );
   const [addingSite, setAddingSite] = useState(false);
   const [newSiteName, setNewSiteName] = useState("");
   const [addBusy, setAddBusy] = useState(false);

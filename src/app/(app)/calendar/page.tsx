@@ -99,8 +99,9 @@ export default async function CalendarPage({
       },
       orderBy: { date: "asc" },
     }),
-    // 予定追加用の現場候補：全員に全現場を表示（担当でなくても、登録済みの現場は誰でも選べる）
+    // 予定追加用の現場候補：進行中(ACTIVE)の現場のみ（担当でなくても誰でも選べる）
     db.site.findMany({
+      where: { siteStatus: "ACTIVE" },
       select: { id: true, name: true, address: true },
       orderBy: { updatedAt: "desc" },
     }),
