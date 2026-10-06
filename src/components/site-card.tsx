@@ -1,6 +1,9 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { MapPin, ChevronRight, AlertTriangle, Building2 } from "lucide-react";
+import { setSiteStage } from "@/features/sites/actions";
+import { useToast } from "@/components/ui/toast";
 import { CardLink } from "@/components/ui/card";
 import { Badge, SiteStatusBadge } from "@/components/ui/badge";
 import { PROJECT_TYPE_LABEL, SITE_STAGES, siteStageIndex, type ProjectType } from "@/lib/constants";
@@ -61,6 +64,71 @@ export function SiteStageStepper({
   );
 }
 
+// 一覧カード上で進捗をタップして変更する（管理者のみ）。カード全体がリンクのため、
+// タップはカード遷移させない（preventDefault + stopPropagation）。楽観更新＋失敗時ロールバック。
+function EditableStageStepper({
+  siteId,
+  index,
+  className,
+}: {
+  siteId: string;
+  index: number;
+  className?: string;
+}) {
+  const toast = useToast();
+  const [pending, start] = useTransition();
+  const [optimistic, setOptimistic] = useState<number | null>(null);
+  const current = optimistic ?? index;
+
+  function select(e: React.SyntheticEvent, i: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (i === current || pending) return;
+    setOptimistic(i);
+    start(async () => {
+      const r = await setSiteStage(siteId, i);
+      if (r?.error) {
+        toast(r.error, { type: "error" });
+        setOptimistic(null);
+      } else {
+        toast(`進捗を「${SITE_STAGES[i]}」にしました`);
+      }
+    });
+  }
+
+  return (
+    <div
+      className={cn("flex items-stretch gap-1 overflow-x-auto", pending && "opacity-70", className)}
+      aria-label="進捗ステータス（タップで変更）"
+    >
+      {SITE_STAGES.map((label, i) => {
+        const active = i === current;
+        return (
+          <span
+            key={label}
+            role="button"
+            tabIndex={0}
+            aria-pressed={active}
+            aria-disabled={pending}
+            onClick={(e) => select(e, i)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") select(e, i);
+            }}
+            className={cn(
+              "flex-1 cursor-pointer rounded-md px-1 py-2 text-center text-[10px] font-bold leading-none tracking-tight whitespace-nowrap transition-colors active:scale-[0.97]",
+              active
+                ? "bg-brand-500 text-white shadow-sm"
+                : "bg-surface-sunken text-ink-faint hover:bg-brand-50 hover:text-brand-700",
+            )}
+          >
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export type SiteCardData = {
   id: string;
   name: string;
@@ -76,9 +144,11 @@ export type SiteCardData = {
 export function SiteCard({
   site,
   meta,
+  stageEditable = false,
 }: {
   site: SiteCardData;
   meta?: React.ReactNode;
+  stageEditable?: boolean; // 管理者：一覧で進捗をタップして変更できる
 }) {
   const stageless = site.siteStatus === "SURVEY" || site.siteStatus === "DECLINED";
   return (
@@ -144,12 +214,19 @@ export function SiteCard({
 
       {/* 進捗ステータス（配線→…→完了。現在地のみ点灯）。
           現調・見送りの現場はまだ工程が始まっていないので出さない（状態ピルだけ）。 */}
-      {!stageless && (
-        <SiteStageStepper
-          index={siteStageIndex(site.siteStatus, site.projectStatus)}
-          className="mt-3"
-        />
-      )}
+      {!stageless &&
+        (stageEditable ? (
+          <EditableStageStepper
+            siteId={site.id}
+            index={siteStageIndex(site.siteStatus, site.projectStatus)}
+            className="mt-3"
+          />
+        ) : (
+          <SiteStageStepper
+            index={siteStageIndex(site.siteStatus, site.projectStatus)}
+            className="mt-3"
+          />
+        ))}
       {site.createdByName && (
         <p className="mt-2 truncate text-xs text-ink-faint">作成者: {site.createdByName}</p>
       )}
