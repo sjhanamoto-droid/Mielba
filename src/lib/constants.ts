@@ -169,6 +169,17 @@ export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
   SUBMITTED: "提出済",
 };
 
+// 現場不参加の理由（日報の「現場不参加」ボタン）。不参加の日報は稼働時間・人工に入れない。
+export const ABSENCE_REASONS = ["HOLIDAY", "SICK", "RESCHEDULED", "OTHER_SITE", "OTHER"] as const;
+export type AbsenceReason = (typeof ABSENCE_REASONS)[number];
+export const ABSENCE_REASON_LABEL: Record<AbsenceReason, string> = {
+  HOLIDAY: "休み",
+  SICK: "体調不良",
+  RESCHEDULED: "予定変更",
+  OTHER_SITE: "別現場",
+  OTHER: "その他",
+};
+
 // ── 写真 ──
 export type PhotoKind =
   | "WORK"

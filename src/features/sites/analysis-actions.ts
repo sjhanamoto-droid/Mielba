@@ -70,7 +70,7 @@ async function buildContext(siteId: string): Promise<
 
   const [reports, manDaysCount, handovers] = await Promise.all([
     db.dailyReport.findMany({
-      where: { siteId, status: "SUBMITTED" },
+      where: { siteId, status: "SUBMITTED", absent: false },
       orderBy: { workDate: "asc" },
       take: 100, // 直近100件まで（1件≒数百トークン想定）
       include: {
@@ -85,6 +85,7 @@ async function buildContext(siteId: string): Promise<
           where: {
             siteId,
             status: "SUBMITTED",
+            absent: false,
             workDate: { gte: site.actualStartDate },
           },
         })

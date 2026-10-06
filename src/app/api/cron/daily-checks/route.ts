@@ -80,7 +80,7 @@ async function handle(req: NextRequest) {
       if (!site.actualStartDate || !site.targetManDays) continue;
       // 下書きは人工に数えない（提出済みのみ。勤怠集計と同じ基準）
       const count = await db.dailyReport.count({
-        where: { siteId: site.id, workDate: { gte: site.actualStartDate }, status: "SUBMITTED" },
+        where: { siteId: site.id, workDate: { gte: site.actualStartDate }, status: "SUBMITTED", absent: false },
       });
       if (count <= site.targetManDays) continue;
 

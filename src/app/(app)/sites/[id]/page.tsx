@@ -170,6 +170,7 @@ export default async function SiteDetailPage({
           where: {
             siteId: site.id,
             status: "SUBMITTED",
+            absent: false, // 現場不参加は人工に入れない
             workDate: { gte: site.actualStartDate },
           },
         })

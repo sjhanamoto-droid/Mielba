@@ -47,7 +47,7 @@ export default async function AttendancePage({
   // 事務所作業（個人予定・日報なし）も稼働時間に計上する（予定の開始〜終了、終日は 8:00-17:00）。
   const [reports, officeEvents] = await Promise.all([
     db.dailyReport.findMany({
-      where: { workDate: range, status: "SUBMITTED" },
+      where: { workDate: range, status: "SUBMITTED", absent: false }, // 現場不参加は稼働に入れない
       select: {
         userId: true,
         startTime: true,

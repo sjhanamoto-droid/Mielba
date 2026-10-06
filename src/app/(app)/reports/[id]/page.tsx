@@ -19,7 +19,12 @@ import { CommentForm } from "@/features/reports/comment-form";
 import { DeleteReportButton } from "@/features/reports/delete-report-button";
 import { fmtDateWithDay, fmtDate, fmtDateTime, fmtYen, workHours } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { REPORT_STATUS_LABEL, type ReportStatus } from "@/lib/constants";
+import {
+  REPORT_STATUS_LABEL,
+  ABSENCE_REASON_LABEL,
+  type ReportStatus,
+  type AbsenceReason,
+} from "@/lib/constants";
 
 export default async function ReportDetailPage({
   params,
@@ -107,13 +112,22 @@ export default async function ReportDetailPage({
           >
             {report.site.name}
           </h1>
-          <p className="mt-1 flex items-center gap-1.5 text-[15px] text-ink-soft">
-            <Clock className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
-            <span className="font-semibold tnum text-ink">
-              {report.startTime} – {report.endTime}
-            </span>
-            <span>実働 {workHours(report.startTime, report.endTime)}</span>
-          </p>
+          {report.absent ? (
+            // 現場不参加：時間は持たない（稼働に入らない）
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-sunken px-3 py-1 text-sm font-bold text-ink-soft">
+              現場不参加
+              {report.absenceReason &&
+                `・${ABSENCE_REASON_LABEL[report.absenceReason as AbsenceReason] ?? report.absenceReason}`}
+            </p>
+          ) : (
+            <p className="mt-1 flex items-center gap-1.5 text-[15px] text-ink-soft">
+              <Clock className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+              <span className="font-semibold tnum text-ink">
+                {report.startTime} – {report.endTime}
+              </span>
+              <span>実働 {workHours(report.startTime, report.endTime)}</span>
+            </p>
+          )}
 
           <div className="mt-3 flex items-center gap-2 text-sm text-ink-muted">
             <Avatar name={report.user.name} color={report.user.avatarColor} image={report.user.avatarImage} size="sm" />

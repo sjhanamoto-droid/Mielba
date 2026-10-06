@@ -51,7 +51,7 @@ export default async function AttendanceUserPage({
     db.user.findUnique({ where: { id: userId }, select: { name: true, avatarColor: true, avatarImage: true } }),
     // 下書き(DRAFT)は勤怠に計上しない（提出して初めて稼働になる）
     db.dailyReport.findMany({
-      where: { userId, workDate: range, status: "SUBMITTED" },
+      where: { userId, workDate: range, status: "SUBMITTED", absent: false }, // 現場不参加は稼働に入れない
       select: {
         id: true,
         workDate: true,

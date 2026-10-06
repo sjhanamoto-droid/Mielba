@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { ReportForm } from "@/features/reports/report-form";
 import { MainVoteGate } from "@/features/reports/main-vote-gate";
+import { AbsenceButton } from "@/features/reports/absence-button";
 import { getMainVoteState } from "@/features/reports/main-vote-actions";
 import { getAppSettings } from "@/lib/settings";
 import { dedupeByName } from "@/lib/materials";
@@ -71,6 +72,10 @@ export default async function NewReportPage({
           backHref={`/sites/${site.id}/reports`}
         />
         <PageContainer size="narrow">
+          {/* 行かなかった人はメイン投票の前に「現場不参加」で済ませられる */}
+          <div className="mb-4">
+            <AbsenceButton siteId={site.id} dateKey={dateKey} />
+          </div>
           <MainVoteGate
             siteId={site.id}
             dateKey={dateKey}
@@ -133,6 +138,9 @@ export default async function NewReportPage({
         backHref={`/sites/${site.id}/reports`}
       />
       <PageContainer size="narrow">
+        <div className="mb-4">
+          <AbsenceButton siteId={site.id} dateKey={dateKey} />
+        </div>
         {mainName && (
           <div className="mb-4 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">
             <Crown className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />

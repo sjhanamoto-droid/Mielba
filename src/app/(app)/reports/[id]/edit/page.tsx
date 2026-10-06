@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { ReportForm, type ReportFormData } from "@/features/reports/report-form";
+import { AbsenceButton } from "@/features/reports/absence-button";
 import type { PhotoKind } from "@/lib/constants";
 import { dedupeByName } from "@/lib/materials";
 import { getAppSettings } from "@/lib/settings";
@@ -140,6 +141,12 @@ export default async function EditReportPage({
         backHref={`/reports/${report.id}`}
       />
       <PageContainer size="narrow">
+        {/* 不参加にする（既に不参加なら、下のフォームで提出し直すと通常の日報に戻る） */}
+        {!report.absent && (
+          <div className="mb-4">
+            <AbsenceButton siteId={report.site.id} dateKey={workDateKey} targetUserId={report.userId} />
+          </div>
+        )}
         <ReportForm
           mode="edit"
           siteId={report.site.id}

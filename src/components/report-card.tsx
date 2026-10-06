@@ -2,7 +2,12 @@ import Link from "next/link";
 import { ImageIcon, MessageSquare, Package, ChevronRight } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { fmtMonthDay, workHours, cn } from "@/lib/utils";
-import { REPORT_STATUS_LABEL, type ReportStatus } from "@/lib/constants";
+import {
+  REPORT_STATUS_LABEL,
+  ABSENCE_REASON_LABEL,
+  type ReportStatus,
+  type AbsenceReason,
+} from "@/lib/constants";
 
 export type ReportCardData = {
   id: string;
@@ -11,6 +16,8 @@ export type ReportCardData = {
   endTime: string;
   detail: string | null;
   status: string;
+  absent?: boolean; // 現場不参加（時間は表示しない）
+  absenceReason?: string | null;
   user: { name: string; avatarColor: string; avatarImage?: string | null };
   site?: { id: string; name: string } | null;
   _count?: { photos: number; comments: number; materials: number };
@@ -72,8 +79,18 @@ export function ReportCard({
         )}
         <p className="mt-0.5 truncate text-sm text-ink-muted tnum">
           {showDate && <span className="font-medium">{fmtMonthDay(report.workDate)} ・ </span>}
-          {report.startTime}–{report.endTime}
-          <span className="text-ink-faint">（{workHours(report.startTime, report.endTime)}）</span>
+          {report.absent ? (
+            <span className="font-semibold text-ink-soft">
+              現場不参加
+              {report.absenceReason &&
+                `（${ABSENCE_REASON_LABEL[report.absenceReason as AbsenceReason] ?? report.absenceReason}）`}
+            </span>
+          ) : (
+            <>
+              {report.startTime}–{report.endTime}
+              <span className="text-ink-faint">（{workHours(report.startTime, report.endTime)}）</span>
+            </>
+          )}
         </p>
 
         {report.detail && (

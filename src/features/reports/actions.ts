@@ -9,6 +9,7 @@ import { requireUser, isAdmin } from "@/lib/session";
 import { assistReport, type AiAssist } from "@/lib/ai";
 import { dateFromKey, jstDateKey } from "@/lib/date";
 import { removeFromWorkEvent } from "@/lib/work-event";
+import { ABSENCE_REASONS } from "@/lib/constants";
 import { parseAndValidatePhotosField, type ParsedPhotosField } from "@/lib/photos";
 
 // ───────────────────────── AIサポート（§4.3.3） ─────────────────────────
@@ -401,6 +402,9 @@ async function persist(
     startTime: d.startTime,
     endTime: d.endTime,
     status: d.status,
+    // 通常の日報として保存し直したら「現場不参加」は解除する
+    absent: false,
+    absenceReason: null,
   };
   // 在庫のあり/なし。未選択（下書き）は null、あり=true、なし=false。
   // ロック時（メインの人以外）は既存値を壊さないよう update には含めない（新規は null）。
@@ -526,6 +530,72 @@ export async function updateReport(formData: FormData) {
   const result = await persist(formData, user.id, reportId);
   if ("error" in result) return result;
   redirect(`/reports/${result.id}?toast=${encodeURIComponent(successToast(result.status))}`);
+}
+
+// ───────────────────────── 現場不参加（休み等） ─────────────────────────
+// 日報の代わりに「不参加＋理由」で提出する。提出済み扱い（未入力ゲート・通知は済み）だが、
+// 稼働時間・人工には入れない。その日の現場入り（配員）とカレンダーの作業予定の参加も外す。
+// 本人のほか、管理者は他人の日報（userId 指定）も不参加にできる。
+export async function submitAbsence(
+  siteId: string,
+  dateKey: string,
+  reason: string,
+  targetUserId?: string,
+): Promise<{ error: string } | void> {
+  const user = await requireUser();
+  const userId = targetUserId && targetUserId !== user.id ? targetUserId : user.id;
+  if (userId !== user.id && !isAdmin(user)) return { error: "権限がありません" };
+  if (!(ABSENCE_REASONS as readonly string[]).includes(reason)) {
+    return { error: "理由を選択してください" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || dateKey > jstDateKey()) {
+    return { error: "日付が不正です" };
+  }
+  const workDate = dateFromKey(dateKey);
+
+  let reportId: string;
+  try {
+    reportId = await db.$transaction(async (tx) => {
+      const prev = await tx.dailyReport.findUnique({
+        where: { siteId_userId_workDate: { siteId, userId, workDate } },
+        select: { submittedAt: true },
+      });
+      const data = {
+        absent: true,
+        absenceReason: reason,
+        status: "SUBMITTED",
+        submittedAt: prev?.submittedAt ?? new Date(),
+        // 行っていないので経費・引き継ぎは持たない
+        parkingFee: null,
+        trainFare: null,
+        handover: null,
+        handoverNone: null,
+        stockUsed: null,
+        stockNote: null,
+      };
+      const rep = await tx.dailyReport.upsert({
+        where: { siteId_userId_workDate: { siteId, userId, workDate } },
+        create: { siteId, userId, workDate, ...data },
+        update: data,
+        select: { id: true },
+      });
+      await tx.materialUse.deleteMany({ where: { reportId: rep.id } });
+      await tx.stockUse.deleteMany({ where: { reportId: rep.id } });
+      await tx.reportExpense.deleteMany({ where: { reportId: rep.id } });
+      await tx.handover.deleteMany({ where: { reportId: rep.id, resolvedAt: null } });
+      await tx.siteVisit.deleteMany({ where: { siteId, userId, date: workDate } });
+      return rep.id;
+    });
+    // カレンダーの「作業」予定からも外す（空になった自動予定は掃除）
+    await removeFromWorkEvent(siteId, userId, workDate);
+  } catch (e) {
+    console.error("[reports] 不参加の保存エラー:", e);
+    return { error: GENERIC_ERROR };
+  }
+  revalidateReport(reportId, siteId);
+  revalidatePath("/dispatch");
+  revalidatePath("/attendance");
+  redirect(`/reports/${reportId}?toast=${encodeURIComponent("現場不参加で提出しました")}`);
 }
 
 // ───────────────────────── コメント（§4.3.4） ─────────────────────────

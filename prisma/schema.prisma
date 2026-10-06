@@ -340,6 +340,8 @@ model DailyReport {
   timeChangeReason String? // 作業時間が 8:00-17:00 外のときの変更理由（必須）
   stockUsed   Boolean? // 在庫材料の使用 あり/なし
   stockNote   String? // 使用した在庫材料の内容（stockUsed=true 時）
+  absent        Boolean @default(false) // 現場不参加（休み等）。提出扱いだが稼働・人工には入れない
+  absenceReason String? // 不参加の理由: HOLIDAY(休み) | SICK(体調不良) | RESCHEDULED(予定変更) | OTHER_SITE(別現場) | OTHER(その他)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
