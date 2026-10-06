@@ -102,7 +102,14 @@ export default async function CalendarPage({
     // 予定追加用の現場候補：進行中(ACTIVE)の現場のみ（担当でなくても誰でも選べる）
     db.site.findMany({
       where: { siteStatus: "ACTIVE" },
-      select: { id: true, name: true, address: true },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        siteStatus: true,
+        projectStatus: true,
+        customer: { select: { name: true } },
+      },
       orderBy: { updatedAt: "desc" },
     }),
     // 担当（現場に行く人）候補：有効なユーザー一覧
@@ -182,7 +189,7 @@ export default async function CalendarPage({
           year={year}
           month={month}
           baseDay={baseDayKey}
-          sites={sites}
+          sites={sites.map(({ customer, ...s }) => ({ ...s, customerName: customer?.name ?? null }))}
           users={users}
           currentUserId={me.id}
           canSetPrivate={isSuperAdmin(me)}

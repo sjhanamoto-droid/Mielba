@@ -19,6 +19,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { EventForm } from "./event-form";
+import type { PickerSite } from "./site-picker";
 import { deleteEvent, deleteVisitGroup } from "./actions";
 import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
 import { Avatar } from "@/components/ui/avatar";
@@ -68,7 +69,7 @@ export type CalendarVisitData = {
   visitors: PersonRef[]; // その現場に入る人（配員・自己申告）
 };
 
-type SiteOption = { id: string; name: string; address?: string | null };
+type SiteOption = PickerSite;
 type UserOption = { id: string; name: string; avatarColor: string; avatarImage?: string | null };
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];

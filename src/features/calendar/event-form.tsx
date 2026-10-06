@@ -6,6 +6,7 @@ import { X, AlertCircle, CalendarPlus, Check, Save, Plus, Loader2, Eye, EyeOff }
 import { createEvent, updateEvent } from "./actions";
 import { quickCreateSite } from "@/features/sites/actions";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
+import { SitePicker, type PickerSite } from "./site-picker";
 import { buttonClass } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { SectionTitle } from "@/components/ui/card";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/constants";
 import { cn, toDateInputValue } from "@/lib/utils";
 
-type SiteOption = { id: string; name: string; address?: string | null };
+type SiteOption = PickerSite;
 type UserOption = { id: string; name: string; avatarColor?: string; avatarImage?: string | null };
 
 // 編集対象の予定（CalendarEventData と構造互換。参加者は id を含む）
@@ -132,9 +133,6 @@ export function EventForm({
       const site = siteList.find((s) => s.id === id);
       setLocation(site?.address ?? "");
     }
-  }
-  function onSiteChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    selectSite(e.target.value);
   }
   function selectMode(m: "site" | "personal") {
     setMode(m);
@@ -283,12 +281,7 @@ export function EventForm({
           {/* 現場（現場作業のときだけ表示） */}
           {mode === "site" && (
           <Field label="現場" htmlFor="siteId" hint="選ぶと参加者は現場入り＝日報に連動">
-            <Select id="siteId" name="siteId" value={siteId} onChange={onSiteChange}>
-              <option value="" disabled>現場を選択してください</option>
-              {siteList.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </Select>
+            <SitePicker sites={siteList} value={siteId} onChange={selectSite} />
 
             {/* 現場をその場で追加（登録の手間を減らす簡易導線） */}
             {addingSite ? (
