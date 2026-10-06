@@ -592,8 +592,24 @@ export async function submitAbsence(
       await tx.siteVisit.deleteMany({ where: { siteId, userId, date: workDate } });
       return rep.id;
     });
-    // カレンダーの「作業」予定からも外す（空になった自動予定は掃除）
-    await removeFromWorkEvent(siteId, userId, workDate);
+    // その日その現場の予定（作業に限らず）から本人を外す。誰もいなくなった予定は消す
+    //（不参加にしたら予定からも消えるように）。本人が担当なら残りの参加者に繰り上げる。
+    const events = await db.calendarEvent.findMany({
+      where: { siteId, date: workDate, participants: { some: { userId } } },
+      select: { id: true, ownerId: true },
+    });
+    for (const ev of events) {
+      await db.eventParticipant.deleteMany({ where: { eventId: ev.id, userId } });
+      const next = await db.eventParticipant.findFirst({
+        where: { eventId: ev.id },
+        select: { userId: true },
+      });
+      if (!next) {
+        await db.calendarEvent.delete({ where: { id: ev.id } });
+      } else if (ev.ownerId === userId) {
+        await db.calendarEvent.update({ where: { id: ev.id }, data: { ownerId: next.userId } });
+      }
+    }
   } catch (e) {
     console.error("[reports] 不参加の保存エラー:", e);
     return { error: GENERIC_ERROR };

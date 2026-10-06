@@ -104,6 +104,7 @@ export default async function SiteDetailPage({
       },
       partners: true,
       reports: {
+        where: { absent: false }, // 現場不参加は「最近の日報」に出さない
         include: {
           user: { select: { name: true, avatarColor: true, avatarImage: true } },
           _count: { select: { photos: true, comments: true, materials: true } },

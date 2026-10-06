@@ -55,7 +55,8 @@ export default async function ReportsHubPage({
         orderBy: { updatedAt: "desc" },
       }),
       db.dailyReport.findMany({
-        where: { userId: user.id },
+        // 現場不参加は一覧に出さない（記録は現場の日報一覧に残る）
+        where: { userId: user.id, absent: false },
         include: {
           user: { select: { name: true, avatarColor: true, avatarImage: true } },
           site: { select: { id: true, name: true } },
@@ -191,6 +192,8 @@ export default async function ReportsHubPage({
 
   // 1件多く取得して「さらに表示」の有無を判定する
   const fetched = await db.dailyReport.findMany({
+    // 現場不参加は一覧に出さない（記録は現場の日報一覧に残る）
+    where: { absent: false },
     include: {
       user: { select: { name: true, avatarColor: true, avatarImage: true } },
       site: { select: { id: true, name: true } },
