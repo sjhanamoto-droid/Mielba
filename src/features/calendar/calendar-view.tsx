@@ -143,11 +143,19 @@ function VisitChip({ visit, compact = false }: { visit: CalendarVisitData; compa
       title={names ? `現場入り：${visit.site.name}（${names}）` : `現場入り：${visit.site.name}`}
       className={cn(
         "flex w-full items-center gap-1 rounded-md border border-dashed border-brand-400 bg-brand-50/60 text-left text-brand-700 md:hover:bg-brand-50",
-        compact ? "px-1 py-0.5 text-[10px] font-semibold" : "px-2 py-1 text-[11px] font-semibold",
+        compact ? "items-start px-1 py-0.5 text-[10px] font-semibold leading-snug" : "px-2 py-1 text-[11px] font-semibold",
       )}
     >
-      <HardHat className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"} aria-hidden />
-      <span className="min-w-0 truncate">{visit.site.name}</span>
+      <HardHat className={compact ? "h-3 w-3 shrink-0 self-start mt-px" : "h-3.5 w-3.5 shrink-0"} aria-hidden />
+      {compact ? (
+        // 月表示：現場名と行く人を省略せず折り返して全部出す
+        <span className="min-w-0 break-words">
+          {visit.site.name}
+          {names && <span className="block text-[10px] font-medium text-brand-700/80">{names}</span>}
+        </span>
+      ) : (
+        <span className="min-w-0 truncate">{visit.site.name}</span>
+      )}
       {!compact && visit.visitors.length > 0 && (
         <span className="ml-auto flex shrink-0 items-center -space-x-1.5">
           {visit.visitors.slice(0, 3).map((p) => (
@@ -591,6 +599,8 @@ function MonthEventChip({
   onSelect: (ev: CalendarEventData) => void;
 }) {
   const color = eventColor(ev);
+  const people = ev.participants.length > 0 ? ev.participants : ev.owner ? [ev.owner] : [];
+  // 月表示でも省略しない：時刻・件名（折り返し）・行く人（全員の名前）をすべて出す
   return (
     <button
       type="button"
@@ -598,49 +608,21 @@ function MonthEventChip({
         e.stopPropagation();
         onSelect(ev);
       }}
-      className="flex items-center gap-1 rounded-md px-1 py-0.5 text-left text-[11px] font-medium leading-tight text-ink-soft hover:bg-surface-sunken"
+      className="flex w-full flex-col gap-0.5 rounded-md border-l-2 bg-surface-subtle px-1.5 py-1 text-left text-[11px] font-medium leading-snug text-ink-soft hover:bg-surface-sunken"
+      style={{ borderColor: color }}
     >
-      <span
-        className="h-1.5 w-1.5 shrink-0 rounded-full"
-        style={{ backgroundColor: color }}
-      />
-      {ev.isPrivate && (
-        <EyeOff className="h-2.5 w-2.5 shrink-0 text-ink-muted" aria-hidden />
-      )}
-      {!ev.allDay && ev.startTime && (
-        <span className="shrink-0 font-bold tnum text-ink-muted">
-          {ev.startTime}
+      <span className="flex flex-wrap items-baseline gap-x-1">
+        {ev.isPrivate && <EyeOff className="h-2.5 w-2.5 shrink-0 self-center text-ink-muted" aria-hidden />}
+        {!ev.allDay && ev.startTime && (
+          <span className="shrink-0 font-bold tnum text-ink-muted">{ev.startTime}</span>
+        )}
+        <span className="min-w-0 break-words font-semibold text-ink">{ev.title}</span>
+      </span>
+      {people.length > 0 && (
+        <span className="break-words text-[10px] leading-snug text-ink-muted">
+          {people.map((p) => p.name).join("・")}
         </span>
       )}
-      <span className="truncate">{ev.title}</span>
-      {/* 誰が行くか：参加者アバターを末尾に添える（最大2名＋残数） */}
-      {ev.participants.length > 0 ? (
-        <span className="ml-auto flex shrink-0 items-center -space-x-1.5">
-          {ev.participants.slice(0, 2).map((p) => (
-            <Avatar
-              key={p.id}
-              name={p.name}
-              color={p.avatarColor}
-              image={p.avatarImage}
-              size="sm"
-              className="h-4 w-4 text-[8px] ring-1 ring-white"
-            />
-          ))}
-          {ev.participants.length > 2 && (
-            <span className="pl-1 text-[9px] font-bold text-ink-muted">
-              +{ev.participants.length - 2}
-            </span>
-          )}
-        </span>
-      ) : ev.owner ? (
-        <Avatar
-          name={ev.owner.name}
-          color={ev.owner.avatarColor}
-          image={ev.owner.avatarImage}
-          size="sm"
-          className="ml-auto h-4 w-4 shrink-0 text-[8px]"
-        />
-      ) : null}
     </button>
   );
 }
@@ -1108,14 +1090,9 @@ function MonthView({
                     {dayVisits.map((v) => (
                       <VisitChip key={v.id} visit={v} compact />
                     ))}
-                    {dayEvents.slice(0, 3).map((ev) => (
+                    {dayEvents.map((ev) => (
                       <MonthEventChip key={ev.id} ev={ev} onSelect={onSelect} />
                     ))}
-                    {dayEvents.length > 3 && (
-                      <span className="px-1 text-[11px] font-bold text-ink-muted">
-                        ＋{dayEvents.length - 3}件
-                      </span>
-                    )}
                   </span>
                 </div>
               );
