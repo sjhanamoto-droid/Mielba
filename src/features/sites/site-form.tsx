@@ -231,10 +231,6 @@ export function SiteForm({
     <div className="space-y-4">
     <form ref={formRef} action={formAction} onSubmit={handleSubmit} className="space-y-4">
       <input type="hidden" name="entryMode" value={entryMode} />
-      {/* 種別は「詳細設定」にあり現調では出さないため、既定値を送る（受注済にしてから直せる） */}
-      {surveyMode && (
-        <input type="hidden" name="projectType" value={site?.projectType ?? "REFORM"} />
-      )}
 
       {/* どちらの現場を作るかを先に選ぶ（新規のみ。既存の区分は現場詳細から変える） */}
       {!isEdit && (
@@ -312,6 +308,15 @@ export function SiteForm({
           </Field>
           <Field label="案件名" required htmlFor="name" className="sm:col-span-2">
             <Input id="name" name="name" defaultValue={site?.name ?? ""} placeholder="◯◯邸 浴室改修工事" required />
+          </Field>
+          <Field label="種別" htmlFor="projectType" className="sm:col-span-2">
+            <Select id="projectType" name="projectType" defaultValue={site?.projectType ?? "REFORM"}>
+              {PROJECT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {PROJECT_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label="場所（住所）" required htmlFor="address" className="sm:col-span-2">
             <Input id="address" name="address" required defaultValue={site?.address ?? ""} placeholder="東京都◯◯区…" />
@@ -593,15 +598,6 @@ export function SiteForm({
           </Field>
           <Field label="工事コード" htmlFor="constructionCode">
             <Input id="constructionCode" name="constructionCode" defaultValue={site?.constructionCode ?? ""} />
-          </Field>
-          <Field label="種別" htmlFor="projectType">
-            <Select id="projectType" name="projectType" defaultValue={site?.projectType ?? "REFORM"}>
-              {PROJECT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {PROJECT_TYPE_LABEL[t]}
-                </option>
-              ))}
-            </Select>
           </Field>
           <Field label="受注日" htmlFor="receivedDate">
             <Input id="receivedDate" name="receivedDate" type="date" defaultValue={toDateInputValue(site?.receivedDate)} />
