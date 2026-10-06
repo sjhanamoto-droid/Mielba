@@ -166,6 +166,7 @@ model Site {
   drawingNoneReason String? // 図面が無い理由（図面なし時に必須）
   scheduleNoneReason String? // 工程表が無い理由（工程表なし時に必須）
   provisional      Boolean @default(false) // 仮登録（必須項目が未入力）
+  registrationConfirmed Boolean @default(false) // 管理者が「本登録にする」を押した（必須が欠けていても以後は仮登録に戻さない）
 
   memo             String? // 備考（現場情報に常設）。0024 で旧・現場メモ（SiteMemo）の本文を移植
 

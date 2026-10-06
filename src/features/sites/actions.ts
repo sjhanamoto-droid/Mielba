@@ -479,7 +479,7 @@ export async function updateSite(siteId: string, formData: FormData) {
   await requireUser();
   const existing = await db.site.findUnique({
     where: { id: siteId },
-    select: { createdById: true, siteStatus: true },
+    select: { createdById: true, siteStatus: true, registrationConfirmed: true },
   });
   if (!existing) return { error: "現場が見つかりません" };
   const parsed = parseSiteForm(formData);
@@ -495,7 +495,9 @@ export async function updateSite(siteId: string, formData: FormData) {
   // 現調・見送りは情報が揃っていないのが普通なので、仮登録の催促はしない
   //（受注済にする時に判定する。見送りに催促を出すと cron が毎日通知してしまう）
   const surveyEdit = isPreOrderSite(existing.siteStatus);
-  const provisional = surveyEdit ? false : computeProvisional(parsed.data, photoSets);
+  // 管理者が本登録にした現場は、必須が欠けていても仮登録に戻さない
+  const provisional =
+    surveyEdit || existing.registrationConfirmed ? false : computeProvisional(parsed.data, photoSets);
 
   // 現調・見送りの修正画面はキーBOX・資料・管理の欄を出さない。出していない欄はフォームから
   // 送られてこないため、toData をそのまま当てると既存値を null で消してしまう。
@@ -619,9 +621,11 @@ async function recomputeProvisional(siteId: string): Promise<boolean> {
       drawingNoneReason: true,
       scheduleNoneReason: true,
       photos: { select: { kind: true } },
+      registrationConfirmed: true,
     },
   });
   if (!site) return true;
+  if (site.registrationConfirmed) return false;
   return isRegistrationIncomplete(site, (kind) =>
     site.photos.filter((p) => p.kind === kind).length,
   );
@@ -707,6 +711,25 @@ export async function revertSiteToSurvey(
     // 現調の間は仮登録の催促をしない（受注済に戻すときに判定し直す）
     data: { siteStatus: "SURVEY", provisional: false },
   });
+  revalidateSiteViews(siteId);
+  return { ok: true };
+}
+
+// 仮登録→本登録（管理者以上）。図面やキーBOX番号が無い現場もあるため、必須項目が
+// 揃っていなくても本登録にできる。以後の編集でも仮登録には戻さない（registrationConfirmed）。
+export async function confirmSiteRegistration(
+  siteId: string,
+): Promise<{ ok?: true; error?: string }> {
+  await requireAdmin();
+  if (!siteId) return { error: "現場が見つかりません" };
+  try {
+    await db.site.update({
+      where: { id: siteId },
+      data: { provisional: false, registrationConfirmed: true },
+    });
+  } catch {
+    return { error: "本登録にできませんでした。時間をおいて再度お試しください" };
+  }
   revalidateSiteViews(siteId);
   return { ok: true };
 }

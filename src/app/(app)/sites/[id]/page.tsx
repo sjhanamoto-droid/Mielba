@@ -28,6 +28,7 @@ import { SiteMaterialSummary } from "@/features/materials/site-material-summary"
 import { SiteAnalysisCard } from "@/features/sites/site-analysis-card";
 import { SitePhotosSection, type SitePhotoItem } from "@/features/sites/site-photos-section";
 import { SiteDetailTabs } from "@/features/sites/site-detail-tabs";
+import { ConfirmRegistrationButton } from "@/features/sites/confirm-registration-button";
 import { Tabs } from "@/components/ui/tabs";
 import { todayRange, storedDateKey, jstDateKey } from "@/lib/date";
 import { cn, fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
@@ -332,10 +333,14 @@ export default async function SiteDetailPage({
   const provisionalBanner = site.provisional ? (
     <div className="alert-warn flex items-start gap-2">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <span>
-        この現場は<b className="font-bold">仮登録</b>です。本登録には
-        住所・キーBOX・キーBOX写真・図面/工程表 が必要です。
-      </span>
+      <div className="min-w-0">
+        <p>
+          この現場は<b className="font-bold">仮登録</b>です。本登録には
+          住所・キーBOX・キーBOX写真・図面/工程表 が必要です。
+        </p>
+        {/* 管理者以上は、図面等が無い現場でもそのまま本登録にできる */}
+        {admin && <ConfirmRegistrationButton siteId={site.id} siteName={site.name} />}
+      </div>
     </div>
   ) : null;
 
