@@ -327,8 +327,19 @@ function EventRow({
           ) : (
             <User className="h-3.5 w-3.5 shrink-0" />
           )}
-          <span className="min-w-0 truncate">{ownerLabel(ev)}</span>
+          <span className="min-w-0 break-words">{ownerLabel(ev)}</span>
         </p>
+        {/* 行く人は省略せず全員の名前を出す */}
+        {people.length > 0 && (
+          <p className="mt-1 flex min-w-0 items-start gap-1.5 text-sm text-ink-soft">
+            <span className="flex shrink-0 items-center -space-x-1.5 pt-0.5">
+              {people.slice(0, 3).map((p) => (
+                <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-5 w-5 text-[9px] ring-1 ring-white" />
+              ))}
+            </span>
+            <span className="min-w-0 break-words">{people.map((p) => p.name).join("・")}</span>
+          </p>
+        )}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Badge tone={SOURCE_BADGE_TONE[src] ?? "neutral"}>
             {EVENT_SOURCE_LABEL[src] ?? ev.source}
@@ -342,13 +353,6 @@ function EventRow({
             <span className="flex items-center gap-1 text-xs font-bold text-ink-muted">
               <EyeOff className="h-3 w-3" />
               自分だけ
-            </span>
-          )}
-          {people.length > 0 && (
-            <span className="flex items-center -space-x-1.5">
-              {people.slice(0, 6).map((p) => (
-                <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-5 w-5 text-[9px] ring-1 ring-white" />
-              ))}
             </span>
           )}
         </div>
@@ -1296,173 +1300,7 @@ function WeekView({
   );
 }
 
-// ───────────────────────── 日ビュー（全幅タイムライン） ─────────────────────────
-function toMin(hhmm: string | null): number | null {
-  if (!hhmm) return null;
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h)) return null;
-  return h * 60 + (m || 0);
-}
-
-type Placed = { ev: CalendarEventData; s: number; e: number; col: number; cols: number };
-
-// 時刻指定イベントに、重なりを考慮した列（col/cols）を割り当てる
-function layoutTimed(events: CalendarEventData[]): Placed[] {
-  const items: Placed[] = events
-    .map((ev) => {
-      const s = toMin(ev.startTime) ?? 8 * 60;
-      const e = Math.max(s + 30, toMin(ev.endTime) ?? s + 60);
-      return { ev, s, e, col: 0, cols: 1 };
-    })
-    .sort((a, b) => a.s - b.s || a.e - b.e);
-
-  let i = 0;
-  while (i < items.length) {
-    let j = i + 1;
-    let clusterEnd = items[i].e;
-    const cluster: Placed[] = [items[i]];
-    while (j < items.length && items[j].s < clusterEnd) {
-      cluster.push(items[j]);
-      clusterEnd = Math.max(clusterEnd, items[j].e);
-      j++;
-    }
-    const laneEnds: number[] = [];
-    for (const it of cluster) {
-      let placed = false;
-      for (let k = 0; k < laneEnds.length; k++) {
-        if (it.s >= laneEnds[k]) {
-          it.col = k;
-          laneEnds[k] = it.e;
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        it.col = laneEnds.length;
-        laneEnds.push(it.e);
-      }
-    }
-    for (const it of cluster) it.cols = laneEnds.length;
-    i = j;
-  }
-  return items;
-}
-
-function DayTimeline({
-  allDay,
-  timed,
-  visits,
-  onSelect,
-}: {
-  allDay: CalendarEventData[];
-  timed: CalendarEventData[];
-  visits: CalendarVisitData[];
-  onSelect: (ev: CalendarEventData) => void;
-}) {
-  const HOUR_H = 60;
-  const placed = layoutTimed(timed);
-  let minH = 7;
-  let maxH = 19;
-  if (placed.length) {
-    minH = Math.max(0, Math.min(minH, Math.floor(Math.min(...placed.map((p) => p.s)) / 60)));
-    maxH = Math.min(24, Math.max(maxH, Math.ceil(Math.max(...placed.map((p) => p.e)) / 60)));
-  }
-  if (maxH <= minH) maxH = minH + 1;
-  const hours: number[] = [];
-  for (let h = minH; h <= maxH; h++) hours.push(h);
-  const rangeStart = minH * 60;
-  const totalH = (maxH - minH) * HOUR_H;
-
-  return (
-    <div className="card p-3">
-      {/* 終日（現場入りも終日枠に表示） */}
-      {(allDay.length > 0 || visits.length > 0) && (
-        <div className="mb-3 flex gap-2 border-b border-line pb-3">
-          <div className="w-14 shrink-0 pt-1 text-right text-[11px] font-bold text-ink-muted">終日</div>
-          <div className="flex flex-1 flex-wrap gap-1.5">
-            {visits.map((v) => (
-              <VisitChip key={v.id} visit={v} />
-            ))}
-            {allDay.map((ev) => {
-              const color = eventColor(ev);
-              return (
-                <button
-                  key={ev.id}
-                  type="button"
-                  onClick={() => onSelect(ev)}
-                  className="rounded-lg border-l-[3px] px-2 py-1 text-left text-xs font-semibold text-ink transition-[filter] hover:brightness-95"
-                  style={{ borderColor: color, backgroundColor: `${color}14` }}
-                >
-                  {ev.title}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 時刻タイムライン */}
-      <div className="flex">
-        {/* 時刻ガター */}
-        <div className="w-14 shrink-0">
-          {hours.map((h) => (
-            <div key={h} style={{ height: HOUR_H }} className="relative">
-              <span className="absolute -top-2 right-2 text-[11px] font-bold tnum text-ink-faint">
-                {h}:00
-              </span>
-            </div>
-          ))}
-        </div>
-        {/* イベント領域 */}
-        <div className="relative flex-1 border-l border-line" style={{ height: totalH }}>
-          {hours.map((h, idx) => (
-            <div
-              key={h}
-              style={{ top: idx * HOUR_H }}
-              className="absolute inset-x-0 border-t border-line/60"
-            />
-          ))}
-          {placed.map(({ ev, s, e, col, cols }) => {
-            const top = ((s - rangeStart) / 60) * HOUR_H;
-            const height = Math.max(26, ((e - s) / 60) * HOUR_H - 3);
-            const widthPct = 100 / cols;
-            const color = eventColor(ev);
-            const people = ev.participants.length > 0 ? ev.participants : ev.owner ? [ev.owner] : [];
-            return (
-              <div
-                key={ev.id}
-                className="absolute px-0.5"
-                style={{ top, height, left: `${col * widthPct}%`, width: `${widthPct}%` }}
-              >
-                <button
-                  type="button"
-                  onClick={() => onSelect(ev)}
-                  className="h-full w-full overflow-hidden rounded-lg border-l-[3px] px-2 py-1 text-left transition-[filter] hover:brightness-95"
-                  style={{ borderColor: color, backgroundColor: `${color}16` }}
-                >
-                  <p className="text-[10px] font-bold tnum text-ink-muted">
-                    {ev.startTime}
-                    {ev.endTime ? `–${ev.endTime}` : ""}
-                  </p>
-                  <p className="truncate text-xs font-bold leading-tight text-ink">{ev.title}</p>
-                  <p className="truncate text-[10px] font-medium text-brand-600">{ownerLabel(ev)}</p>
-                  {people.length > 0 && height > 58 && (
-                    <div className="mt-1 flex items-center -space-x-1.5">
-                      {people.slice(0, 5).map((p) => (
-                        <Avatar key={p.id} name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" className="h-4 w-4 text-[8px] ring-1 ring-white" />
-                      ))}
-                    </div>
-                  )}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
+// ───────────────────────── 日ビュー（省略のないリスト） ─────────────────────────
 function DayView({
   baseDay,
   byDay,
@@ -1524,8 +1362,9 @@ function DayView({
         <EmptyState title="この日の予定はありません" description="「＋予定を追加」から登録できます" />
       ) : (
         <>
-          {/* スマホ：リスト */}
-          <div className="space-y-3 md:hidden">
+          {/* 日表示はスマホ・PCとも省略のないリストで全部出す
+              （時刻の枠に収めるタイムラインでは長い現場名や大人数が切れてしまうため） */}
+          <div className="space-y-3">
             {dayVisits.length > 0 && (
               <div className="space-y-2">
                 <h3 className="px-1 text-base font-bold text-ink-soft">現場入り</h3>
@@ -1556,10 +1395,6 @@ function DayView({
                 </div>
               </div>
             )}
-          </div>
-          {/* PC/タブレット：全幅タイムライン */}
-          <div className="hidden md:block">
-            <DayTimeline allDay={allDayEvents} timed={timedEvents} visits={dayVisits} onSelect={onSelect} />
           </div>
         </>
       )}
