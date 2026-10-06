@@ -19,7 +19,7 @@ export function DeleteReportButton({ reportId, label }: { reportId: string; labe
     <div className="rounded-2xl border border-red-200 bg-red-50/60 p-4 dark:border-red-900 dark:bg-red-950/30">
       <p className="text-sm font-bold text-red-700 dark:text-red-300">管理者メニュー</p>
       <p className="mt-1 text-xs leading-relaxed text-red-600/90 dark:text-red-300/80">
-        日報を削除すると、写真・経費・材料・コメントなども一緒に消えます。この操作は取り消せません。
+        日報を削除すると、写真・経費・材料・コメントと、その日の現場入りも一緒に消えます。この操作は取り消せません。
       </p>
       <Button
         type="button"
@@ -40,7 +40,7 @@ export function DeleteReportButton({ reportId, label }: { reportId: string; labe
         description={
           <>
             「<span className="font-bold">{label}</span>」の日報を削除します。
-            写真・経費・材料・コメントなども全て消えます。この操作は取り消せません。
+            写真・経費・材料・コメントと、その日の現場入り（配員）も消えます。この操作は取り消せません。
           </>
         }
         confirmLabel="削除する"

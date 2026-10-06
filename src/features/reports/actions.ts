@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
 import { assistReport, type AiAssist } from "@/lib/ai";
 import { dateFromKey, jstDateKey } from "@/lib/date";
+import { removeFromWorkEvent } from "@/lib/work-event";
 import { parseAndValidatePhotosField, type ParsedPhotosField } from "@/lib/photos";
 
 // ───────────────────────── AIサポート（§4.3.3） ─────────────────────────
@@ -565,7 +566,7 @@ export async function deleteReport(id: string) {
   try {
     report = await db.dailyReport.findUnique({
       where: { id },
-      select: { userId: true, siteId: true },
+      select: { userId: true, siteId: true, workDate: true },
     });
   } catch (e) {
     console.error("[reports] 削除エラー:", e);
@@ -581,8 +582,14 @@ export async function deleteReport(id: string) {
     await db.$transaction([
       db.handover.deleteMany({ where: { reportId: id, resolvedAt: null } }),
       db.calendarEvent.deleteMany({ where: { reportId: id } }),
+      // その日のその人の現場入りも消す（残ると「日報未入力」として再入力を求められるため）
+      db.siteVisit.deleteMany({
+        where: { siteId: report.siteId, userId: report.userId, date: report.workDate },
+      }),
       db.dailyReport.delete({ where: { id } }),
     ]);
+    // カレンダーの「作業」予定からも外す（空になった自動予定は掃除）
+    await removeFromWorkEvent(report.siteId, report.userId, report.workDate);
   } catch (e) {
     console.error("[reports] 削除エラー:", e);
     return { error: "削除に失敗しました。もう一度お試しください。" };
