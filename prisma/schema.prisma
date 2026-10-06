@@ -342,6 +342,7 @@ model DailyReport {
   stockNote   String? // 使用した在庫材料の内容（stockUsed=true 時）
   absent        Boolean @default(false) // 現場不参加（休み等）。提出扱いだが稼働・人工には入れない
   absenceReason String? // 不参加の理由: HOLIDAY(休み) | SICK(体調不良) | RESCHEDULED(予定変更) | OTHER_SITE(別現場) | OTHER(その他)
+  absenceNote   String? // 不参加の理由が「その他」のときの1行メモ
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

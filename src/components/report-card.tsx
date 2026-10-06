@@ -18,6 +18,7 @@ export type ReportCardData = {
   status: string;
   absent?: boolean; // 現場不参加（時間は表示しない）
   absenceReason?: string | null;
+  absenceNote?: string | null;
   user: { name: string; avatarColor: string; avatarImage?: string | null };
   site?: { id: string; name: string } | null;
   _count?: { photos: number; comments: number; materials: number };
@@ -83,7 +84,7 @@ export function ReportCard({
             <span className="font-semibold text-ink-soft">
               現場不参加
               {report.absenceReason &&
-                `（${ABSENCE_REASON_LABEL[report.absenceReason as AbsenceReason] ?? report.absenceReason}）`}
+                `（${ABSENCE_REASON_LABEL[report.absenceReason as AbsenceReason] ?? report.absenceReason}${report.absenceNote ? `：${report.absenceNote}` : ""}）`}
             </span>
           ) : (
             <>

@@ -118,6 +118,7 @@ export default async function ReportDetailPage({
               現場不参加
               {report.absenceReason &&
                 `・${ABSENCE_REASON_LABEL[report.absenceReason as AbsenceReason] ?? report.absenceReason}`}
+              {report.absenceNote && `（${report.absenceNote}）`}
             </p>
           ) : (
             <p className="mt-1 flex items-center gap-1.5 text-[15px] text-ink-soft">

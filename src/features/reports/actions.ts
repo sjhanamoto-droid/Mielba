@@ -405,6 +405,7 @@ async function persist(
     // 通常の日報として保存し直したら「現場不参加」は解除する
     absent: false,
     absenceReason: null,
+    absenceNote: null,
   };
   // 在庫のあり/なし。未選択（下書き）は null、あり=true、なし=false。
   // ロック時（メインの人以外）は既存値を壊さないよう update には含めない（新規は null）。
@@ -540,6 +541,7 @@ export async function submitAbsence(
   siteId: string,
   dateKey: string,
   reason: string,
+  note: string | null,
   targetUserId?: string,
 ): Promise<{ error: string } | void> {
   const user = await requireUser();
@@ -548,6 +550,9 @@ export async function submitAbsence(
   if (!(ABSENCE_REASONS as readonly string[]).includes(reason)) {
     return { error: "理由を選択してください" };
   }
+  // 「その他」は1行の理由が必須（それ以外の理由ではメモを持たない）
+  const absenceNote = reason === "OTHER" ? (note ?? "").trim().slice(0, 200) : null;
+  if (reason === "OTHER" && !absenceNote) return { error: "その他の理由を入力してください" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || dateKey > jstDateKey()) {
     return { error: "日付が不正です" };
   }
@@ -563,6 +568,7 @@ export async function submitAbsence(
       const data = {
         absent: true,
         absenceReason: reason,
+        absenceNote,
         status: "SUBMITTED",
         submittedAt: prev?.submittedAt ?? new Date(),
         // 行っていないので経費・引き継ぎは持たない

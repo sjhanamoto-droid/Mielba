@@ -4,6 +4,7 @@ import { useState } from "react";
 import { UserX } from "lucide-react";
 import { submitAbsence } from "./actions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/form";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { ABSENCE_REASONS, ABSENCE_REASON_LABEL, type AbsenceReason } from "@/lib/constants";
@@ -24,6 +25,9 @@ export function AbsenceButton({
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<AbsenceReason | null>(null);
+  const [note, setNote] = useState("");
+  // 「その他」は1行の理由入力が必須
+  const ready = reason !== null && (reason !== "OTHER" || note.trim() !== "");
   const [confirming, setConfirming] = useState(false);
   const toast = useToast();
 
@@ -71,6 +75,17 @@ export function AbsenceButton({
             </button>
           ))}
         </div>
+        {reason === "OTHER" && (
+          <Input
+            className="mt-2"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={200}
+            placeholder="理由を入力（例：車両トラブル）"
+            aria-label="その他の理由"
+            autoFocus
+          />
+        )}
       </div>
       <div className="flex gap-2">
         <Button
@@ -86,7 +101,7 @@ export function AbsenceButton({
         <Button
           type="button"
           className="flex-1"
-          disabled={!reason}
+          disabled={!ready}
           onClick={() => setConfirming(true)}
         >
           不参加で提出
@@ -100,7 +115,10 @@ export function AbsenceButton({
         description={
           reason ? (
             <>
-              理由「<span className="font-bold">{ABSENCE_REASON_LABEL[reason]}</span>」で提出します。
+              理由「<span className="font-bold">
+                {ABSENCE_REASON_LABEL[reason]}
+                {reason === "OTHER" && note.trim() ? `：${note.trim()}` : ""}
+              </span>」で提出します。
               この日は稼働時間に入らず、現場入りからも外れます。
             </>
           ) : undefined
@@ -108,7 +126,7 @@ export function AbsenceButton({
         confirmLabel="提出する"
         onConfirm={async () => {
           if (!reason) return;
-          const r = await submitAbsence(siteId, dateKey, reason, targetUserId);
+          const r = await submitAbsence(siteId, dateKey, reason, note, targetUserId);
           // 成功時はサーバー側で日報詳細へリダイレクトされる
           if (r?.error) {
             toast(r.error, { type: "error" });
