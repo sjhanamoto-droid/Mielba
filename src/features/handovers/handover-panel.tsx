@@ -7,13 +7,11 @@ import {
   CheckCheck,
   ChevronDown,
   ChevronUp,
-  Clock,
   History,
   Loader2,
   RotateCcw,
 } from "lucide-react";
 import { closeHandover, markHandoverRead, reopenHandover } from "./actions";
-import { useReadCountdown } from "./use-read-countdown";
 import { buttonClass } from "@/components/ui/button";
 import { jstDateTimeLabel } from "@/lib/date";
 import { cn } from "@/lib/utils";
@@ -217,7 +215,8 @@ function OpenHandoverItem({
   onClose: () => void;
 }) {
   // 未確認のときだけ、読む時間を取ってから押せるようにする
-  const left = useReadCountdown(item.content, !item.readByMe);
+  // 「内容を確認しました」にチェックを入れてから確認できる
+  const [checked, setChecked] = useState(false);
 
   return (
     <li className="rounded-xl border border-amber-200/70 bg-white/70 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
@@ -253,21 +252,31 @@ function OpenHandoverItem({
             あなたは確認済み
           </span>
         ) : (
+          <>
+          <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={busy}
+              onChange={(e) => setChecked(e.target.checked)}
+              className="h-5 w-5 shrink-0 accent-brand-600"
+            />
+            内容を確認しました
+          </label>
           <button
             type="button"
             onClick={onRead}
-            disabled={busy || left > 0}
+            disabled={busy || !checked}
             className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-white px-4 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200 dark:hover:bg-amber-900/60"
           >
             {busy ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : left > 0 ? (
-              <Clock className="h-4 w-4" aria-hidden />
             ) : (
               <Check className="h-4 w-4" aria-hidden />
             )}
-            {left > 0 ? `よく読んでください（あと${left}秒）` : "確認しました"}
+            確認しました
           </button>
+          </>
         )}
         {item.canClose && (
           <button

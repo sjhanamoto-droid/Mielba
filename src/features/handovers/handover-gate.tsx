@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowDown, Check, Clock, Loader2, MessageSquareWarning } from "lucide-react";
 import { markHandoverRead } from "./actions";
-import { useReadCountdown } from "./use-read-countdown";
 import type { PendingHandover } from "@/lib/pending-handovers";
 import { jstDateTimeLabel } from "@/lib/date";
 import { cn } from "@/lib/utils";
@@ -16,7 +15,7 @@ const FAIL_MSG = "通信に失敗しました。もう一度お試しくださ�
  *
  * しっかり読ませるため、
  * - 1件ずつ表示する（まとめて確認はできない）
- * - 本文を最後までスクロールし、文字数に応じた秒数が経つまで「確認しました」を押せない
+ * - 本文を最後までスクロールし、「内容を確認しました」にチェックを入れるまで「確認しました」を押せない
  * 確認すると HandoverRead に記録され、layout が再計算されて残りが減っていく。
  * （z-[85]：未入力日報ゲート z-[90] より後ろ、未読通知ゲート z-[80] より前）
  */
@@ -99,7 +98,7 @@ function HandoverReadCard({
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [reachedEnd, setReachedEnd] = useState(false);
-  const left = useReadCountdown(item.content);
+  const [checked, setChecked] = useState(false);
 
   function checkEnd() {
     const el = scrollRef.current;
@@ -119,7 +118,7 @@ function HandoverReadCard({
     return () => ro.disconnect();
   }, []);
 
-  const ready = reachedEnd && left <= 0;
+  const ready = reachedEnd && checked;
 
   function confirm() {
     if (!ready || pending) return;
@@ -139,8 +138,8 @@ function HandoverReadCard({
     ? "記録しています…"
     : !reachedEnd
       ? "最後まで読んでください"
-      : left > 0
-        ? `よく読んでください（あと${left}秒）`
+      : !checked
+        ? "チェックを入れてください"
         : isLast
           ? "確認しました"
           : "確認しました（次へ）";
@@ -177,6 +176,24 @@ function HandoverReadCard({
       {/* フッター：読み終わるまで押せない確認ボタン */}
       <div className="border-t border-line bg-surface px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto w-full max-w-3xl space-y-2">
+          <label
+            className={cn(
+              "flex min-h-[48px] cursor-pointer items-center gap-3 rounded-2xl border px-4 py-2 text-base font-bold transition-colors",
+              checked
+                ? "border-brand-400 bg-brand-50 text-brand-700"
+                : "border-line-strong bg-surface text-ink",
+              !reachedEnd && "cursor-not-allowed opacity-50",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={!reachedEnd || pending}
+              onChange={(e) => setChecked(e.target.checked)}
+              className="h-6 w-6 shrink-0 accent-brand-600"
+            />
+            引き継ぎの内容を読んで確認しました
+          </label>
           {error && (
             <p role="alert" className="text-center text-xs font-semibold text-status-danger">
               {error}
