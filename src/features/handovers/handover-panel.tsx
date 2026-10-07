@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import {
-  AlertTriangle,
+  AlertCircle,
   Check,
   CheckCheck,
   ChevronDown,
@@ -27,6 +27,7 @@ export interface HandoverPanelOpenItem {
   createdByName?: string;
   readers: { name: string; readAt: Date | string }[];
   unreadNames: string[];
+  visitors: { name: string; readAt: Date | string | null }[];
   readByMe: boolean;
   canClose: boolean;
 }
@@ -71,6 +72,10 @@ export function HandoverPanel({
   const autoOpen = resolved.some((h) => touched.has(h.id));
   const historyOpen = showHistory || autoOpen;
   const unreadByMe = open.filter((h) => !h.readByMe).length;
+  // 自分がまだ確認していないものを先に（それぞれの中は元の並び）
+  const ordered = [...open].sort((a, b) => Number(a.readByMe) - Number(b.readByMe));
+  // 今日この現場に入る人のうち、まだ読んでいない人がいる引き継ぎがあるか
+  const teamUnread = open.some((h) => h.unreadNames.length > 0);
 
   function run(id: string, fn: () => Promise<ActionResult>) {
     setBusyId(id);
@@ -90,33 +95,34 @@ export function HandoverPanel({
 
   return (
     <div className="space-y-2.5">
-      {/* 対応中：現場に入る前に必ず読むもの */}
-      {open.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/40">
-          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
-            <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />
-            <p className="text-sm font-bold">
-              対応中の引き継ぎが{open.length}件あります
-              {unreadByMe > 0 && `（あなたは${unreadByMe}件未確認）`}
-            </p>
-          </div>
-          <ul className="mt-3 space-y-2">
-            {open.map((h) => (
-              <OpenHandoverItem
-                // 内容が書き換わったら待ち時間を数え直す
-                key={`${h.id}:${h.content}`}
-                item={h}
-                busy={busyId === h.id}
-                onRead={() => run(h.id, () => markHandoverRead(h.id))}
-                onClose={() => run(h.id, () => closeHandover(h.id))}
-              />
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-amber-700/80 dark:text-amber-300/80">
-            「確認しました」は自分の分だけ記録され、他の人の画面からは消えません。
-            対応が終わったら、書いた人か管理者が「対応完了」にしてください。
+      {/* 対応中：今日の担当に未確認があれば赤い注意を先頭に */}
+      {open.length > 0 && (teamUnread || unreadByMe > 0) && (
+        <div className="rounded-2xl border border-red-200 border-t-4 border-t-red-500 bg-red-50/70 px-4 py-3.5 dark:border-red-900/60 dark:border-t-red-500 dark:bg-red-950/30">
+          <p className="flex items-center gap-2 text-base font-bold text-red-600 dark:text-red-400">
+            <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
+            {teamUnread ? "今日の担当に未確認があります" : `あなたが未確認の引き継ぎが${unreadByMe}件あります`}
+          </p>
+          <p className="mt-1 text-sm text-ink-soft">
+            {teamUnread ? "各引き継ぎの確認状況を確認してください。" : "内容を読んで「確認しました」を押してください。"}
           </p>
         </div>
+      )}
+
+      {/* 対応中の引き継ぎ（隠さず全件を開いた状態で並べる） */}
+      {open.length > 0 && (
+        <ol className="space-y-3">
+          {ordered.map((h, i) => (
+            <OpenHandoverItem
+              // 内容が書き換わったらチェックをやり直す
+              key={`${h.id}:${h.content}`}
+              item={h}
+              no={i + 1}
+              busy={busyId === h.id}
+              onRead={() => run(h.id, () => markHandoverRead(h.id))}
+              onClose={() => run(h.id, () => closeHandover(h.id))}
+            />
+          ))}
+        </ol>
       )}
 
       {error && (
@@ -205,90 +211,116 @@ export function HandoverPanel({
 
 function OpenHandoverItem({
   item,
+  no,
   busy,
   onRead,
   onClose,
 }: {
   item: HandoverPanelOpenItem;
+  no: number;
   busy: boolean;
   onRead: () => void;
   onClose: () => void;
 }) {
-  // 未確認のときだけ、読む時間を取ってから押せるようにする
   // 「内容を確認しました」にチェックを入れてから確認できる
   const [checked, setChecked] = useState(false);
+  const unread = !item.readByMe;
+  const num = String(no).padStart(2, "0");
 
   return (
-    <li className="rounded-xl border border-amber-200/70 bg-white/70 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
-      <ClampedText
-        text={item.content}
-        className="text-sm leading-relaxed text-amber-900 dark:text-amber-100"
-        toggleClassName="text-amber-800 dark:text-amber-300"
-      />
-      <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-300/80">{meta(item)}</p>
+    <li className="card overflow-hidden">
+      <div className="px-4 pb-4 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm tracking-wider text-ink-muted tnum">引き継ぎ {num}</p>
+          {unread ? (
+            <span className="flex shrink-0 items-center gap-1.5 text-sm font-bold text-red-600 dark:text-red-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden />
+              要確認
+            </span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1 text-sm text-emerald-700 dark:text-emerald-300">
+              <CheckCheck className="h-4 w-4" aria-hidden />
+              あなたは確認済み
+            </span>
+          )}
+        </div>
+        {/* 対応中の引き継ぎは長文でも畳まず全文を出す */}
+        <p className="mt-3 whitespace-pre-wrap break-words text-lg leading-[1.9] text-ink">{item.content}</p>
+        <p className="mt-3 text-xs text-ink-muted tnum">{meta(item)}</p>
+      </div>
 
-      {/* 確認状況：誰がいつ読んだか／今日入るのにまだの人 */}
-      {(item.readers.length > 0 || item.unreadNames.length > 0) && (
-        <div className="mt-2 space-y-0.5 text-xs">
-          {item.readers.length > 0 && (
-            <p className="text-emerald-700 dark:text-emerald-300">
-              <CheckCheck className="mr-1 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />
-              確認済み：
-              {item.readers.map((r) => `${r.name}（${jstDateTimeLabel(r.readAt)}）`).join("、")}
-            </p>
-          )}
-          {item.unreadNames.length > 0 && (
-            <p className="font-semibold text-status-danger">
-              今日の担当で未確認：{item.unreadNames.join("、")}
-            </p>
-          )}
+      {/* 今日の担当者の確認状況（未確認は赤い行） */}
+      {item.visitors.length > 0 && (
+        <div className="border-t border-line px-4 py-3">
+          <p className="text-xs text-ink-muted">今日の担当者の確認状況</p>
+          <ul className="mt-2 space-y-1">
+            {item.visitors.map((v) =>
+              v.readAt ? (
+                <li key={v.name} className="flex items-start justify-between gap-3 px-3 py-1.5 text-sm">
+                  <span className="text-ink-soft">{v.name}</span>
+                  <span className="text-right text-emerald-700 dark:text-emerald-300">
+                    <span className="flex items-center justify-end gap-1">
+                      <Check className="h-3.5 w-3.5" aria-hidden />
+                      確認済み
+                    </span>
+                    <span className="block text-xs tnum">{jstDateTimeLabel(v.readAt)}</span>
+                  </span>
+                </li>
+              ) : (
+                <li
+                  key={v.name}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600 dark:bg-red-950/30 dark:text-red-400"
+                >
+                  <span>{v.name}</span>
+                  <span className="font-semibold">未確認</span>
+                </li>
+              ),
+            )}
+          </ul>
         </div>
       )}
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {item.readByMe ? (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-            <Check className="h-4 w-4" aria-hidden />
-            あなたは確認済み
-          </span>
-        ) : (
-          <>
-          <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
-            <input
-              type="checkbox"
-              checked={checked}
+      {/* 自分が未確認なら、チェックしてから確認。書いた人・管理者は対応完了にできる */}
+      {(unread || item.canClose) && (
+        <div className="space-y-3 border-t border-line px-4 py-4">
+          {unread && (
+            <>
+              <label className="flex min-h-[44px] cursor-pointer items-center gap-3 text-base font-medium text-ink">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={busy}
+                  onChange={(e) => setChecked(e.target.checked)}
+                  className="h-6 w-6 shrink-0 rounded-md accent-brand-600"
+                />
+                内容を確認しました
+              </label>
+              <button
+                type="button"
+                onClick={onRead}
+                disabled={busy || !checked}
+                className={cn(
+                  "flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl px-4 text-base font-bold transition disabled:cursor-not-allowed",
+                  checked ? "bg-brand-600 text-white hover:bg-brand-700" : "bg-surface-sunken text-ink-muted",
+                )}
+              >
+                {busy ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <Check className="h-5 w-5" aria-hidden />}
+                確認しました
+              </button>
+            </>
+          )}
+          {item.canClose && (
+            <button
+              type="button"
+              onClick={onClose}
               disabled={busy}
-              onChange={(e) => setChecked(e.target.checked)}
-              className="h-5 w-5 shrink-0 accent-brand-600"
-            />
-            内容を確認しました
-          </label>
-          <button
-            type="button"
-            onClick={onRead}
-            disabled={busy || !checked}
-            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-white px-4 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200 dark:hover:bg-amber-900/60"
-          >
-            {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <Check className="h-4 w-4" aria-hidden />
-            )}
-            確認しました
-          </button>
-          </>
-        )}
-        {item.canClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className={buttonClass({ variant: "outline", size: "sm", className: "ml-auto" })}
-          >
-            対応完了にする
-          </button>
-        )}
-      </div>
+              className={buttonClass({ variant: "outline", size: "sm", className: "w-full" })}
+            >
+              対応完了にする
+            </button>
+          )}
+        </div>
+      )}
     </li>
   );
 }

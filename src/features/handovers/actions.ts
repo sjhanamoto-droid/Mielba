@@ -25,6 +25,8 @@ export interface OpenHandover {
   readers: HandoverReader[];
   /** 今日この現場に入るのに、まだ確認していない人 */
   unreadNames: string[];
+  /** 今日この現場に入る人ごとの確認状況（書いた本人は除く。未確認は readAt=null） */
+  visitors: { name: string; readAt: Date | null }[];
   /** 見ている本人が確認済みか（自分で書いたものは確認済み扱い） */
   readByMe: boolean;
   /** 見ている本人が「対応完了」にできるか（起票者・管理者） */
@@ -103,6 +105,12 @@ export async function getOpenHandovers(
       unreadNames: visitorIds
         .filter((id) => id !== h.createdById && !readIds.has(id))
         .map((id) => nameById.get(id) ?? "（不明）"),
+      visitors: visitorIds
+        .filter((id) => id !== h.createdById)
+        .map((id) => ({
+          name: nameById.get(id) ?? "（不明）",
+          readAt: h.reads.find((r) => r.userId === id)?.readAt ?? null,
+        })),
       readByMe: mine || readIds.has(viewer.id),
       canClose: mine || admin,
     };

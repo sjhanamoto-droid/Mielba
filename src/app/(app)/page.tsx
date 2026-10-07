@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  AlertTriangle, Bell, BellRing, Building2, CalendarDays, ChevronRight, Ellipsis, HardHat, MapPin, Users,
+  ArrowRight, Bell, BellRing, Building2, CalendarDays, ChevronRight, Ellipsis, MapPin, Users,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -52,11 +52,6 @@ function areaOf(address: string | null): string | null {
   const rest = address.trim().replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/, "");
   const m = rest.match(/^(.+?[市区町村郡])/);
   return m ? m[1] : null;
-}
-
-/** 本文の1行目（引き継ぎのプレビュー用） */
-function firstLine(text: string): string {
-  return text.trim().split(/\r?\n/).find((l) => l.trim())?.trim() ?? "";
 }
 
 /** 日付の文字色：祝日・日曜＝赤、土曜＝青（予定画面と同じ）。平日は fallback */
@@ -167,8 +162,16 @@ export default async function HomePage() {
     visitSiteIds.length
       ? db.handover.findMany({
           where: { siteId: { in: visitSiteIds }, resolvedAt: null },
-          orderBy: { createdAt: "desc" },
-          select: { siteId: true, content: true },
+          // 古い順（申し送りの流れどおり）。自分が確認済みか・誰からかも出す
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            siteId: true,
+            content: true,
+            createdAt: true,
+            createdById: true,
+            reads: { where: { userId: user.id }, select: { userId: true } },
+          },
         })
       : Promise.resolve([]),
     upcomingSiteIds.length && lastUpcoming
@@ -199,11 +202,28 @@ export default async function HomePage() {
     list.push(familyName(v.user.name));
     crewBySite.set(v.siteId, list);
   }
-  const handoversBySite = new Map<string, string[]>();
+  // 引き継ぎ：未確認（自分が書いたものは確認不要）を先に、それぞれ古い順
+  const handoverAuthorIds = Array.from(
+    new Set(openHandovers.map((h) => h.createdById).filter((v): v is string => !!v)),
+  );
+  const handoverAuthors = handoverAuthorIds.length
+    ? await db.user.findMany({ where: { id: { in: handoverAuthorIds } }, select: { id: true, name: true } })
+    : [];
+  const authorName = new Map(handoverAuthors.map((u) => [u.id, u.name]));
+  const handoversBySite = new Map<string, HomeHandover[]>();
   for (const h of openHandovers) {
     const list = handoversBySite.get(h.siteId) ?? [];
-    list.push(h.content);
+    list.push({
+      id: h.id,
+      content: h.content,
+      createdAt: h.createdAt,
+      authorName: h.createdById ? authorName.get(h.createdById) : undefined,
+      unread: h.createdById !== user.id && h.reads.length === 0,
+    });
     handoversBySite.set(h.siteId, list);
+  }
+  for (const list of handoversBySite.values()) {
+    list.sort((a, b) => Number(b.unread) - Number(a.unread));
   }
   // 現場の予定（今日）：時間帯と作業名に使う。自分が参加者のものを優先する
   function siteEventToday(siteId: string) {
@@ -335,69 +355,48 @@ export default async function HomePage() {
                   v.site.locationName ??
                   PROJECT_TYPE_LABEL[v.site.projectType as ProjectType];
                 return (
-                  <div key={v.id} className="card p-4 md:p-5">
+                  <div key={v.id} className="card p-5">
+                    {/* 時間帯と状態 */}
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-xl font-bold tnum text-ink">{time ?? " "}</p>
-                      <span className="shrink-0 rounded-full bg-brand-50 px-3 py-1 text-sm font-bold text-brand-700">
+                      <p className="text-base tnum text-ink-muted">{time ? time.replace("–", " — ") : " "}</p>
+                      <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-600" aria-hidden />
                         {SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus] ?? v.site.siteStatus}
                       </span>
                     </div>
-                    <h3
-                      className={cn(
-                        "mt-1.5 break-words font-bold leading-tight text-ink [text-wrap:pretty]",
-                        // 短い現場名は大きく、長い名前は折り返しても読める大きさに
-                        v.site.name.length > 10 ? "text-2xl" : "text-[1.875rem]",
-                      )}
-                    >
+                    <h3 className="mt-3 break-words text-2xl font-bold leading-snug text-ink [text-wrap:pretty]">
                       {v.site.name}
                     </h3>
-                    {work && <p className="mt-1 text-base text-ink-soft">{work}</p>}
+                    {work && <p className="mt-2 text-sm text-ink-muted">{work}</p>}
+
+                    {/* 引き継ぎ（未確認があれば赤で強く促す） */}
+                    {handovers.length > 0 && <HomeHandoverBlock siteId={v.siteId} items={handovers} />}
+
                     {(area || crew.length > 0) && (
-                      <div className="mt-3 flex items-center gap-3 text-sm text-ink-muted">
-                        {area &&
-                          (v.site.address ? (
-                            <a
-                              href={mapSearchUrl(v.site.address)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex min-w-0 items-center gap-1.5 font-medium text-brand-600"
-                            >
-                              <MapPin className="h-4 w-4 shrink-0" aria-hidden />
-                              <span className="truncate">{area}</span>
-                            </a>
-                          ) : null)}
-                        {area && crew.length > 0 && <span className="h-5 w-px shrink-0 bg-line" aria-hidden />}
+                      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
+                        {area && v.site.address && (
+                          <a
+                            href={mapSearchUrl(v.site.address)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex min-w-0 items-center gap-1.5 font-medium text-brand-600"
+                          >
+                            <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+                            <span>{area}</span>
+                          </a>
+                        )}
                         {crew.length > 0 && (
                           <span className="flex min-w-0 items-center gap-1.5">
                             <Users className="h-4 w-4 shrink-0" aria-hidden />
-                            <span className="truncate">担当 {crew.join("・")}</span>
+                            <span className="break-words">担当 {crew.join("・")}</span>
                           </span>
                         )}
                       </div>
                     )}
 
-                    {handovers.length > 0 && (
-                      <Link
-                        href={`/sites/${v.siteId}`}
-                        className="mt-4 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 active:opacity-80 dark:border-amber-900/60 dark:bg-amber-950/40"
-                      >
-                        <IconBadge icon={AlertTriangle} tone="amber" size="sm" className="bg-white/80 dark:bg-amber-950/60" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[15px] font-bold text-amber-800 dark:text-amber-300">
-                            引き継ぎ {handovers.length}件
-                          </p>
-                          <p className="truncate text-sm text-amber-900/80 dark:text-amber-100/80">
-                            {firstLine(handovers[0])}
-                          </p>
-                        </div>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
-                      </Link>
-                    )}
-
-                    <LinkButton href={`/sites/${v.siteId}`} size="lg" className="relative mt-3 w-full">
-                      <HardHat className="h-5 w-5" aria-hidden />
+                    <LinkButton href={`/sites/${v.siteId}`} size="lg" className="mt-4 w-full">
                       現場の詳細を見る
-                      <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
+                      <ArrowRight className="h-5 w-5" aria-hidden />
                     </LinkButton>
                   </div>
                 );
@@ -407,10 +406,10 @@ export default async function HomePage() {
 
           {/* ── ② 今日の日報 ── */}
           {target && reportAction && (
-            <section className="card flex items-center gap-3 p-4">
+            <section className="flex items-center gap-3 border-b border-line px-1 pb-5">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <h2 className="text-lg font-bold text-ink">今日の日報</h2>
+                <div className="flex flex-col items-start gap-1.5">
+                  <h2 className="text-base font-bold text-ink">今日の日報</h2>
                   {allSubmitted ? (
                     <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                       提出済み
@@ -425,18 +424,20 @@ export default async function HomePage() {
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 text-sm text-ink-muted">
-                  {allSubmitted
-                    ? "今日の内容は記録済みです"
-                    : todayVisits.length > 1
-                      ? `${target.site.name}（${submittedCount}/${todayVisits.length} 提出）`
-                      : "作業後に今日の内容を記録"}
-                </p>
+                {/* 現場が複数ある日だけ、どの現場の日報か・何件出したかを添える */}
+                {!allSubmitted && todayVisits.length > 1 && (
+                  <p className="mt-1 text-sm text-ink-muted">
+                    {target.site.name}（{submittedCount}/{todayVisits.length} 提出）
+                  </p>
+                )}
               </div>
-              <LinkButton href={reportAction.href} variant="outline" className={outlineBtn}>
+              <Link
+                href={reportAction.href}
+                className="flex shrink-0 items-center gap-0.5 text-sm font-semibold text-brand-700 active:opacity-70 dark:text-brand-300"
+              >
                 {reportAction.label}
                 <ChevronRight className="h-4 w-4" aria-hidden />
-              </LinkButton>
+              </Link>
             </section>
           )}
 
@@ -563,6 +564,60 @@ export default async function HomePage() {
           )}
         </div>
       </PageContainer>
+    </div>
+  );
+}
+
+type HomeHandover = {
+  id: string;
+  content: string;
+  createdAt: Date;
+  authorName?: string;
+  unread: boolean;
+};
+
+// 今日の現場カードの引き継ぎ。未確認があれば赤い枠で「入る前に必ず確認」を強く促す。
+// 全部確認済みなら控えめに件数と「見る」導線だけ出す。
+function HomeHandoverBlock({ siteId, items }: { siteId: string; items: HomeHandover[] }) {
+  const unread = items.filter((h) => h.unread).length;
+  const href = `/sites/${siteId}#handover`;
+  if (unread === 0) {
+    return (
+      <Link
+        href={href}
+        className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface-subtle px-5 py-4 active:opacity-80"
+      >
+        <div className="min-w-0">
+          <p className="text-xs text-ink-muted">この現場の</p>
+          <p className="mt-0.5 text-base font-bold text-ink">
+            引き継ぎ {items.length}件<span className="ml-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">確認済み</span>
+          </p>
+        </div>
+        <span className="flex shrink-0 items-center gap-1 text-sm font-semibold text-ink-soft">
+          見る
+          <ArrowRight className="h-4 w-4" aria-hidden />
+        </span>
+      </Link>
+    );
+  }
+  return (
+    <div className="mt-5 rounded-2xl border border-red-200 border-t-4 border-t-red-500 bg-red-50/70 px-5 pb-5 pt-4 dark:border-red-900/60 dark:border-t-red-500 dark:bg-red-950/30">
+      <p className="text-xs text-ink-muted">この現場の</p>
+      <div className="mt-1 flex items-end justify-between gap-3">
+        <p className="text-2xl font-bold text-red-600 dark:text-red-400">未確認の引き継ぎ</p>
+        <p className="shrink-0 leading-none text-red-600 dark:text-red-400">
+          <span className="text-4xl font-bold tnum">{unread}</span>
+          <span className="ml-1 text-sm">件</span>
+        </p>
+      </div>
+      <p className="mt-3 text-sm text-ink-soft">この現場に入る前に、必ず確認してください。</p>
+      <Link
+        href={href}
+        className="mt-4 flex min-h-[56px] items-center justify-between gap-3 rounded-xl bg-red-500 px-5 text-base font-bold text-white transition hover:bg-red-600 active:opacity-90"
+      >
+        引き継ぎを確認する
+        <ArrowRight className="h-5 w-5 shrink-0" aria-hidden />
+      </Link>
     </div>
   );
 }

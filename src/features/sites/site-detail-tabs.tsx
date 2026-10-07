@@ -87,14 +87,14 @@ export function SiteDetailTabs({
   return (
     <div ref={wrapRef}>
       <div className="sticky-under-header border-b border-line bg-surface/95 backdrop-blur-md">
-        <div className="mx-auto w-full max-w-7xl px-3 py-2 md:px-8 md:py-2.5">
-          {/* セグメント型：3つのタブを常に並べて見せ、開いている場所は塗りつぶしで示す */}
+        <div className="mx-auto w-full max-w-7xl px-2 md:px-6">
+          {/* 下線型：3つのタブを常に並べ、開いている場所は緑の下線で示す */}
           <div
             role="tablist"
             aria-label="現場詳細の表示切替"
             aria-orientation="horizontal"
             onKeyDown={onKeyDown}
-            className="flex gap-1 rounded-2xl bg-surface-sunken p-1"
+            className="flex"
           >
             {tabs.map((t) => {
               const selected = t.id === active.id;
@@ -109,10 +109,10 @@ export function SiteDetailTabs({
                   tabIndex={selected ? 0 : -1}
                   onClick={() => select(t.id)}
                   className={cn(
-                    "flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl px-1.5 text-[15px] font-bold transition-all",
+                    "relative flex min-h-[52px] flex-1 items-center justify-center gap-1.5 px-1.5 text-[15px] transition-colors",
                     selected
-                      ? "bg-brand-600 text-white shadow-card"
-                      : "text-ink-soft active:scale-[0.98] hover:bg-surface/70",
+                      ? "font-bold text-brand-700 after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-full after:bg-brand-600 dark:text-brand-300"
+                      : "font-medium text-ink-muted hover:text-ink-soft",
                   )}
                 >
                   {t.icon && (
@@ -122,18 +122,13 @@ export function SiteDetailTabs({
                   )}
                   <span className="truncate">{t.label}</span>
                   {t.count ? (
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-1.5 text-xs font-bold tnum",
-                        t.alert
-                          ? "bg-amber-400 text-amber-950"
-                          : selected
-                            ? "bg-white/25 text-white"
-                            : "bg-surface text-ink-muted",
-                      )}
-                    >
-                      {t.count}
-                    </span>
+                    t.alert ? (
+                      <span className="shrink-0 rounded-md bg-red-50 px-1.5 py-0.5 text-xs font-bold leading-none text-red-600 tnum dark:bg-red-950/40 dark:text-red-400">
+                        {t.count}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 tnum">{t.count}</span>
+                    )
                   ) : null}
                 </button>
               );

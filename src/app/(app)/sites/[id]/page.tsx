@@ -376,8 +376,8 @@ export default async function SiteDetailPage({
       {surveyBanner}
       {provisionalBanner}
 
-      {/* 引き継ぎ事項（対応中 → 現場の常設メモ → 対応完了の履歴） */}
-      <section className="space-y-2.5">
+      {/* 引き継ぎ事項（対応中 → 現場の常設メモ → 対応完了の履歴）。ホームの「引き継ぎを読む」の飛び先 */}
+      <section id="handover" className="scroll-mt-24 space-y-2.5">
         <SectionTitle
           size="lg"
           action={
@@ -389,7 +389,12 @@ export default async function SiteDetailPage({
             </Link>
           }
         >
-          引き継ぎ事項
+          <span className="flex items-baseline gap-2">
+            引き継ぎ事項
+            {openHandovers.length > 0 && (
+              <span className="text-sm font-normal text-ink-muted tnum">対応中 {openHandovers.length}件</span>
+            )}
+          </span>
         </SectionTitle>
 
         <HandoverPanel open={openHandovers} resolved={resolvedHandovers}>
@@ -992,20 +997,18 @@ export default async function SiteDetailPage({
       : null;
   const area = areaOf(site.address);
   const crew = Array.from(new Set(todayCrew.map((v) => familyName(v.user.name))));
-  const subline = [
-    todayEvent && todayEvent.title !== site.name ? todayEvent.title : null,
-    // 作業場所名が現場名に含まれていれば重ねて出さない
-    site.locationName && !site.name.includes(site.locationName) ? site.locationName : null,
-    site.customer.name,
-  ].filter(Boolean).join(" ・ ");
+
+  // 作業内容（今日の予定の件名 → 作業場所名 → 工事種別）。元請はページ見出しに出す
+  const work =
+    (todayEvent && todayEvent.title !== site.name ? todayEvent.title : null) ??
+    (site.locationName && !site.name.includes(site.locationName) ? site.locationName : null) ??
+    projectType;
 
   const summaryCard = (
-    <div className="mx-auto w-full max-w-7xl px-4 pt-4 md:px-8 md:pt-6">
-      <div className="card p-4 md:p-5">
+    <div className="border-b border-line bg-surface">
+      <div className="mx-auto w-full max-w-7xl px-5 pb-5 pt-5 md:px-8 md:pt-6">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-lg font-bold tnum text-ink">
-            {todayTime ? `今日 ${todayTime}` : projectType}
-          </p>
+          <p className="text-base tnum text-ink-muted">{todayTime ? `今日 ${todayTime}` : " "}</p>
           <div className="flex shrink-0 items-center gap-1.5">
             {site.provisional && (
               <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
@@ -1013,21 +1016,16 @@ export default async function SiteDetailPage({
                 仮登録
               </Badge>
             )}
-            <SiteStatusBadge status={site.siteStatus} />
+            <SiteStatusBadge status={site.siteStatus} className="px-3 py-1 text-sm" />
           </div>
         </div>
-        <h1
-          className={cn(
-            "mt-1.5 break-words font-bold leading-tight text-ink [text-wrap:pretty]",
-            site.name.length > 10 ? "text-2xl" : "text-[1.875rem]",
-          )}
-        >
+        <h1 className="mt-3 break-words text-2xl font-bold leading-snug text-ink [text-wrap:pretty]">
           {site.name}
         </h1>
-        {subline && <p className="mt-1 text-[15px] text-ink-soft">{subline}</p>}
+        {work && <p className="mt-2 text-sm text-ink-muted">{work}</p>}
 
         {(area || crew.length > 0) && (
-          <div className="mt-3 flex items-center gap-3 text-sm text-ink-muted">
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
             {area && mapsUrl && (
               <a
                 href={mapsUrl}
@@ -1036,14 +1034,13 @@ export default async function SiteDetailPage({
                 className="flex min-w-0 items-center gap-1.5 font-medium text-brand-600"
               >
                 <MapPin className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="truncate">{area}</span>
+                <span>{area}</span>
               </a>
             )}
-            {area && crew.length > 0 && <span className="h-5 w-px shrink-0 bg-line" aria-hidden />}
             {crew.length > 0 && (
               <span className="flex min-w-0 items-center gap-1.5">
                 <Users className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="truncate">今日の担当 {crew.join("・")}</span>
+                <span className="break-words">今日の担当 {crew.join("・")}</span>
               </span>
             )}
           </div>
@@ -1061,29 +1058,35 @@ export default async function SiteDetailPage({
           </div>
         )}
 
-        <LinkButton href={writeReportHref} size="lg" className="relative mt-4 w-full">
-          {site.siteStatus === "SURVEY" ? (
-            <ClipboardList className="h-5 w-5" aria-hidden />
-          ) : (
-            <FileText className="h-5 w-5" aria-hidden />
-          )}
-          {writeReportLabel}
-          <ChevronRight className="absolute right-4 h-5 w-5" aria-hidden />
-        </LinkButton>
-        {mapsUrl && (
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={buttonClass({
-              variant: "outline",
-              className: "mt-2 w-full border-brand-200 text-brand-700 dark:border-brand-800",
-            })}
+        {/* 日報を書く・地図を開く（横並び） */}
+        <div className={cn("mt-4 grid gap-3", mapsUrl ? "grid-cols-2" : "grid-cols-1")}>
+          <LinkButton
+            href={writeReportHref}
+            variant="outline"
+            className="min-h-[52px] border-brand-200 text-brand-700 dark:border-brand-800"
           >
-            <Map className="h-[18px] w-[18px]" aria-hidden />
-            地図を開く
-          </a>
-        )}
+            {site.siteStatus === "SURVEY" ? (
+              <ClipboardList className="h-5 w-5" aria-hidden />
+            ) : (
+              <FileText className="h-5 w-5" aria-hidden />
+            )}
+            <span className="truncate">{writeReportLabel}</span>
+          </LinkButton>
+          {mapsUrl && (
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonClass({
+                variant: "outline",
+                className: "min-h-[52px] border-brand-200 text-brand-700 dark:border-brand-800",
+              })}
+            >
+              <Map className="h-5 w-5" aria-hidden />
+              地図を開く
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1137,18 +1140,18 @@ export default async function SiteDetailPage({
   return (
     <div>
       <PageHeader
-        title={site.name}
+        title="現場詳細"
         subtitle={site.customer.name}
         backHref="/sites"
         right={
           /* 現場の修正は全ログインユーザー可（スタッフも現場情報を最新に保てるように） */
           <LinkButton
             href={`/sites/${site.id}/edit`}
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-label="現場を修正"
           >
-            <Pencil className="h-4 w-4" />
+            <Pencil className="h-5 w-5" />
             <span className="hidden sm:inline">現場を修正</span>
           </LinkButton>
         }

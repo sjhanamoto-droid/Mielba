@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ChevronRight, Truck } from "lucide-react";
+import { ChevronRight, Truck } from "lucide-react";
 
 // ホーム最下部の「その他の連絡事項」（当日の配達・支給品など）。
 // 引き継ぎは「今日の現場」に載せるので、ここはそれ以外の連絡だけ。
@@ -56,14 +56,10 @@ export function OtherNotices({ todayKey, items }: { todayKey: string; items: Not
 
   if (unread.length === 0) {
     return (
-      <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300">
-          <CheckCircle2 className="h-5 w-5" aria-hidden />
-        </span>
-        <p className="text-sm font-semibold text-ink-soft">
-          {items.length === 0 ? "その他の連絡事項はありません" : "その他の連絡事項は確認済み"}
-        </p>
-      </div>
+      // 何もないときは目立たせず1行の文字だけ
+      <p className="px-1 text-sm text-ink-muted">
+        {items.length === 0 ? "その他の連絡事項はありません" : "その他の連絡事項は確認済み"}
+      </p>
     );
   }
 
