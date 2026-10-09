@@ -21,6 +21,17 @@ export default async function SiteSurveyPage({
     select: {
       id: true,
       name: true,
+      // キーBOXは現場登録と同じ項目（現場本体）に保存する
+      keyboxStatus: true,
+      keyboxNumber: true,
+      keyboxPlace: true,
+      keyboxNoneReason: true,
+      keyboxPhotoNoneReason: true,
+      photos: {
+        where: { kind: "KEYBOX" },
+        select: { id: true, caption: true, isVideo: true, width: true },
+        orderBy: { createdAt: "asc" },
+      },
       survey: {
         include: {
           // base64（dataUrl/thumbUrl）はRSCペイロードに載せない（既存写真は {id} 参照で維持）
@@ -56,8 +67,15 @@ export default async function SiteSurveyPage({
             address: survey.address,
             keybox: survey.keybox,
             situationMemo: survey.situationMemo,
-            relatedNote: survey.relatedNote,
           } : undefined}
+          keybox={{
+            keyboxStatus: site.keyboxStatus,
+            keyboxNumber: site.keyboxNumber,
+            keyboxPlace: site.keyboxPlace,
+            keyboxNoneReason: site.keyboxNoneReason,
+            keyboxPhotoNoneReason: site.keyboxPhotoNoneReason,
+          }}
+          keyboxPhotos={site.photos}
           photos={photos}
         />
       </PageContainer>

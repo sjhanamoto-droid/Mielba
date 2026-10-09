@@ -763,9 +763,7 @@ function revalidateSiteViews(siteId: string) {
 // ── 現調（Survey）の upsert ──
 const surveySchema = z.object({
   address: optionalText,
-  keybox: optionalText,
   situationMemo: optionalText,
-  relatedNote: optionalText,
 });
 
 function clean(v: string | null | undefined): string | null {
@@ -779,13 +777,32 @@ export async function saveSurvey(siteId: string, formData: FormData) {
   await requireUser();
   const parsed = surveySchema.safeParse({
     address: formData.get("address"),
-    keybox: formData.get("keybox"),
     situationMemo: formData.get("situationMemo"),
-    relatedNote: formData.get("relatedNote"),
   });
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message };
   }
+
+  // キーBOX（現場登録と同じ項目。現場本体に保存し、「現場入り情報」にそのまま出す）
+  const str = (k: string) => clean((formData.get(k) as string | null) ?? null);
+  const keyboxStatus = formData.get("keyboxStatus") === "NONE" ? "NONE" : "HAS";
+  const keyboxPhotoNone = formData.get("keyboxPhotoStatus") === "NONE";
+  const keyboxNoneReason = str("keyboxNoneReason");
+  const keyboxPhotoNoneReason = str("keyboxPhotoNoneReason");
+  if (keyboxStatus === "NONE" && !keyboxNoneReason) return { error: "キーBOXが無い理由を入力してください" };
+  if (keyboxPhotoNone && !keyboxPhotoNoneReason) return { error: "キーBOX写真が無い理由を入力してください" };
+  const rawKeyboxPhotos = formData.get("keyboxPhotos");
+  const keyboxPhotos = parseAndValidatePhotosField(
+    typeof rawKeyboxPhotos === "string" ? rawKeyboxPhotos : "",
+  );
+  if ("error" in keyboxPhotos) return { error: keyboxPhotos.error };
+  const siteKeybox = {
+    keyboxStatus,
+    keyboxNumber: keyboxStatus === "HAS" ? str("keyboxNumber") : null,
+    keyboxPlace: keyboxStatus === "HAS" ? str("keyboxPlace") : null,
+    keyboxNoneReason: keyboxStatus === "NONE" ? keyboxNoneReason : null,
+    keyboxPhotoNoneReason: keyboxPhotoNone ? keyboxPhotoNoneReason : null,
+  };
 
   // 現調写真: 既存={id} は維持、新規は追加（共有契約2）
   const rawPhotos = formData.get("photos");
@@ -795,11 +812,10 @@ export async function saveSurvey(siteId: string, formData: FormData) {
   }
 
   const d = parsed.data;
+  // 旧 keybox（自由記述）・relatedNote（関連現場メモ）は更新しない（既存値はそのまま残す）
   const data = {
     address: d.address ?? null,
-    keybox: d.keybox ?? null,
     situationMemo: d.situationMemo ?? null,
-    relatedNote: d.relatedNote ?? null,
   };
 
   try {
@@ -809,6 +825,12 @@ export async function saveSurvey(siteId: string, formData: FormData) {
         create: { siteId, surveyedAt: new Date(), ...data },
         update: data,
       });
+
+      // キーBOXは現場本体へ（番号・理由・写真）。写真は現場の KEYBOX 写真として持つ
+      await tx.site.update({ where: { id: siteId }, data: siteKeybox });
+      await applySitePhotoSets(tx, siteId, [
+        { kind: "KEYBOX", kept: keyboxPhotos.kept, added: keyboxPhotos.added },
+      ]);
 
       // kept に無い既存写真のみ削除し、新規を追加（全削除→再作成はしない）
       await tx.photo.deleteMany({
@@ -838,8 +860,13 @@ export async function saveSurvey(siteId: string, formData: FormData) {
     return { error: "現調の保存に失敗しました。時間をおいて再度お試しください" };
   }
 
-  // 現調→進行中の再入力不要（§4.2.8 フローB）: Site の住所/キーBOX が未設定なら補完
-  await backfillSiteFromSurvey(siteId, d.address ?? null, d.keybox ?? null);
+  // 現調→進行中の再入力不要（§4.2.8 フローB）: Site の住所が未設定なら補完（キーBOXは上で直接保存済み）
+  await backfillSiteFromSurvey(siteId, d.address ?? null, null);
+  // 受注済の現場で現調フォーマットを直した場合は、仮登録かどうかを数え直す
+  const after = await db.site.findUnique({ where: { id: siteId }, select: { siteStatus: true } });
+  if (after && !isPreOrderSite(after.siteStatus)) {
+    await db.site.update({ where: { id: siteId }, data: { provisional: await recomputeProvisional(siteId) } });
+  }
 
   revalidatePath(`/sites/${siteId}`);
   revalidatePath(`/sites/${siteId}/survey`);
