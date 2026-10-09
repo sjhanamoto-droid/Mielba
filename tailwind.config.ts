@@ -78,10 +78,13 @@ const config: Config = {
           info: v("status-info"),
         },
       },
+      // 角丸は控えめに（全画面共通のスケールで一括調整。full＝丸はそのまま）
       borderRadius: {
-        xl: "0.875rem",
-        "2xl": "1.125rem",
-        "3xl": "1.5rem",
+        md: "0.3125rem", // 5px
+        lg: "0.375rem", // 6px
+        xl: "0.5rem", // 8px（ボタン・入力欄）
+        "2xl": "0.625rem", // 10px（カード）
+        "3xl": "0.875rem", // 14px（モーダル）
       },
       boxShadow: {
         // ダークで沈まないよう変数化（globals.css でテーマ別に定義）

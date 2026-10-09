@@ -183,7 +183,7 @@ function HandoverReadCard({
   const no = String(index).padStart(2, "0");
 
   return (
-    <div className="flex w-full flex-col overflow-hidden bg-surface md:max-h-[92vh] md:max-w-[400px] md:rounded-[28px] md:border md:border-line md:shadow-float">
+    <div className="flex w-full flex-col overflow-hidden bg-surface md:max-h-[92vh] md:max-w-[400px] md:rounded-2xl md:border md:border-line md:shadow-float">
       {/* ヘッダー：見出し・件数・現場名・ステップ */}
       <div className="shrink-0 px-6 pb-6 pt-7 safe-top">
         <p className="text-xs font-medium tracking-[0.15em] text-ink-muted">現場に行く前に</p>
