@@ -361,7 +361,10 @@ function EventRow({
             )}
           </span>
           <span className="flex flex-wrap items-center gap-1.5">
-            <Badge tone={SOURCE_BADGE_TONE[src] ?? "neutral"}>{EVENT_SOURCE_LABEL[src] ?? ev.source}</Badge>
+            {/* 出所の印は日報から自動で作られた予定だけ（人が入れた予定＝手動には出さない） */}
+            {src !== "MANUAL" && (
+              <Badge tone={SOURCE_BADGE_TONE[src] ?? "neutral"}>{EVENT_SOURCE_LABEL[src] ?? ev.source}</Badge>
+            )}
             {ev.category && (
               <Badge tone={categoryTone(ev.category)}>
                 {EVENT_CATEGORY_LABEL[ev.category as EventCategory] ?? ev.category}
@@ -416,17 +419,21 @@ function EventDetailModal({
           </button>
         </div>
 
-        {/* バッジ */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={SOURCE_BADGE_TONE[src] ?? "neutral"}>
-            {EVENT_SOURCE_LABEL[src] ?? ev.source}
-          </Badge>
-          {ev.category && (
-            <Badge tone={categoryTone(ev.category)}>
-              {EVENT_CATEGORY_LABEL[ev.category as EventCategory] ?? ev.category}
-            </Badge>
-          )}
-        </div>
+        {/* バッジ（出所は日報由来のときだけ。手動＝人が入れた予定には出さない） */}
+        {(src !== "MANUAL" || ev.category) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {src !== "MANUAL" && (
+              <Badge tone={SOURCE_BADGE_TONE[src] ?? "neutral"}>
+                {EVENT_SOURCE_LABEL[src] ?? ev.source}
+              </Badge>
+            )}
+            {ev.category && (
+              <Badge tone={categoryTone(ev.category)}>
+                {EVENT_CATEGORY_LABEL[ev.category as EventCategory] ?? ev.category}
+              </Badge>
+            )}
+          </div>
+        )}
 
         {/* 件名 */}
         <h3 className="mt-2 border-l-[3px] pl-2.5 text-xl font-bold leading-snug text-ink" style={{ borderColor: color }}>
@@ -883,7 +890,7 @@ export function CalendarView({
               className="h-2 w-2 rounded-full"
               style={{ backgroundColor: EVENT_SOURCE_COLOR[src] }}
             />
-            {src === "MANUAL" ? "手動予定" : `日報：${EVENT_SOURCE_LABEL[src]}`}
+            {src === "MANUAL" ? "予定" : `日報：${EVENT_SOURCE_LABEL[src]}`}
           </span>
         ))}
         <span className="flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
