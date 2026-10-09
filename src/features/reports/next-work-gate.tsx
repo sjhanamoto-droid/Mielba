@@ -56,7 +56,7 @@ export function NextWorkGate({ items }: { items: NextWorkCheckItem[] }) {
       role="dialog"
       aria-modal="true"
       aria-label="次回作業日の確認"
-      className="fixed inset-0 z-[87] flex items-stretch justify-center bg-surface-subtle animate-fade-in md:items-center md:p-6"
+      className="fixed inset-0 z-[87] flex items-center justify-center bg-black/50 p-4 animate-fade-in"
     >
       <NextWorkCard
         key={current.reportId}
@@ -102,8 +102,8 @@ function NextWorkCard({
   }
 
   return (
-    <div className="flex w-full flex-col overflow-hidden bg-surface md:max-h-[92vh] md:max-w-[400px] md:rounded-2xl md:border md:border-line md:shadow-float">
-      <div className="shrink-0 px-6 pb-5 pt-7 safe-top">
+    <div className="flex max-h-[88dvh] w-full max-w-[400px] flex-col overflow-hidden rounded-2xl bg-surface shadow-float">
+      <div className="shrink-0 px-6 pb-5 pt-6">
         <p className="text-xs font-medium tracking-[0.15em] text-ink-muted">確認日になりました</p>
         <div className="mt-2 flex items-baseline justify-between gap-3">
           <h2 className="text-2xl font-bold tracking-wide text-ink">次回の作業日を決める</h2>
@@ -181,7 +181,7 @@ function NextWorkCard({
         )}
       </div>
 
-      <div className="shrink-0 px-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5">
+      <div className="shrink-0 px-6 pb-5 pt-5">
         {error && (
           <p role="alert" className="mb-2 text-center text-xs font-semibold text-status-danger">
             {error}

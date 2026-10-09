@@ -72,10 +72,12 @@ export function StartupGate({ items }: { items: NotificationItem[] }) {
       role="dialog"
       aria-modal="true"
       aria-label="未読のお知らせ"
-      className="fixed inset-0 z-[80] flex flex-col bg-surface-subtle animate-fade-in"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 animate-fade-in"
     >
+      {/* 後ろの画面の上に重ねるモーダル */}
+      <div className="flex max-h-[88dvh] w-full max-w-[440px] flex-col overflow-hidden rounded-2xl bg-surface shadow-float">
       {/* ヘッダー */}
-      <div className="flex items-center gap-3 border-b border-line bg-surface px-5 py-4 safe-top">
+      <div className="flex items-center gap-3 border-b border-line bg-surface px-5 py-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-600 text-white">
           <BellRing className="h-5 w-5" />
         </span>
@@ -88,8 +90,8 @@ export function StartupGate({ items }: { items: NotificationItem[] }) {
       </div>
 
       {/* 未読一覧（タップで遷移＆既読化） */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto w-full max-w-3xl space-y-2.5">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-surface-subtle px-4 py-4">
+        <div className="space-y-2.5">
           {remaining.map((n) => {
             const meta = notificationMeta(n.type);
             return (
@@ -117,8 +119,8 @@ export function StartupGate({ items }: { items: NotificationItem[] }) {
       </div>
 
       {/* フッター：一括確認 */}
-      <div className="border-t border-line bg-surface px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <div className="mx-auto w-full max-w-3xl">
+      <div className="border-t border-line bg-surface px-4 py-3">
+        <div>
           <Button
             type="button"
             onClick={acknowledgeAll}
@@ -130,6 +132,7 @@ export function StartupGate({ items }: { items: NotificationItem[] }) {
             すべて確認してはじめる
           </Button>
         </div>
+      </div>
       </div>
     </div>
   );

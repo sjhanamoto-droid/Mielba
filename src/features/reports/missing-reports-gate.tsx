@@ -41,10 +41,12 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
       role="dialog"
       aria-modal="true"
       aria-label="未入力の日報"
-      className="fixed inset-0 z-[90] flex flex-col bg-surface-subtle animate-fade-in"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4 animate-fade-in"
     >
+      {/* 後ろの画面の上に重ねるモーダル */}
+      <div className="flex max-h-[88dvh] w-full max-w-[440px] flex-col overflow-hidden rounded-2xl bg-surface shadow-float">
       {/* ヘッダー */}
-      <div className="flex items-center gap-3 border-b border-line bg-surface px-5 py-4 safe-top">
+      <div className="flex items-center gap-3 border-b border-line bg-surface px-5 py-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-status-danger text-white">
           <AlertTriangle className="h-5 w-5" />
         </span>
@@ -57,8 +59,8 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
       </div>
 
       {/* 未入力一覧（タップで該当日の日報作成／下書きの続きへ） */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto w-full max-w-3xl space-y-2.5">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-surface-subtle px-4 py-4">
+        <div className="space-y-2.5">
           <p className="px-1 pb-1 text-sm leading-relaxed text-ink-soft">
             日を過ぎても入力できます。現場ごとに、その日の作業内容・勤怠を入力してください。
             現調の現場は、日報の代わりに現調フォーマットを保存してください。
@@ -109,12 +111,11 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
       </div>
 
       {/* フッター：閉じるボタンは出さず、案内のみ */}
-      <div className="border-t border-line bg-surface px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <div className="mx-auto w-full max-w-3xl">
-          <p className="text-center text-xs text-ink-muted">
-            すべて入力すると、この画面は自動的に閉じます
-          </p>
-        </div>
+      <div className="border-t border-line bg-surface px-4 py-3">
+        <p className="text-center text-xs text-ink-muted">
+          すべて入力すると、この画面は自動的に閉じます
+        </p>
+      </div>
       </div>
     </div>
   );
