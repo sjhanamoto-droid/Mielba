@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
   Pencil, Building2, MapPin, KeyRound, HardHat, CalendarClock,
-  FileText, ClipboardList, Plus, ChevronRight, Truck, PackageCheck,
+  FileText, ClipboardList, Plus, ChevronRight, ChevronDown, Truck, PackageCheck,
   ClipboardCheck, Wallet, ScrollText, Phone, ArrowRight, Map, CalendarRange,
   UserRound, CircleParking, AlertTriangle, StickyNote, Link2, Users,
 } from "lucide-react";
@@ -433,74 +433,7 @@ export default async function SiteDetailPage({
       {surveyBanner}
       {provisionalBanner}
 
-      {/* PC: 左メイン(2/3) + 右レール(1/3)。スマホは縦積み */}
-      <div className="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
-        {/* ===== メイン列 ===== */}
-        <div className="space-y-5 lg:col-span-2">
-          {/* 備考（現場情報に常設。編集は現場の編集画面から） */}
-          <section className="space-y-2.5">
-            <SectionTitle
-              size="lg"
-              action={
-                <Link href={`/sites/${site.id}/edit#memo`} className="text-xs font-semibold text-brand-600">
-                  {site.memo ? "編集" : "追加"}
-                </Link>
-              }
-            >
-              備考
-            </SectionTitle>
-            {site.memo ? (
-              <Card className="p-4">
-                <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-ink">{site.memo}</p>
-              </Card>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-line-strong px-4 py-4 text-center text-sm text-ink-muted">
-                備考はありません
-              </div>
-            )}
-          </section>
-
-          {/* 工程（進捗・工期） */}
-          <section className="space-y-2.5">
-            <SectionTitle size="lg">工程</SectionTitle>
-            <Card className="space-y-3 p-4">
-              <DataList>
-                <DataRow
-                  label="着工"
-                  value={`予定 ${fmtDate(site.plannedStartDate)} ／ 実績 ${fmtDate(site.actualStartDate)}`}
-                />
-                <DataRow
-                  label="完工"
-                  value={`予定 ${fmtDate(site.plannedEndDate)} ／ 実績 ${fmtDate(site.actualEndDate)}`}
-                />
-              </DataList>
-              {!stageless && (
-                <div>
-                  <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
-                  {admin ? (
-                    <SiteStageControl
-                      siteId={site.id}
-                      siteStatus={site.siteStatus}
-                      projectStatus={site.projectStatus}
-                    />
-                  ) : (
-                    <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
-                  )}
-                </div>
-              )}
-            </Card>
-
-            {/* 工事完了のAI分析（管理者のみ・完了＝過去の現場に表示） */}
-            {admin && aiEnabled && isCompleted && (
-              <SiteAnalysisCard
-                siteId={site.id}
-                type="COMPLETION"
-                initialAnalysis={site.completionAnalysis}
-                initialAnalyzedAt={site.completionAnalyzedAt?.toISOString() ?? null}
-              />
-            )}
-          </section>
-
+      {/* 現場で使う順：現場入り情報 → 図面・工程表 → 写真・動画 → 登録材料 → 備考 */}
           {/* 現場入り情報（ぱっと見で分かる） */}
           <section className="space-y-2.5">
             <SectionTitle size="lg">現場入り情報</SectionTitle>
@@ -553,7 +486,25 @@ export default async function SiteDetailPage({
 
               {/* 住所・現場担当者 */}
               <DataList>
-                <DataRow label="住所" value={site.address} />
+                <DataRow
+                  label="住所"
+                  value={
+                    site.address && mapsUrl ? (
+                      // タップで Google マップを開く
+                      <a
+                        href={mapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-start gap-1 font-medium text-brand-600 underline-offset-2 hover:underline"
+                      >
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        {site.address}
+                      </a>
+                    ) : (
+                      site.address
+                    )
+                  }
+                />
                 <DataRow
                   label="現場担当者"
                   value={
@@ -577,96 +528,6 @@ export default async function SiteDetailPage({
                 </a>
               )}
             </Card>
-          </section>
-
-          {/* 場所 */}
-          <section className="space-y-2.5">
-            <SectionTitle size="lg">場所</SectionTitle>
-            <Card className="px-4">
-              <DataList>
-                <DataRow
-                  label="住所"
-                  value={
-                    site.address ? (
-                      <span className="inline-flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5 text-ink-muted" />
-                        {site.address}
-                      </span>
-                    ) : null
-                  }
-                />
-                <DataRow label="作業場所名" value={site.locationName} />
-                <DataRow
-                  label="キーBOX"
-                  value={
-                    site.keybox ? (
-                      <span className="inline-flex items-center gap-1">
-                        <KeyRound className="h-3.5 w-3.5 text-ink-muted" />
-                        {site.keybox}
-                      </span>
-                    ) : null
-                  }
-                />
-                <DataRow label="現場側担当" value={site.siteContactName} />
-              </DataList>
-            </Card>
-          </section>
-
-          {/* 人工（最終=着工実績日以降の日報累計 / 目標） */}
-          <section className="space-y-2.5">
-            <SectionTitle size="lg">人工</SectionTitle>
-            <Card className="space-y-3 p-4">
-              <div className="flex items-end justify-between">
-                <span className="text-xs font-semibold text-ink-muted">最終 / 目標</span>
-                {hasStarted ? (
-                  <span className="text-2xl font-bold text-ink tnum">
-                    {manDaysCount}
-                    <span className="text-sm font-semibold text-ink-muted">
-                      {" "}
-                      / {site.targetManDays ?? "—"} 人工
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-sm font-semibold text-ink-muted">着工前（0）</span>
-                )}
-              </div>
-              {manDaysPercent !== null && (
-                <div>
-                  <ProgressBar value={manDaysPercent} />
-                  <p className="mt-1 text-right text-[11px] font-semibold text-ink-muted tnum">
-                    {manDaysPercent}%
-                  </p>
-                </div>
-              )}
-              <p className="text-[11px] text-ink-faint">
-                {hasStarted
-                  ? "最終人工は着工実績日以降に提出された日報の累計です（1日報＝1人工）。"
-                  : "着工実績日が未設定のため、まだ人工はカウントされません（着工実績日以降でカウント）。"}
-              </p>
-              <DataList>
-                <DataRow
-                  label="駐車場代 累計"
-                  value={
-                    parkingTotal > 0 ? (
-                      <span className="inline-flex items-center gap-1">
-                        <CircleParking className="h-3.5 w-3.5 text-ink-muted" />
-                        {fmtYen(parkingTotal)}
-                      </span>
-                    ) : null
-                  }
-                />
-              </DataList>
-            </Card>
-
-            {/* 人工超過のAI分析（管理者のみ・超過中の現場に表示） */}
-            {admin && aiEnabled && isOverrun && (
-              <SiteAnalysisCard
-                siteId={site.id}
-                type="OVERRUN"
-                initialAnalysis={site.overrunAnalysis}
-                initialAnalyzedAt={site.overrunAnalyzedAt?.toISOString() ?? null}
-              />
-            )}
           </section>
 
           {/* 図面・工程表 */}
@@ -741,6 +602,138 @@ export default async function SiteDetailPage({
             </p>
           </section>
 
+          {/* 備考（現場情報に常設。編集は現場の編集画面から） */}
+          <section className="space-y-2.5">
+            <SectionTitle
+              size="lg"
+              action={
+                <Link href={`/sites/${site.id}/edit#memo`} className="text-xs font-semibold text-brand-600">
+                  {site.memo ? "編集" : "追加"}
+                </Link>
+              }
+            >
+              備考
+            </SectionTitle>
+            {site.memo ? (
+              <Card className="p-4">
+                <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-ink">{site.memo}</p>
+              </Card>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-line-strong px-4 py-4 text-center text-sm text-ink-muted">
+                備考はありません
+              </div>
+            )}
+          </section>
+
+      {/* それ以外（工程・人工・基本情報・予定・現調など）は畳んでおき、タップで開く */}
+      <details className="group">
+        <summary className="card flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-base font-bold text-ink [&::-webkit-details-marker]:hidden">
+          <span>
+            その他の情報
+            <span className="ml-2 text-xs font-normal text-ink-muted">工程・人工・基本情報・予定・現調など</span>
+          </span>
+          <ChevronDown className="h-5 w-5 shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-5 space-y-5 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
+          <div className="space-y-5">
+          {/* 工程（進捗・工期） */}
+          <section className="space-y-2.5">
+            <SectionTitle size="lg">工程</SectionTitle>
+            <Card className="space-y-3 p-4">
+              <DataList>
+                <DataRow
+                  label="着工"
+                  value={`予定 ${fmtDate(site.plannedStartDate)} ／ 実績 ${fmtDate(site.actualStartDate)}`}
+                />
+                <DataRow
+                  label="完工"
+                  value={`予定 ${fmtDate(site.plannedEndDate)} ／ 実績 ${fmtDate(site.actualEndDate)}`}
+                />
+              </DataList>
+              {!stageless && (
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold text-ink-muted">進捗</div>
+                  {admin ? (
+                    <SiteStageControl
+                      siteId={site.id}
+                      siteStatus={site.siteStatus}
+                      projectStatus={site.projectStatus}
+                    />
+                  ) : (
+                    <SiteStageStepper index={siteStageIndex(site.siteStatus, site.projectStatus)} />
+                  )}
+                </div>
+              )}
+            </Card>
+
+            {/* 工事完了のAI分析（管理者のみ・完了＝過去の現場に表示） */}
+            {admin && aiEnabled && isCompleted && (
+              <SiteAnalysisCard
+                siteId={site.id}
+                type="COMPLETION"
+                initialAnalysis={site.completionAnalysis}
+                initialAnalyzedAt={site.completionAnalyzedAt?.toISOString() ?? null}
+              />
+            )}
+          </section>
+
+          {/* 人工（最終=着工実績日以降の日報累計 / 目標） */}
+          <section className="space-y-2.5">
+            <SectionTitle size="lg">人工</SectionTitle>
+            <Card className="space-y-3 p-4">
+              <div className="flex items-end justify-between">
+                <span className="text-xs font-semibold text-ink-muted">最終 / 目標</span>
+                {hasStarted ? (
+                  <span className="text-2xl font-bold text-ink tnum">
+                    {manDaysCount}
+                    <span className="text-sm font-semibold text-ink-muted">
+                      {" "}
+                      / {site.targetManDays ?? "—"} 人工
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-sm font-semibold text-ink-muted">着工前（0）</span>
+                )}
+              </div>
+              {manDaysPercent !== null && (
+                <div>
+                  <ProgressBar value={manDaysPercent} />
+                  <p className="mt-1 text-right text-[11px] font-semibold text-ink-muted tnum">
+                    {manDaysPercent}%
+                  </p>
+                </div>
+              )}
+              <p className="text-[11px] text-ink-faint">
+                {hasStarted
+                  ? "最終人工は着工実績日以降に提出された日報の累計です（1日報＝1人工）。"
+                  : "着工実績日が未設定のため、まだ人工はカウントされません（着工実績日以降でカウント）。"}
+              </p>
+              <DataList>
+                <DataRow
+                  label="駐車場代 累計"
+                  value={
+                    parkingTotal > 0 ? (
+                      <span className="inline-flex items-center gap-1">
+                        <CircleParking className="h-3.5 w-3.5 text-ink-muted" />
+                        {fmtYen(parkingTotal)}
+                      </span>
+                    ) : null
+                  }
+                />
+              </DataList>
+            </Card>
+
+            {/* 人工超過のAI分析（管理者のみ・超過中の現場に表示） */}
+            {admin && aiEnabled && isOverrun && (
+              <SiteAnalysisCard
+                siteId={site.id}
+                type="OVERRUN"
+                initialAnalysis={site.overrunAnalysis}
+                initialAnalyzedAt={site.overrunAnalyzedAt?.toISOString() ?? null}
+              />
+            )}
+          </section>
+
           {/* 基本情報（事務情報なので下の方） */}
           <section className="space-y-2.5">
             <SectionTitle size="lg">基本情報</SectionTitle>
@@ -756,25 +749,8 @@ export default async function SiteDetailPage({
             </Card>
           </section>
 
-          {/* 元請企業 */}
-          <section className="space-y-2.5">
-            <SectionTitle size="lg">元請企業</SectionTitle>
-            <CardLink href={`/customers/${site.customer.id}`} className="flex items-center gap-3 p-4">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                <Building2 className="h-5 w-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-ink">{site.customer.name}</p>
-                <p className="text-xs text-ink-muted">顧客情報を見る</p>
-              </div>
-              <ChevronRight className="h-5 w-5 shrink-0 text-ink-faint" />
-            </CardLink>
-          </section>
-        </div>
-        {/* ===== /メイン列 ===== */}
-
-        {/* ===== 右レール ===== */}
-        <div className="mt-5 space-y-5 lg:col-span-1 lg:mt-0">
+          </div>
+          <div className="space-y-5">
           {/* 予定 */}
           <section className="space-y-2.5">
             <SectionTitle size="lg">今後の予定</SectionTitle>
@@ -970,9 +946,9 @@ export default async function SiteDetailPage({
               ]}
             />
           </section>
+          </div>
         </div>
-        {/* ===== /右レール ===== */}
-      </div>
+      </details>
     </div>
   );
 
@@ -1008,7 +984,15 @@ export default async function SiteDetailPage({
     <div className="border-b border-line bg-surface">
       <div className="mx-auto w-full max-w-7xl px-5 pb-5 pt-5 md:px-8 md:pt-6">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-base tnum text-ink-muted">{todayTime ? `今日 ${todayTime}` : " "}</p>
+          {/* 元請企業（タップで顧客情報へ） */}
+          <Link
+            href={`/customers/${site.customer.id}`}
+            className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-ink-soft active:opacity-70"
+          >
+            <Building2 className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+            <span className="truncate">{site.customer.name}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
+          </Link>
           <div className="flex shrink-0 items-center gap-1.5">
             {site.provisional && (
               <Badge tone="warn" className="border border-amber-300 font-bold dark:border-amber-700/60">
@@ -1022,7 +1006,11 @@ export default async function SiteDetailPage({
         <h1 className="mt-3 break-words text-2xl font-bold leading-snug text-ink [text-wrap:pretty]">
           {site.name}
         </h1>
-        {work && <p className="mt-2 text-sm text-ink-muted">{work}</p>}
+        {(work || todayTime) && (
+          <p className="mt-2 text-sm text-ink-muted tnum">
+            {[work, todayTime ? `今日 ${todayTime}` : null].filter(Boolean).join(" ・ ")}
+          </p>
+        )}
 
         {(area || crew.length > 0) && (
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
