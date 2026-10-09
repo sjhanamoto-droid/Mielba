@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  ArrowRight, Bell, BellRing, Building2, CalendarDays, ChevronRight, Ellipsis, MapPin, Users,
+  ArrowRight, Bell, BellRing, Building2, CalendarDays, ChevronRight, Ellipsis, MapPin,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -10,6 +10,7 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { OtherNotices, type NoticeItem } from "@/features/dashboard/other-notices";
 import { RemindReportsButton } from "@/features/dashboard/remind-reports-button";
 import { IconBadge } from "@/components/ui/icon-badge";
+import { Avatar } from "@/components/ui/avatar";
 import { LinkButton } from "@/components/ui/button";
 import { cn, mapSearchUrl } from "@/lib/utils";
 import {
@@ -27,11 +28,6 @@ import { dayTone, holidayName } from "@/lib/holidays";
 // の順に並べる。
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-
-/** 「河西 茂樹」→「河西」 */
-function familyName(name: string): string {
-  return name.trim().split(/[\s　]+/)[0] || name;
-}
 
 /** "09:00" → "9:00" */
 function shortTime(t: string): string {
@@ -154,7 +150,10 @@ export default async function HomePage() {
     visitSiteIds.length
       ? db.siteVisit.findMany({
           where: { siteId: { in: visitSiteIds }, date: today },
-          select: { siteId: true, user: { select: { name: true } } },
+          select: {
+            siteId: true,
+            user: { select: { id: true, name: true, avatarColor: true, avatarImage: true } },
+          },
           orderBy: { createdAt: "asc" },
         })
       : Promise.resolve([]),
@@ -196,10 +195,11 @@ export default async function HomePage() {
 
   const reportBySiteId = new Map(myReportsToday.map((r) => [r.siteId, r]));
 
-  const crewBySite = new Map<string, string[]>();
+  // 今日の担当：苗字が同じ人が多いので、名前ではなくアイコン（写真 or 色＋頭文字）で出す
+  const crewBySite = new Map<string, { id: string; name: string; avatarColor: string; avatarImage: string | null }[]>();
   for (const v of crewVisits) {
     const list = crewBySite.get(v.siteId) ?? [];
-    list.push(familyName(v.user.name));
+    list.push(v.user);
     crewBySite.set(v.siteId, list);
   }
   // 引き継ぎ：未確認（自分が書いたものは確認不要）を先に、それぞれ古い順
@@ -386,9 +386,18 @@ export default async function HomePage() {
                           </a>
                         )}
                         {crew.length > 0 && (
-                          <span className="flex min-w-0 items-center gap-1.5">
-                            <Users className="h-4 w-4 shrink-0" aria-hidden />
-                            <span className="break-words">担当 {crew.join("・")}</span>
+                          <span
+                            className="flex min-w-0 items-center gap-2"
+                            aria-label={`担当 ${crew.map((p) => p.name).join("・")}`}
+                          >
+                            <span aria-hidden>担当</span>
+                            <span className="flex flex-wrap items-center gap-1" aria-hidden>
+                              {crew.map((p) => (
+                                <span key={p.id} title={p.name}>
+                                  <Avatar name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" />
+                                </span>
+                              ))}
+                            </span>
                           </span>
                         )}
                       </div>
