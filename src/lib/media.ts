@@ -6,7 +6,7 @@
 // 再生は「/api/photos/[id] で認証 → 署名付き GET URL へ 307 リダイレクト」で通す。
 // GET はブラウザが CDN を直接叩くので、範囲リクエスト（動画のシーク）もそのまま効く。
 
-import { del, issueSignedToken, list, presignUrl, type IssuedSignedToken } from "@vercel/blob";
+import { BlobNotFoundError, del, head, issueSignedToken, list, presignUrl, type IssuedSignedToken } from "@vercel/blob";
 import {
   IMAGE_ALLOWED_MIMES,
   IMAGE_MAX_BYTES,
@@ -138,6 +138,33 @@ export async function deleteBlobPaths(paths: string[]): Promise<void> {
   }
 }
 
+// 2026-10-09 の誤った一括削除で、これ以前に上げた写真・動画の本体（Blob）が失われた。
+// パスの日付フォルダ（media/YYYY-MM-DD/）がこの日以前のものだけ、本体が残っているかを確かめる。
+const LOST_UNTIL_DAY = "2026-10-08";
+const missingPaths = new Set<string>();
+
+/** 失われた可能性がある日付の Blob か（それ以外は確認せず残っている前提で扱う） */
+export function mayBeLostBlob(blobPath: string): boolean {
+  const m = /^media\/(\d{4}-\d{2}-\d{2})\//.exec(blobPath);
+  return !!m && m[1] <= LOST_UNTIL_DAY;
+}
+
+/** Blob 本体が残っているか。無いと分かったパスはプロセス内で覚えて問い合わせを省く */
+export async function blobExists(blobPath: string): Promise<boolean> {
+  if (missingPaths.has(blobPath)) return false;
+  try {
+    await head(blobPath);
+    return true;
+  } catch (e) {
+    if (e instanceof BlobNotFoundError) {
+      missingPaths.add(blobPath);
+      return false;
+    }
+    // 通信エラー等は「ある」とみなして従来どおり本体へ転送する
+    return true;
+  }
+}
+
 /** Blob を置いているプレフィックス。掃除の対象範囲でもある */
 export const MEDIA_PREFIX = "media/";
 
@@ -151,6 +178,9 @@ export async function sweepOrphanBlobs(
   minAgeMs: number,
 ): Promise<number> {
   if (!isBlobConfigured()) return 0;
+  // 本番以外（ローカル・プレビュー）では絶対に消さない。ローカルの DB は本番の動画を参照していないため、
+  // 本番の Blob トークンで走らせると本番の動画を「参照なし」と誤判定して全部消してしまう。
+  if (process.env.VERCEL_ENV !== "production") return 0;
   const threshold = Date.now() - minAgeMs;
   const orphans: string[] = [];
   let cursor: string | undefined;

@@ -7,7 +7,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { db } from "@/lib/db";
-import { signedReadUrl } from "@/lib/media";
+import { blobExists, mayBeLostBlob, signedReadUrl } from "@/lib/media";
 
 /** 'data:<mime>;base64,<data>' をパースする（不正なら null） */
 function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null {
@@ -49,6 +49,29 @@ export async function GET(
   // 一覧の <img> が動画そのものを落としに行くのを防ぐ（呼び出し側は再生アイコンを出す）。
   if (wantThumb && photo.isVideo && !photo.thumbUrl) {
     return NextResponse.json({ error: "サムネイルがありません" }, { status: 404 });
+  }
+
+  // 2026-10-09 の誤削除で本体が失われた写真は、残っているサムネイルを代わりに返す（画質は落ちるが表示はできる）。
+  // 動画はサムネイルでは再生できないので、ここでは扱わない（従来どおり転送→再生できない）。
+  if (
+    photo.blobPath &&
+    !wantThumb &&
+    !photo.isVideo &&
+    photo.thumbUrl &&
+    mayBeLostBlob(photo.blobPath) &&
+    !(await blobExists(photo.blobPath))
+  ) {
+    const thumb = parseDataUrl(photo.thumbUrl);
+    if (thumb) {
+      return new NextResponse(new Uint8Array(thumb.buffer), {
+        status: 200,
+        headers: {
+          "Content-Type": thumb.mime,
+          "Content-Length": String(thumb.buffer.byteLength),
+          "Cache-Control": "private, max-age=86400",
+        },
+      });
+    }
   }
 
   // Blob 保存（写真・動画）の本体は、署名付きURLへ転送してブラウザに直接読ませる。
