@@ -62,8 +62,7 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
       <div className="min-h-0 flex-1 overflow-y-auto bg-surface-subtle px-4 py-4">
         <div className="space-y-2.5">
           <p className="px-1 pb-1 text-sm leading-relaxed text-ink-soft">
-            日を過ぎても入力できます。現場ごとに、その日の作業内容・勤怠を入力してください。
-            現調の現場は、日報の代わりに現調フォーマットを保存してください。
+            下記の現場の日報を入力してください。
           </p>
           {items.map((m) => {
             // 現調中の現場（下書きの日報が無いもの）は現調フォーマットへ。それ以外は日報へ
