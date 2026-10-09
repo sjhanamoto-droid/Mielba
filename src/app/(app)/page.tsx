@@ -335,7 +335,6 @@ export default async function HomePage() {
           <section className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
               <h2 className="text-xl font-bold text-ink">今日の現場</h2>
-              <SectionLink href={`/calendar?view=day&d=${todayKey}`} label="予定を見る" />
             </div>
 
             {todayVisits.length === 0 ? (
