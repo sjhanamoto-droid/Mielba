@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowRight, Check, HardHat, Loader2 } from "lucide-react";
+import { ArrowRight, Check, Loader2 } from "lucide-react";
 import { markHandoverRead } from "./actions";
 import type { PendingHandover } from "@/lib/pending-handovers";
 import { jstDateTimeLabel } from "@/lib/date";
@@ -195,14 +195,9 @@ function HandoverReadCard({
           </p>
         </div>
         {/* どこの現場の引き継ぎかを目立たせる */}
-        <div className="mt-3 flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-3 dark:border-brand-800 dark:bg-brand-950/40">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
-            <HardHat className="h-5 w-5" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-brand-700 dark:text-brand-300">現場</p>
-            <p className="break-words text-lg font-bold leading-snug text-ink">{item.siteName}</p>
-          </div>
+        <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5 dark:border-brand-800 dark:bg-brand-950/40">
+          <p className="text-xs font-semibold text-brand-700 dark:text-brand-300">現場</p>
+          <p className="break-words text-lg font-bold leading-snug text-ink">{item.siteName}</p>
         </div>
         <div className="mt-5">
           <Steps index={index} total={total} />
