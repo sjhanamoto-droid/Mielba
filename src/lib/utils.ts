@@ -104,9 +104,12 @@ export function fmtWorkMinutes(mins: number): string {
 }
 
 // 名前からアバター用イニシャル（日本語は先頭1文字）
+// アイコンの頭文字は下の名前の1文字目（「河西 茂樹」→「茂」）。同じ苗字の人が多いため。
+// 姓名の区切り（半角/全角スペース）が無い名前は先頭の1文字。
 export function initials(name: string): string {
-  if (!name) return "?";
-  return name.trim().charAt(0);
+  const parts = (name ?? "").trim().split(/[\s　]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts.length >= 2 ? parts[1] : parts[0]).charAt(0);
 }
 
 export function toDateInputValue(d: Date | string | null | undefined): string {
