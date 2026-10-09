@@ -6,6 +6,18 @@ import { fmtDateWithDay } from "@/lib/utils";
 // 稼働開始前の古い抜けで全員が一斉にブロックされる事故を避けるため、直近2週間に限定する。
 export const MISSING_LOOKBACK_DAYS = 14;
 
+// 当日分も、この時刻（JST）を過ぎたら未入力として強制する（17時の未提出通知と同じ時刻）。
+export const TODAY_DEADLINE_HOUR = 17;
+
+/** 今が JST で何時か（0-23） */
+function jstHourNow(): number {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", hourCycle: "h23" }).format(
+      new Date(),
+    ),
+  );
+}
+
 export type MissingReport = {
   siteId: string;
   siteName: string;
@@ -42,20 +54,24 @@ export function surveyCoversVisit(
 }
 
 /**
- * 指定ユーザーの「前日以前・直近 MISSING_LOOKBACK_DAYS 日」の範囲で、
+ * 指定ユーザーの「前日以前（17時以降は当日も）・直近 MISSING_LOOKBACK_DAYS 日」の範囲で、
  * 現場入り(SiteVisit)があるのに提出済み日報(SUBMITTED)が無い (現場, 日) を返す。
  * 現調フォーマットがその日以降に保存されている現場入りは済みとみなす。
  * 下書き(DRAFT)がある場合は draftReportId を添えて編集導線に使う。新しい日付順。
  */
 export async function getMissingPastReports(userId: string): Promise<MissingReport[]> {
   const todayKey = jstDateKey();
-  const todayStart = dateFromKey(todayKey); // これ未満＝前日以前
+  // これ未満を対象にする：普段は前日以前、17時を過ぎたら当日分も（書くまで先に進めない）
+  const until =
+    jstHourNow() >= TODAY_DEADLINE_HOUR
+      ? dateFromKey(addDaysKey(todayKey, 1))
+      : dateFromKey(todayKey);
   const lookbackStart = dateFromKey(addDaysKey(todayKey, -MISSING_LOOKBACK_DAYS));
 
   // 過去14日間の自分の現場入りと、同期間の自分の日報を突き合わせる。
   const [visits, reports] = await Promise.all([
     db.siteVisit.findMany({
-      where: { userId, date: { gte: lookbackStart, lt: todayStart } },
+      where: { userId, date: { gte: lookbackStart, lt: until } },
       select: {
         siteId: true,
         date: true,
@@ -70,7 +86,7 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
       orderBy: { date: "desc" },
     }),
     db.dailyReport.findMany({
-      where: { userId, workDate: { gte: lookbackStart, lt: todayStart } },
+      where: { userId, workDate: { gte: lookbackStart, lt: until } },
       select: { id: true, siteId: true, workDate: true, status: true },
     }),
   ]);
@@ -94,7 +110,7 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
       siteId: v.siteId,
       siteName: v.site.name,
       dateKey,
-      dateLabel: fmtDateWithDay(v.date),
+      dateLabel: dateKey === todayKey ? `今日（${fmtDateWithDay(v.date)}）` : fmtDateWithDay(v.date),
       draftReportId: draftByKey.get(k) ?? null,
       siteInSurvey: isSurveySite(v.site.siteStatus),
     });

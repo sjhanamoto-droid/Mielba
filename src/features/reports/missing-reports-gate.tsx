@@ -7,7 +7,7 @@ import { AlertTriangle, ChevronRight, ClipboardList, PenLine, Plus } from "lucid
 import { surveyFormHref, type MissingReport } from "@/lib/missing-reports";
 
 /**
- * 未入力日報の強制ゲート：前日以前に日報が未入力の現場があるとき、
+ * 未入力日報の強制ゲート：前日以前（17時以降は当日も）に日報が未入力の現場があるとき、
  * アプリ(app 配下)を開くと全画面で最前面に表示し、対象をすべて書き終えるまで
  * 他画面へ進めないようにする（閉じるボタンは出さない）。
  *
