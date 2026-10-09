@@ -187,7 +187,11 @@ export default async function HomePage() {
     upcomingSiteIds.length && lastUpcoming
       ? db.siteVisit.findMany({
           where: { siteId: { in: upcomingSiteIds }, date: { gte: tomorrowStart, lte: lastUpcoming } },
-          select: { siteId: true, date: true, user: { select: { name: true } } },
+          select: {
+            siteId: true,
+            date: true,
+            user: { select: { id: true, name: true, avatarColor: true, avatarImage: true } },
+          },
           orderBy: { createdAt: "asc" },
         })
       : Promise.resolve([]),
@@ -230,11 +234,11 @@ export default async function HomePage() {
     const events = todayEvents.filter((e) => e.siteId === siteId && e.source === "MANUAL");
     return events.find((e) => e.participants.some((p) => p.userId === user.id)) ?? events[0];
   }
-  function crewOn(siteId: string, date: Date): string[] {
+  function crewOn(siteId: string, date: Date) {
     const key = storedDateKey(date);
     return upcomingCrewVisits
       .filter((v) => v.siteId === siteId && storedDateKey(v.date) === key)
-      .map((v) => v.user.name);
+      .map((v) => v.user);
   }
   function siteEventOn(siteId: string, date: Date) {
     const key = storedDateKey(date);
@@ -539,7 +543,20 @@ export default async function HomePage() {
                             </p>
                           )}
                           {crew.length > 0 && (
-                            <p className="mt-0.5 break-words text-sm text-ink-soft">行く人 {crew.join("・")}</p>
+                            // 行く人：同じ苗字が多いので名前ではなくアイコンで
+                            <div
+                              className="mt-1.5 flex items-center gap-2 text-sm text-ink-muted"
+                              aria-label={`行く人 ${crew.map((p) => p.name).join("・")}`}
+                            >
+                              <span aria-hidden>行く人</span>
+                              <span className="flex flex-wrap items-center gap-1" aria-hidden>
+                                {crew.map((p) => (
+                                  <span key={p.id} title={p.name}>
+                                    <Avatar name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" />
+                                  </span>
+                                ))}
+                              </span>
+                            </div>
                           )}
                         </div>
                         <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
