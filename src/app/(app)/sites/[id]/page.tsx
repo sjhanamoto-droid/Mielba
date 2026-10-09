@@ -31,7 +31,7 @@ import { SiteDetailTabs } from "@/features/sites/site-detail-tabs";
 import { ConfirmRegistrationButton } from "@/features/sites/confirm-registration-button";
 import { Tabs } from "@/components/ui/tabs";
 import { todayRange, storedDateKey, jstDateKey } from "@/lib/date";
-import { cn, fmtDate, fmtMonthDay, fmtYen } from "@/lib/utils";
+import { cn, fmtDate, fmtDateWithDay, fmtMonthDay, fmtYen } from "@/lib/utils";
 import {
   PROJECT_TYPE_LABEL,
   BILLING_STATUS_LABEL,
@@ -980,6 +980,20 @@ export default async function SiteDetailPage({
     (site.locationName && !site.name.includes(site.locationName) ? site.locationName : null) ??
     projectType;
 
+  // 次回の作業日（最新の提出済み日報でメインの人が入れたもの）
+  const latestNext = await db.dailyReport.findFirst({
+    where: { siteId: site.id, status: "SUBMITTED", nextWorkChoice: { not: null } },
+    orderBy: [{ workDate: "desc" }, { updatedAt: "desc" }],
+    select: { nextWorkChoice: true, nextWorkDate: true, nextCheckDate: true },
+  });
+  const nextWorkLabel = !latestNext
+    ? null
+    : latestNext.nextWorkChoice === "DATE" && latestNext.nextWorkDate
+      ? `次回作業日 ${fmtDateWithDay(latestNext.nextWorkDate)}`
+      : latestNext.nextWorkChoice === "UNDECIDED"
+        ? `次回作業日 未定${latestNext.nextCheckDate ? `（${fmtDateWithDay(latestNext.nextCheckDate)}までに確認）` : ""}`
+        : "次回作業なし（今回で完了）";
+
   const summaryCard = (
     <div className="border-b border-line bg-surface">
       <div className="mx-auto w-full max-w-7xl px-5 pb-5 pt-5 md:px-8 md:pt-6">
@@ -1009,6 +1023,13 @@ export default async function SiteDetailPage({
         {(work || todayTime) && (
           <p className="mt-2 text-sm text-ink-muted tnum">
             {[work, todayTime ? `今日 ${todayTime}` : null].filter(Boolean).join(" ・ ")}
+          </p>
+        )}
+
+        {nextWorkLabel && (
+          <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
+            <CalendarRange className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+            {nextWorkLabel}
           </p>
         )}
 

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
+import { putInTrash, snapshotGraph } from "@/lib/trash";
 
 // 空文字を null に正規化
 function nz(v: FormDataEntryValue | null): string | null {
@@ -200,7 +201,7 @@ export async function setContactInactive(formData: FormData) {
 const DEFAULT_CUSTOMER_NAME = "その他";
 
 export async function deleteCustomer(id: string): Promise<{ error?: string }> {
-  await requireAdmin();
+  const me = await requireAdmin();
   if (!id) return { error: "顧客が見つかりません" };
   const customer = await db.customer.findUnique({ where: { id }, select: { name: true } });
   if (!customer) return { error: "顧客が見つかりません" };
@@ -209,7 +210,13 @@ export async function deleteCustomer(id: string): Promise<{ error?: string }> {
   }
   try {
     await db.$transaction(async (tx) => {
-      const siteCount = await tx.site.count({ where: { customerId: id } });
+      // 消す前に顧客（と担当者）をごみ箱へ。「その他」へ移す現場も覚えておき、戻すときに元へ戻す
+      const snapshot = await snapshotGraph(tx, "Customer", id, ["Site"]);
+      const movedSites = await tx.site.findMany({ where: { customerId: id }, select: { id: true } });
+      snapshot.movedSiteIds = movedSites.map((x) => x.id);
+      await putInTrash(tx, { kind: "CUSTOMER", label: customer.name, snapshot, deletedById: me.id });
+
+      const siteCount = movedSites.length;
       if (siteCount > 0) {
         const fallback =
           (await tx.customer.findFirst({ where: { name: DEFAULT_CUSTOMER_NAME }, select: { id: true } })) ??

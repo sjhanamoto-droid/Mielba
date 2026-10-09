@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { deleteBlobPaths } from "@/lib/media";
+import { putInTrash, snapshotBlobPaths, snapshotGraph } from "@/lib/trash";
 import { requireAdmin, requireUser } from "@/lib/session";
 import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
 import { isNonWorkEventCategory, isPreOrderSite } from "@/lib/constants";
@@ -554,19 +556,32 @@ export async function updateSite(siteId: string, formData: FormData) {
 // TODO・現調・材料など）は全リレーションの onDelete: Cascade で一緒に削除される。
 // UI 側で「本当に削除しますか？全てのデータが消えます」の二重確認を挟む前提。
 export async function deleteSite(siteId: string) {
-  await requireAdmin();
+  const me = await requireAdmin();
   if (!siteId) return { error: "現場が指定されていません" };
 
   const site = await db.site.findUnique({
     where: { id: siteId },
-    select: { id: true, customerId: true },
+    select: { id: true, customerId: true, name: true },
   });
   if (!site) return { error: "現場が見つかりません" };
+  let blobPaths: string[] = [];
   try {
-    await db.site.delete({ where: { id: siteId } });
-  } catch {
+    // 消す前に、現場と一緒に消える日報・写真・予定などを丸ごとごみ箱へ（30日間戻せる）
+    await db.$transaction(
+      async (tx) => {
+        const snapshot = await snapshotGraph(tx, "Site", siteId);
+        blobPaths = snapshotBlobPaths(snapshot);
+        await putInTrash(tx, { kind: "SITE", label: site.name, snapshot, deletedById: me.id });
+        await tx.site.delete({ where: { id: siteId } });
+      },
+      { timeout: 60_000 },
+    );
+  } catch (e) {
+    console.error("deleteSite failed:", e);
     return { error: "現場の削除に失敗しました。時間をおいて再度お試しください" };
   }
+  // 写真・動画の本体も Blob のごみ箱へ（戻すときにここから戻す）
+  await deleteBlobPaths(blobPaths);
   revalidatePath("/sites");
   revalidatePath("/");
   revalidatePath(`/customers/${site.customerId}`);

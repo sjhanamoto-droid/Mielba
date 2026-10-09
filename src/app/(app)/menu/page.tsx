@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   LogOut, Settings, ChevronRight, Bell,
-  Building2, UserCog, Clock, Lightbulb, type LucideIcon,
+  Building2, UserCog, Clock, Lightbulb, Trash2, type LucideIcon,
 } from "lucide-react";
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -29,6 +29,7 @@ export default async function MenuPage() {
         { href: "/customers", label: "顧客（元請企業）", icon: Building2 },
         { href: "/attendance", label: "稼働時間", icon: Clock },
         { href: "/settings/staff", label: "スタッフ管理", icon: UserCog },
+        { href: "/trash", label: "ごみ箱（削除したものを戻す）", icon: Trash2 },
         { href: "/help", label: "使い方・ヒント", icon: Lightbulb },
         { href: "/settings", label: "設定", icon: Settings },
       ]

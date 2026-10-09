@@ -7,9 +7,12 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
 import { assistReport, type AiAssist } from "@/lib/ai";
-import { dateFromKey, jstDateKey } from "@/lib/date";
+import { dateFromKey, jstDateKey, storedDateKey } from "@/lib/date";
 import { removeFromWorkEvent } from "@/lib/work-event";
 import { ABSENCE_REASONS } from "@/lib/constants";
+import { syncNextWorkEvent, resolveOlderNextWorkChecks } from "@/lib/next-work";
+import { putInTrash, snapshotBlobPaths, snapshotGraph } from "@/lib/trash";
+import { deleteBlobPaths } from "@/lib/media";
 import { parseAndValidatePhotosField, type ParsedPhotosField } from "@/lib/photos";
 
 // ───────────────────────── AIサポート（§4.3.3） ─────────────────────────
@@ -62,6 +65,10 @@ const reportSchema = z
     stockNote: z.string().optional(),
     // メインの人以外は材料・在庫欄がロックされ "1" が送られる（在庫必須をスキップ）
     materialsLocked: z.string().optional(),
+    // 次回の作業日（メインの人だけ入力。材料と同じく materialsLocked のときは送られない）
+    nextWorkChoice: z.enum(["DATE", "UNDECIDED", "DONE"]).optional(),
+    nextWorkDate: z.string().optional(),
+    nextCheckDate: z.string().optional(),
     status: z.enum(["DRAFT", "SUBMITTED"]),
   })
   .superRefine((v, ctx) => {
@@ -118,6 +125,20 @@ const reportSchema = z
       }
     } else if (v.trainFare && v.trainFare.trim() !== "" && !isNonNegInt(v.trainFare)) {
       err("trainFare", "電車賃は0以上の整数で入力してください");
+    }
+
+    // 次回の作業日（メインの人のみ・提出時必須）。日付は作業日より後、確認日は今日以降。
+    if (submitted && v.materialsLocked !== "1") {
+      const isKey = (x: string | undefined) => !!x && /^\d{4}-\d{2}-\d{2}$/.test(x);
+      if (!v.nextWorkChoice) {
+        err("nextWork", "次回の作業日を選択してください（未定・次回なしも選べます）");
+      } else if (v.nextWorkChoice === "DATE") {
+        if (!isKey(v.nextWorkDate)) err("nextWork", "次回の作業日を入力してください");
+        else if (v.nextWorkDate! <= v.workDate) err("nextWork", "次回の作業日は作業日より後の日付にしてください");
+      } else if (v.nextWorkChoice === "UNDECIDED") {
+        if (!isKey(v.nextCheckDate)) err("nextWork", "いつまでに確認するかの日付を入力してください");
+        else if (v.nextCheckDate! < jstDateKey()) err("nextWork", "確認日は今日以降の日付にしてください");
+      }
     }
 
     // 時間変更理由（所定時間＝フォーム初期値と異なるとき提出時必須）。
@@ -341,6 +362,9 @@ async function persist(
     stockChoice: formData.get("stockChoice") || undefined,
     stockNote: formData.get("stockNote") || undefined,
     materialsLocked: formData.get("materialsLocked") || undefined,
+    nextWorkChoice: formData.get("nextWorkChoice") || undefined,
+    nextWorkDate: formData.get("nextWorkDate") || undefined,
+    nextCheckDate: formData.get("nextCheckDate") || undefined,
     status: formData.get("status") || "DRAFT",
   });
   if (!parsed.success) {
@@ -413,10 +437,22 @@ async function persist(
     stockUsed: d.stockChoice ? d.stockChoice === "HAS" : null,
     stockNote: d.stockChoice === "HAS" ? clean(d.stockNote) : null,
   };
-  const updateData = materialsLocked ? baseData : { ...baseData, ...stockData };
+  // 次回の作業日（メインの人だけが持つ。ロック時は既存値を壊さないよう update に含めない）
+  const nextChoice = d.nextWorkChoice ?? null;
+  const nextWorkDate =
+    nextChoice === "DATE" && d.nextWorkDate ? dateFromKey(d.nextWorkDate) : null;
+  const nextData = {
+    nextWorkChoice: nextChoice,
+    nextWorkDate,
+    nextCheckDate:
+      nextChoice === "UNDECIDED" && d.nextCheckDate ? dateFromKey(d.nextCheckDate) : null,
+    // 入れ直したら確認はやり直し（未定以外なら片づけ済みの扱いは不要なので null）
+    nextCheckResolvedAt: null,
+  };
+  const updateData = materialsLocked ? baseData : { ...baseData, ...stockData, ...nextData };
   const createData = materialsLocked
     ? { ...baseData, stockUsed: null, stockNote: null }
-    : { ...baseData, ...stockData };
+    : { ...baseData, ...stockData, ...nextData };
 
   let savedId: string;
   try {
@@ -487,6 +523,18 @@ async function persist(
     return { error: GENERIC_ERROR };
   }
 
+  // 次回作業日：日付なら予定に入れる（この日報由来の予定を作り直す）。提出時は同じ現場の古い確認を片づける
+  if (!materialsLocked) {
+    try {
+      await syncNextWorkEvent(savedId, d.siteId, nextWorkDate, userId);
+      if (d.status === "SUBMITTED" && nextChoice) {
+        await resolveOlderNextWorkChecks(d.siteId, savedId);
+      }
+    } catch (e) {
+      console.error("[reports] 次回作業日の反映エラー:", e);
+    }
+  }
+
   revalidateReport(savedId, d.siteId);
   return { ok: true, id: savedId, status: d.status };
 }
@@ -531,6 +579,50 @@ export async function updateReport(formData: FormData) {
   const result = await persist(formData, user.id, reportId);
   if ("error" in result) return result;
   redirect(`/reports/${result.id}?toast=${encodeURIComponent(successToast(result.status))}`);
+}
+
+// ───────────────────────── 次回作業日の確認（確認日の全画面から） ─────────────────────────
+// 未定にしていた日報の確認日が来たら、本人が「次回作業日を決める」か「確認日を延期する」。
+export async function resolveNextWork(
+  reportId: string,
+  input: { date: string } | { postpone: string },
+): Promise<{ ok?: true; error?: string }> {
+  const user = await requireUser();
+  const report = await db.dailyReport.findUnique({
+    where: { id: reportId },
+    select: { userId: true, siteId: true },
+  });
+  if (!report) return { error: "日報が見つかりません" };
+  if (report.userId !== user.id && !isAdmin(user)) return { error: "権限がありません" };
+  const todayKey = jstDateKey();
+  const isKey = (x: string) => /^\d{4}-\d{2}-\d{2}$/.test(x);
+  try {
+    if ("date" in input) {
+      if (!isKey(input.date) || input.date < todayKey) {
+        return { error: "次回の作業日は今日以降の日付にしてください" };
+      }
+      const date = dateFromKey(input.date);
+      await db.dailyReport.update({
+        where: { id: reportId },
+        data: { nextWorkChoice: "DATE", nextWorkDate: date, nextCheckResolvedAt: new Date() },
+      });
+      await syncNextWorkEvent(reportId, report.siteId, date, user.id);
+      await resolveOlderNextWorkChecks(report.siteId, reportId);
+    } else {
+      if (!isKey(input.postpone) || input.postpone <= todayKey) {
+        return { error: "新しい確認日は明日以降の日付にしてください" };
+      }
+      await db.dailyReport.update({
+        where: { id: reportId },
+        data: { nextCheckDate: dateFromKey(input.postpone) },
+      });
+    }
+  } catch (e) {
+    console.error("[reports] 次回作業日の確認エラー:", e);
+    return { error: GENERIC_ERROR };
+  }
+  revalidateReport(reportId, report.siteId);
+  return { ok: true };
 }
 
 // ───────────────────────── 現場不参加（休み等） ─────────────────────────
@@ -668,18 +760,54 @@ export async function deleteReport(id: string) {
   if (!isAdmin(user)) {
     return { error: "日報の削除は管理者のみ可能です" };
   }
+  let blobPaths: string[] = [];
   try {
-    // 起票元の日報が消えるのに引き継ぎ掲示だけ残らないよう、未解決の引き継ぎも一緒に削除する。
-    // 日報から作られた予定（配達・次回工程など）も出所が消えるので一緒に削除する。
-    await db.$transaction([
-      db.handover.deleteMany({ where: { reportId: id, resolvedAt: null } }),
-      db.calendarEvent.deleteMany({ where: { reportId: id } }),
-      // その日のその人の現場入りも消す（残ると「日報未入力」として再入力を求められるため）
-      db.siteVisit.deleteMany({
-        where: { siteId: report.siteId, userId: report.userId, date: report.workDate },
-      }),
-      db.dailyReport.delete({ where: { id } }),
-    ]);
+    await db.$transaction(
+      async (tx) => {
+        // 消す前に、日報と一緒に消えるもの（写真・材料・コメント、日報から起票した引き継ぎ・予定、
+        // その日の現場入り）を丸ごとごみ箱へ（30日間戻せる）
+        const snapshot = await snapshotGraph(tx, "DailyReport", id);
+        const handovers = await tx.handover.findMany({ where: { reportId: id, resolvedAt: null } });
+        const reads = await tx.handoverRead.findMany({
+          where: { handoverId: { in: handovers.map((h) => h.id) } },
+        });
+        const events = await tx.calendarEvent.findMany({ where: { reportId: id } });
+        const participants = await tx.eventParticipant.findMany({
+          where: { eventId: { in: events.map((e) => e.id) } },
+        });
+        const visits = await tx.siteVisit.findMany({
+          where: { siteId: report.siteId, userId: report.userId, date: report.workDate },
+        });
+        snapshot.tables.push(
+          { model: "Handover", rows: handovers },
+          { model: "HandoverRead", rows: reads },
+          { model: "CalendarEvent", rows: events },
+          { model: "EventParticipant", rows: participants },
+          { model: "SiteVisit", rows: visits },
+        );
+        blobPaths = snapshotBlobPaths(snapshot);
+        const who = await tx.user.findUnique({ where: { id: report.userId }, select: { name: true } });
+        const site = await tx.site.findUnique({ where: { id: report.siteId }, select: { name: true } });
+        await putInTrash(tx, {
+          kind: "REPORT",
+          label: `${storedDateKey(report.workDate).slice(5).replace("-", "/")} ${site?.name ?? ""}・${who?.name ?? ""}`,
+          snapshot,
+          deletedById: user.id,
+        });
+
+        // 起票元の日報が消えるのに引き継ぎ掲示だけ残らないよう、未解決の引き継ぎも一緒に削除する。
+        // 日報から作られた予定（配達・次回工程など）も出所が消えるので一緒に削除する。
+        await tx.handover.deleteMany({ where: { reportId: id, resolvedAt: null } });
+        await tx.calendarEvent.deleteMany({ where: { reportId: id } });
+        // その日のその人の現場入りも消す（残ると「日報未入力」として再入力を求められるため）
+        await tx.siteVisit.deleteMany({
+          where: { siteId: report.siteId, userId: report.userId, date: report.workDate },
+        });
+        await tx.dailyReport.delete({ where: { id } });
+      },
+      { timeout: 60_000 },
+    );
+    await deleteBlobPaths(blobPaths);
     // カレンダーの「作業」予定からも外す（空になった自動予定は掃除）
     await removeFromWorkEvent(report.siteId, report.userId, report.workDate);
   } catch (e) {

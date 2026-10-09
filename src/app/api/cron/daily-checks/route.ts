@@ -4,17 +4,22 @@
 //     1/3/5/7 または 7超 のとき、作成者本人のみへ通知する。
 // (B) 人工超過: actualStartDate があり targetManDays>0 の現場で、着工日以降の
 //     提出済み日報件数が目標人工を超えたら、全ADMIN へ通知する。
-// (C) 動画の掃除: どの写真レコードからも参照されていない Blob を消す。
-//     動画を選んだあと日報を保存せず離脱すると Blob だけが残るため。
+// (C) 写真・動画の掃除: どの写真レコードからも参照されていない Blob をごみ箱(trash/)へ移す。
+//     日報を保存せず離脱すると Blob だけが残るため。一度に大量なら中止して管理者へ通知（本番のみ）。
+// (F) ごみ箱で30日を過ぎた Blob を完全に削除する（本番のみ）。
+// (G) ごみ箱（削除した現場・日報・顧客のスナップショット）で30日を過ぎたものを消す。
 // (D) 引き継ぎの未確認: 今日の配員のうち、その現場の対応中の引き継ぎをまだ確認していない人へ通知する。
 //     アプリを開けば強制ゲートで読ませるが、開く前に気づけるよう Push でも知らせる。
-// (A)(B)(D) の dedupeKey は現場・当日単位で、同日の重複通知を防ぐ。
+// (E) 次回作業日の確認日: 日報で「次回の作業日＝未定」にした本人へ、確認日（以降も未解決なら毎日）に通知する。
+//     アプリを開けば全画面で「決める／延期する」まで進めない（NextWorkGate）。
+// (A)(B)(D)(E) の dedupeKey は現場（日報）・当日単位で、同日の重複通知を防ぐ。
 
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createNotificationForUsers } from "@/lib/notifications";
 import { dateFromKey, jstDateKey, todayRange } from "@/lib/date";
-import { sweepOrphanBlobs } from "@/lib/media";
+import { purgeBlobTrash, sweepOrphanBlobs } from "@/lib/media";
+import { TRASH_KEEP_DAYS } from "@/lib/trash";
 import { handoverGateSince } from "@/lib/pending-handovers";
 
 export const dynamic = "force-dynamic";
@@ -130,21 +135,73 @@ async function handle(req: NextRequest) {
     }
   }
 
-  // ── (C) 参照されていない動画 Blob の掃除 ──
-  // 当日アップロード中のものを巻き込まないよう、24時間より古いものだけ消す。
-  let sweptBlobs = 0;
+  // ── (E) 次回作業日の確認日（未定のまま確認日が来た日報の本人へ） ──
+  const { lt: tomorrowStart } = todayRange();
+  const dueChecks = await db.dailyReport.findMany({
+    where: {
+      status: "SUBMITTED",
+      nextWorkChoice: "UNDECIDED",
+      nextCheckResolvedAt: null,
+      nextCheckDate: { lt: tomorrowStart },
+    },
+    select: { id: true, userId: true, siteId: true, site: { select: { name: true } } },
+  });
+  for (const r of dueChecks) {
+    created += await createNotificationForUsers([r.userId], {
+      type: "NEXT_WORK_CHECK",
+      title: "次回作業日の確認日です",
+      body: `${r.site.name}：次回の作業日を決めてください`,
+      href: `/sites/${r.siteId}`,
+      siteId: r.siteId,
+      reportId: r.id,
+      dedupeKey: `next-work-check-${r.id}-${dayKey}`,
+    });
+  }
+
+  // ── (C) 参照されていない写真・動画 Blob の掃除（ごみ箱へ移す） ──
+  // 当日アップロード中のものを巻き込まないよう、24時間より古いものだけ対象。
+  // 一度に大量に消そうとしたら中止し、管理者に知らせる（設定や DB の取り違えを疑う）。
+  let sweep = { deleted: 0, blocked: 0, total: 0 };
   try {
     const rows = await db.photo.findMany({
       where: { blobPath: { not: null } },
       select: { blobPath: true },
     });
     const referenced = new Set(rows.map((r) => r.blobPath as string));
-    sweptBlobs = await sweepOrphanBlobs(referenced, 24 * 60 * 60 * 1000);
+    sweep = await sweepOrphanBlobs(referenced, 24 * 60 * 60 * 1000);
+    if (sweep.blocked > 0) {
+      created += await createNotificationForUsers(adminIds, {
+        type: "BLOB_SWEEP_BLOCKED",
+        title: "写真・動画の自動整理を止めました",
+        body: `使われていない写真・動画が${sweep.blocked}件（全${sweep.total}件中）見つかり、多すぎるため削除を中止しました。開発担当に確認してください。`,
+        href: "/",
+        dedupeKey: `blob-sweep-blocked-${dayKey}`,
+      });
+    }
   } catch {
     // 掃除に失敗しても通知処理の結果は返す
   }
 
-  return NextResponse.json({ ok: true, created, sweptBlobs });
+  // ── (F) ごみ箱の写真・動画で30日を過ぎたものを完全に削除 ──
+  let purgedTrash = 0;
+  try {
+    purgedTrash = await purgeBlobTrash();
+  } catch {
+    // 失敗しても次回に持ち越すだけ
+  }
+
+  // ── (G) ごみ箱（削除した現場・日報・顧客）で30日を過ぎたものを消す ──
+  let purgedItems = 0;
+  try {
+    const r = await db.trashItem.deleteMany({
+      where: { deletedAt: { lt: new Date(Date.now() - TRASH_KEEP_DAYS * 86_400_000) } },
+    });
+    purgedItems = r.count;
+  } catch {
+    // 失敗しても次回に持ち越すだけ
+  }
+
+  return NextResponse.json({ ok: true, created, sweep, purgedTrash, purgedItems });
 }
 
 export const GET = handle;

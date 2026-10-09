@@ -51,6 +51,10 @@ export type ReportDraftData = {
   materials: MaterialDraftRow[];
   stockRows: MaterialDraftRow[];
   expenses: ExpenseDraftRow[];
+  // 次回の作業日（古いドラフトに無ければ "" で補う）
+  nextWorkChoice?: string;
+  nextWorkDate?: string;
+  nextCheckDate?: string;
 };
 
 export type StoredReportDraft = {

@@ -130,6 +130,20 @@ export default async function ReportDetailPage({
             </p>
           )}
 
+          {/* 次回の作業日（メインの人が提出時に入れたもの） */}
+          {report.nextWorkChoice && (
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-ink-soft">
+              <CalendarDays className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+              次回の作業日：
+              <span className="font-semibold text-ink">
+                {report.nextWorkChoice === "DATE" && report.nextWorkDate
+                  ? fmtDateWithDay(report.nextWorkDate)
+                  : report.nextWorkChoice === "UNDECIDED"
+                    ? `未定${report.nextCheckDate ? `（${fmtDateWithDay(report.nextCheckDate)}までに確認）` : ""}`
+                    : "次回なし"}
+              </span>
+            </p>
+          )}
           <div className="mt-3 flex items-center gap-2 text-sm text-ink-muted">
             <Avatar name={report.user.name} color={report.user.avatarColor} image={report.user.avatarImage} size="sm" />
             <span className="min-w-0 truncate">{report.user.name}</span>

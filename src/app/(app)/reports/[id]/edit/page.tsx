@@ -108,6 +108,9 @@ export default async function EditReportPage({
     timeChangeReason: report.timeChangeReason,
     stockUsed: report.stockUsed,
     stockNote: report.stockNote,
+    nextWorkChoice: report.nextWorkChoice,
+    nextWorkDate: report.nextWorkDate,
+    nextCheckDate: report.nextCheckDate,
     materials: report.materials.map((m) => ({
       name: m.name,
       quantity: m.quantity,

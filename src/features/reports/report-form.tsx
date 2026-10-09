@@ -50,6 +50,9 @@ export type ReportFormData = {
   materials: { name: string; quantity: string | null; unit: string | null }[];
   stockUses: { name: string; quantity: string | null; unit: string | null }[];
   expenses: { label: string; amount: number }[];
+  nextWorkChoice?: string | null;
+  nextWorkDate?: Date | string | null;
+  nextCheckDate?: Date | string | null;
   // 既存写真は {id} 参照（base64 は再送しない）
   photos: UploaderPhoto[];
 };
@@ -183,6 +186,14 @@ export function ReportForm({
     initial ? (initial.stockUsed === true ? "HAS" : initial.stockUsed === false ? "NONE" : "") : "",
   );
   const [stockNote, setStockNote] = useState<string>(initial?.stockNote ?? "");
+  // 次回の作業日（メインの人だけ）：DATE | UNDECIDED | DONE | ""
+  const [nextWorkChoice, setNextWorkChoice] = useState<string>(initial?.nextWorkChoice ?? "");
+  const [nextWorkDate, setNextWorkDate] = useState<string>(
+    initial?.nextWorkDate ? toDateInputValue(initial.nextWorkDate) : "",
+  );
+  const [nextCheckDate, setNextCheckDate] = useState<string>(
+    initial?.nextCheckDate ? toDateInputValue(initial.nextCheckDate) : "",
+  );
 
   const [materials, setMaterials] = useState<MaterialRow[]>(
     initial?.materials?.map((m) => ({
@@ -220,6 +231,7 @@ export function ReportForm({
       parkingFee, parkingFeeChoice, trainFare, trainFareChoice,
       timeChangeReason, stockChoice, stockNote,
       materials, stockRows, expenses,
+      nextWorkChoice, nextWorkDate, nextCheckDate,
     }),
     [
       workDate, startTime, endTime, aiDraft, detail,
@@ -227,6 +239,7 @@ export function ReportForm({
       parkingFee, parkingFeeChoice, trainFare, trainFareChoice,
       timeChangeReason, stockChoice, stockNote,
       materials, stockRows, expenses,
+      nextWorkChoice, nextWorkDate, nextCheckDate,
     ],
   );
   const initialJsonRef = useRef<string | null>(null);
@@ -272,6 +285,9 @@ export function ReportForm({
     setMaterials(Array.isArray(d.materials) ? d.materials : []);
     setStockRows(Array.isArray(d.stockRows) ? d.stockRows : []);
     setExpenses(Array.isArray(d.expenses) ? d.expenses : []);
+    setNextWorkChoice(d.nextWorkChoice ?? "");
+    setNextWorkDate(d.nextWorkDate ?? "");
+    setNextCheckDate(d.nextCheckDate ?? "");
     setRestoreCandidate(null);
   }
 
@@ -926,6 +942,79 @@ export function ReportForm({
       </YesNoField>
       </div>
       </section>
+
+      {/* 次回の作業日（メインの人だけ・提出時必須）。未定なら確認日を入れ、その日に通知＋全画面で決める */}
+      {!materialsLocked && (
+        <section className="space-y-2.5">
+          <SectionTitle>
+            <span className="flex items-center gap-1.5">
+              <CalendarClock className="h-4 w-4" />
+              次回の作業日
+            </span>
+          </SectionTitle>
+          <div className={cn("card space-y-3 p-4", fieldErrors.nextWork && "border-red-300")}>
+            <input type="hidden" name="nextWorkChoice" value={nextWorkChoice} />
+            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="次回の作業日">
+              {(
+                [
+                  ["DATE", "日付を入れる"],
+                  ["UNDECIDED", "未定"],
+                  ["DONE", "次回なし"],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={nextWorkChoice === v}
+                  onClick={() => setNextWorkChoice(v)}
+                  className={cn(
+                    "min-h-[44px] rounded-xl border px-2 text-sm font-bold transition-colors",
+                    nextWorkChoice === v
+                      ? "border-brand-600 bg-brand-600 text-white"
+                      : "border-line-strong bg-surface text-ink-soft active:bg-surface-sunken",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {nextWorkChoice === "DATE" && (
+              <Field label="次回の作業日" htmlFor="nextWorkDate" hint="（予定に入ります）">
+                <Input
+                  id="nextWorkDate"
+                  name="nextWorkDate"
+                  type="date"
+                  min={workDate}
+                  value={nextWorkDate}
+                  onChange={(e) => setNextWorkDate(e.target.value)}
+                />
+              </Field>
+            )}
+            {nextWorkChoice === "UNDECIDED" && (
+              <Field label="いつまでに確認するか" htmlFor="nextCheckDate">
+                <Input
+                  id="nextCheckDate"
+                  name="nextCheckDate"
+                  type="date"
+                  min={maxDate}
+                  value={nextCheckDate}
+                  onChange={(e) => setNextCheckDate(e.target.value)}
+                />
+                <p className="mt-1.5 text-xs text-ink-muted">
+                  この日の朝にあなたへ通知が届き、アプリを開くと次回の作業日を決めるまで先に進めません（延期もできます）。
+                </p>
+              </Field>
+            )}
+            {nextWorkChoice === "DONE" && (
+              <p className="text-xs text-ink-muted">この現場の作業は今回で終わりとして記録します。</p>
+            )}
+            {fieldErrors.nextWork && (
+              <p className="text-xs font-semibold text-status-danger">{fieldErrors.nextWork}</p>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* 写真 */}
       <section className="space-y-2.5">

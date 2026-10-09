@@ -6,7 +6,16 @@
 // 再生は「/api/photos/[id] で認証 → 署名付き GET URL へ 307 リダイレクト」で通す。
 // GET はブラウザが CDN を直接叩くので、範囲リクエスト（動画のシーク）もそのまま効く。
 
-import { BlobNotFoundError, del, head, issueSignedToken, list, presignUrl, type IssuedSignedToken } from "@vercel/blob";
+import {
+  BlobNotFoundError,
+  copy,
+  del,
+  head,
+  issueSignedToken,
+  list,
+  presignUrl,
+  type IssuedSignedToken,
+} from "@vercel/blob";
 import {
   IMAGE_ALLOWED_MIMES,
   IMAGE_MAX_BYTES,
@@ -124,18 +133,81 @@ export async function createMediaUploadTarget(
   return { uploadUrl: presignedUrl, blobPath };
 }
 
+/** ごみ箱のプレフィックス。消した Blob は trash/<元のパス> に30日置いてから完全削除する */
+export const TRASH_PREFIX = "trash/";
+/** ごみ箱に置く期間 */
+export const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+
 /**
- * 写真レコードの削除に合わせて Blob 本体も消す。
+ * 写真レコードの削除に合わせて Blob 本体も消す（すぐには消さず、ごみ箱へ移す）。
+ * 2026-10-09 の誤削除を受け、消す前に必ず trash/ へコピーし、コピーできたものだけ元を消す。
+ * 30日以内なら restoreBlobPaths で元のパスへ戻せる。
  * 消し漏れても課金が少し残るだけなので、失敗しても呼び出し側の処理は止めない。
  */
 export async function deleteBlobPaths(paths: string[]): Promise<void> {
-  const targets = paths.filter((p) => p.length > 0);
+  const targets = paths.filter((p) => p.length > 0 && !p.startsWith(TRASH_PREFIX));
   if (targets.length === 0 || !isBlobConfigured()) return;
+  const moved: string[] = [];
+  for (const p of targets) {
+    try {
+      await copy(p, TRASH_PREFIX + p, {
+        access: "private",
+        addRandomSuffix: false,
+        allowOverwrite: true,
+      });
+      moved.push(p);
+    } catch (e) {
+      // 元が既に無い（BlobNotFound）ものは消す必要もない。それ以外のコピー失敗は元を残す
+      if (!(e instanceof BlobNotFoundError)) console.error("[media] ごみ箱へのコピー失敗:", p, e);
+    }
+  }
+  if (moved.length === 0) return;
   try {
-    await del(targets);
+    await del(moved);
   } catch {
     // 孤児 Blob は運用上無害。ここで日報の保存を失敗させない
   }
+}
+
+/**
+ * ごみ箱から元のパスへ戻す（ごみ箱からの復元・事故時の復旧に使う）。
+ * 戻せた件数を返す。ごみ箱に無いもの（30日超で完全削除済み等）は飛ばす。
+ */
+export async function restoreBlobPaths(paths: string[]): Promise<number> {
+  if (!isBlobConfigured()) return 0;
+  let restored = 0;
+  for (const p of paths.filter((x) => x.length > 0)) {
+    try {
+      await copy(TRASH_PREFIX + p, p, {
+        access: "private",
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        cacheControlMaxAge: 30 * 24 * 60 * 60,
+      });
+      restored++;
+    } catch (e) {
+      if (!(e instanceof BlobNotFoundError)) console.error("[media] ごみ箱からの復元失敗:", p, e);
+    }
+  }
+  return restored;
+}
+
+/** ごみ箱で30日を過ぎた Blob を完全に削除する（本番の cron からのみ） */
+export async function purgeBlobTrash(maxAgeMs = TRASH_KEEP_MS): Promise<number> {
+  if (!isBlobConfigured() || process.env.VERCEL_ENV !== "production") return 0;
+  const threshold = Date.now() - maxAgeMs;
+  const old: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await list({ prefix: TRASH_PREFIX, cursor, limit: 1000 });
+    for (const b of page.blobs) {
+      // copy で作った時刻＝ごみ箱に入れた時刻
+      if (b.uploadedAt.getTime() < threshold) old.push(b.pathname);
+    }
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  if (old.length > 0) await del(old);
+  return old.length;
 }
 
 // 2026-10-09 の誤った一括削除で、これ以前に上げた写真・動画の本体（Blob）が失われた。
@@ -173,21 +245,37 @@ export const MEDIA_PREFIX = "media/";
  * 動画を選んだあと日報を保存せずに離脱すると、Blob だけが残るため定期的に掃除する。
  * アップロード直後の Blob を消さないよう、一定時間より古いものだけを対象にする。
  */
+/** 掃除で一度に消してよい上限。これを超える候補が出たら異常とみなして消さない */
+const SWEEP_MAX_COUNT = 20;
+const SWEEP_MAX_RATIO = 0.05;
+
+export type SweepResult = {
+  /** ごみ箱へ移した件数 */
+  deleted: number;
+  /** 候補が多すぎて中止したときの候補数（中止していなければ 0） */
+  blocked: number;
+  /** 掃除対象のプレフィックス内の総数 */
+  total: number;
+};
+
 export async function sweepOrphanBlobs(
   referenced: Set<string>,
   minAgeMs: number,
-): Promise<number> {
-  if (!isBlobConfigured()) return 0;
+): Promise<SweepResult> {
+  const none = { deleted: 0, blocked: 0, total: 0 };
+  if (!isBlobConfigured()) return none;
   // 本番以外（ローカル・プレビュー）では絶対に消さない。ローカルの DB は本番の動画を参照していないため、
   // 本番の Blob トークンで走らせると本番の動画を「参照なし」と誤判定して全部消してしまう。
-  if (process.env.VERCEL_ENV !== "production") return 0;
+  if (process.env.VERCEL_ENV !== "production") return none;
   const threshold = Date.now() - minAgeMs;
   const orphans: string[] = [];
+  let total = 0;
   let cursor: string | undefined;
 
   do {
     const page = await list({ prefix: MEDIA_PREFIX, cursor, limit: 1000 });
     for (const blob of page.blobs) {
+      total++;
       if (referenced.has(blob.pathname)) continue;
       if (blob.uploadedAt.getTime() > threshold) continue;
       orphans.push(blob.pathname);
@@ -195,7 +283,15 @@ export async function sweepOrphanBlobs(
     cursor = page.hasMore ? page.cursor : undefined;
   } while (cursor);
 
-  if (orphans.length === 0) return 0;
+  if (orphans.length === 0) return { deleted: 0, blocked: 0, total };
+  // 一度に大量（20件超 or 全体の5%超）に消そうとしたら、設定や DB の取り違えを疑って中止する
+  // （数件の置き去りは日常的に出るので、割合の判定は5件を超えたときだけ）
+  if (
+    orphans.length > SWEEP_MAX_COUNT ||
+    (orphans.length > 5 && orphans.length > total * SWEEP_MAX_RATIO)
+  ) {
+    return { deleted: 0, blocked: orphans.length, total };
+  }
   await deleteBlobPaths(orphans);
-  return orphans.length;
+  return { deleted: orphans.length, blocked: 0, total };
 }
