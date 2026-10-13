@@ -22,6 +22,8 @@ import {
   type StoredReportDraft,
 } from "./report-autosave";
 import { cn, toDateInputValue } from "@/lib/utils";
+import { addDaysKey } from "@/lib/date";
+import { DateWheelPicker } from "@/components/ui/date-wheel-picker";
 import { EVENT_CATEGORY_LABEL, type EventCategory } from "@/lib/constants";
 
 type MaterialRow = MaterialDraftRow; // { name, quantity, unit, custom }
@@ -567,14 +569,13 @@ export function ReportForm({
       <div className="card space-y-3 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="作業日" required htmlFor="workDate" error={fieldErrors.workDate} className="min-w-0">
-            <Input
+            <DateWheelPicker
               id="workDate"
               name="workDate"
-              type="date"
+              title="作業日"
               value={workDate}
               max={maxDate}
-              onChange={(e) => setWorkDate(e.target.value)}
-              required
+              onChange={setWorkDate}
             />
           </Field>
           <div className="grid min-w-0 grid-cols-2 gap-3">
@@ -981,25 +982,25 @@ export function ReportForm({
             </div>
             {nextWorkChoice === "DATE" && (
               <Field label="次回の作業日" htmlFor="nextWorkDate" hint="（予定に入ります）">
-                <Input
+                <DateWheelPicker
                   id="nextWorkDate"
                   name="nextWorkDate"
-                  type="date"
-                  min={workDate}
+                  title="次回の作業日"
+                  min={workDate ? addDaysKey(workDate, 1) : undefined}
                   value={nextWorkDate}
-                  onChange={(e) => setNextWorkDate(e.target.value)}
+                  onChange={setNextWorkDate}
                 />
               </Field>
             )}
             {nextWorkChoice === "UNDECIDED" && (
               <Field label="いつまでに確認するか" htmlFor="nextCheckDate">
-                <Input
+                <DateWheelPicker
                   id="nextCheckDate"
                   name="nextCheckDate"
-                  type="date"
+                  title="いつまでに確認するか"
                   min={maxDate}
                   value={nextCheckDate}
-                  onChange={(e) => setNextCheckDate(e.target.value)}
+                  onChange={setNextCheckDate}
                 />
                 <p className="mt-1.5 text-xs text-ink-muted">
                   この日の朝にあなたへ通知が届き、アプリを開くと次回の作業日を決めるまで先に進めません（延期もできます）。

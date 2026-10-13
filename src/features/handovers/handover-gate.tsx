@@ -103,7 +103,7 @@ function Steps({ index, total }: { index: number; total: number }) {
               <span
                 aria-hidden
                 className={cn(
-                  "mx-2 h-0.5 flex-1 rounded-full",
+                  "mx-1.5 h-0.5 flex-1 rounded-full",
                   n <= index ? "bg-amber-300" : "bg-line",
                 )}
               />
@@ -112,8 +112,8 @@ function Steps({ index, total }: { index: number; total: number }) {
               aria-current={state === "current" ? "step" : undefined}
               className={cn(
                 "flex shrink-0 items-center justify-center rounded-full font-bold tnum transition-colors",
-                small ? "h-8 w-8 text-sm" : "h-11 w-11 text-base",
-                state === "current" && "bg-amber-500 text-white ring-[5px] ring-amber-100 dark:ring-amber-900/50",
+                small ? "h-6 w-6 text-xs" : "h-8 w-8 text-sm",
+                state === "current" && "bg-amber-500 text-white ring-[3px] ring-amber-100 dark:ring-amber-900/50",
                 state === "done" && "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200",
                 state === "todo" && "bg-surface-sunken text-ink-muted",
               )}
@@ -185,10 +185,9 @@ function HandoverReadCard({
   return (
     <div className="flex max-h-[88dvh] w-full max-w-[400px] flex-col overflow-hidden rounded-2xl bg-surface shadow-float">
       {/* ヘッダー：見出し・件数・現場名・ステップ */}
-      <div className="shrink-0 px-6 pb-6 pt-6">
-        <p className="text-xs font-medium tracking-[0.15em] text-ink-muted">現場に行く前に</p>
-        <div className="mt-2 flex items-baseline justify-between gap-3">
-          <h2 className="text-2xl font-bold tracking-wide text-ink">引き継ぎを確認</h2>
+      <div className="shrink-0 px-5 pb-4 pt-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-xl font-bold tracking-wide text-ink">引き継ぎを確認</h2>
           <p className="shrink-0 tnum text-ink-muted">
             <span className="text-xl font-bold text-ink">{index}</span>
             <span className="text-sm"> / {total}件</span>
@@ -199,7 +198,7 @@ function HandoverReadCard({
           <p className="text-xs font-semibold text-brand-700 dark:text-brand-300">現場</p>
           <p className="break-words text-lg font-bold leading-snug text-ink">{item.siteName}</p>
         </div>
-        <div className="mt-5">
+        <div className="mt-3">
           <Steps index={index} total={total} />
         </div>
       </div>
@@ -208,7 +207,7 @@ function HandoverReadCard({
       <div
         ref={scrollRef}
         onScroll={checkEnd}
-        className="min-h-[180px] flex-1 overflow-y-auto border-y border-line bg-surface-subtle px-6 py-6"
+        className="min-h-[200px] flex-1 overflow-y-auto border-y border-line bg-surface-subtle px-5 py-4"
       >
         <div>
           <div className="flex items-center justify-between gap-3">
@@ -220,26 +219,25 @@ function HandoverReadCard({
               要確認
             </p>
           </div>
-          <p className="mt-5 whitespace-pre-wrap break-words border-l-[3px] border-amber-500 pl-5 text-[17px] leading-[2] tracking-wide text-ink">
+          <p className="mt-3 whitespace-pre-wrap break-words border-l-[3px] border-amber-500 pl-4 text-[17px] leading-[1.9] tracking-wide text-ink">
             {item.content}
           </p>
         </div>
       </div>
 
       {/* フッター：差出人・案内・チェック・ボタン */}
-      <div className="shrink-0 px-6 pb-5 pt-5">
+      <div className="shrink-0 px-5 pb-4 pt-3">
         <p className="text-xs text-ink-muted tnum">
           {item.createdByName ? `${item.createdByName}さんから · ` : ""}
           {jstDateTimeLabel(item.createdAt)}
         </p>
-        <p className="mt-6 text-center text-xs tracking-wide text-ink-muted">
-          {reachedEnd
-            ? isLast
-              ? "内容を確認すると、引き継ぎの確認が終わります"
-              : "内容を確認すると、次の引き継ぎへ進めます"
-            : "本文を最後までスクロールしてください"}
-        </p>
-        <div className="mt-4 border-t border-line pt-4">
+        {/* 最後まで読んでいないときだけ、スクロールを促す */}
+        {!reachedEnd && (
+          <p className="mt-2 text-center text-xs font-semibold text-amber-700 dark:text-amber-300">
+            本文を最後までスクロールしてください
+          </p>
+        )}
+        <div className="mt-3 border-t border-line pt-3">
           <label
             className={cn(
               "flex min-h-[44px] cursor-pointer items-center gap-3 text-base font-medium text-ink",
@@ -265,7 +263,7 @@ function HandoverReadCard({
             onClick={confirm}
             disabled={!ready || pending}
             className={cn(
-              "mt-4 flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl px-4 text-base font-bold tracking-wide transition",
+              "mt-3 flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl px-4 text-base font-bold tracking-wide transition",
               ready
                 ? "bg-amber-500 text-white hover:bg-amber-600"
                 : "bg-surface-sunken text-ink-muted",
@@ -284,7 +282,7 @@ function HandoverReadCard({
               </>
             )}
           </button>
-          <p className="mt-4 text-center text-xs text-ink-muted">
+          <p className="mt-2 text-center text-xs text-ink-muted">
             確認した内容は、現場詳細の「引き継ぎ事項」で読み返せます
           </p>
         </div>

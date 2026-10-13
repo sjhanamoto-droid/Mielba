@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { ArrowRight, CalendarClock, Loader2 } from "lucide-react";
 import { resolveNextWork } from "./actions";
-import { Input } from "@/components/ui/form";
+import { DateWheelPicker } from "@/components/ui/date-wheel-picker";
 import { addDaysKey, jstDateKey } from "@/lib/date";
 import { cn, fmtDateWithDay } from "@/lib/utils";
 
@@ -154,28 +154,18 @@ function NextWorkCard({
           ))}
         </div>
 
-        <label className="mt-4 block">
-          <span className="text-sm font-semibold text-ink-soft">
+        <div className="mt-4">
+          <p className="text-sm font-semibold text-ink-soft">
             {mode === "date" ? "次回の作業日（予定に入ります）" : "新しい確認日"}
-          </span>
-          {mode === "date" ? (
-            <Input
-              type="date"
-              className="mt-1.5"
-              min={todayKey}
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          ) : (
-            <Input
-              type="date"
-              className="mt-1.5"
-              min={tomorrowKey}
-              value={postpone}
-              onChange={(e) => setPostpone(e.target.value)}
-            />
-          )}
-        </label>
+          </p>
+          <div className="mt-1.5">
+            {mode === "date" ? (
+              <DateWheelPicker title="次回の作業日" min={todayKey} value={date} onChange={setDate} />
+            ) : (
+              <DateWheelPicker title="新しい確認日" min={tomorrowKey} value={postpone} onChange={setPostpone} />
+            )}
+          </div>
+        </div>
         {mode === "postpone" && (
           <p className="mt-2 text-xs text-ink-muted">新しい確認日の朝に、もう一度お知らせします。</p>
         )}

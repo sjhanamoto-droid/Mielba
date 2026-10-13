@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  ArrowRight, Bell, BellRing, Building2, CalendarDays, ChevronRight, Ellipsis, MapPin,
+  ArrowRight, Bell, ClipboardCheck, BellRing, Building2, CalendarDays, ChevronRight, Ellipsis, MapPin,
 } from "lucide-react";
 import { requireUser, isAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
@@ -66,6 +66,22 @@ function SectionLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** ホームの見出し（20px）＋下のアクセントライン（左に短い緑、右へ薄い線）。right は見出しの右に置くリンク等 */
+function SectionHeading({ title, right }: { title: string; right?: React.ReactNode }) {
+  return (
+    <div className="px-1">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-xl font-bold leading-tight text-ink">{title}</h2>
+        {right}
+      </div>
+      <div className="relative mt-2.5 h-[3px]" aria-hidden>
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line" />
+        <div className="absolute left-0 top-0 h-[3px] w-11 rounded-full bg-brand-600" />
+      </div>
+    </div>
+  );
+}
+
 export default async function HomePage() {
   const user = await requireUser();
   const admin = isAdmin(user);
@@ -95,7 +111,7 @@ export default async function HomePage() {
         site: {
           select: {
             id: true, name: true, address: true, siteStatus: true,
-            projectType: true, locationName: true,
+            projectType: true, locationName: true, provisional: true,
           },
         },
       },
@@ -295,13 +311,13 @@ export default async function HomePage() {
           <div className="flex items-center gap-2">
             <Link
               href={`/calendar?view=day&d=${todayKey}`}
-              className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface py-2.5 pl-3.5 pr-5 shadow-card active:bg-surface-subtle"
+              className="flex items-center gap-2 py-2 pl-1 pr-2 active:opacity-70"
             >
               <CalendarDays className="h-5 w-5 shrink-0 text-brand-600" aria-hidden />
-              <span className={cn("text-xl font-bold tnum", toneText(todayKey, todayDate.getDay(), "text-ink"))}>
+              <span className={cn("text-lg font-bold tnum", toneText(todayKey, todayDate.getDay(), "text-ink"))}>
                 {todayDate.getMonth() + 1}月{todayDate.getDate()}日
               </span>
-              <span className={cn("text-sm font-semibold", toneText(todayKey, todayDate.getDay(), "text-ink-muted"))}>
+              <span className={cn("text-sm", toneText(todayKey, todayDate.getDay(), "text-ink-muted"))}>
                 {WEEKDAYS[todayDate.getDay()]}曜日
               </span>
               {todayHoliday && (
@@ -336,10 +352,8 @@ export default async function HomePage() {
           </div>
 
           {/* ── ① 今日の現場（一番大きく） ── */}
-          <section className="space-y-2.5">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-xl font-bold text-ink">今日の現場</h2>
-            </div>
+          <section className="space-y-4">
+            <SectionHeading title="今日の現場" />
 
             {todayVisits.length === 0 ? (
               <div className="card px-4 py-6">
@@ -359,52 +373,69 @@ export default async function HomePage() {
                   PROJECT_TYPE_LABEL[v.site.projectType as ProjectType];
                 return (
                   <div key={v.id} className="card p-5">
-                    {/* 時間帯と状態 */}
+                    {/* 工事の種類（と今日の時間帯）と状態 */}
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-base tnum text-ink-muted">{time ? time.replace("–", " — ") : " "}</p>
+                      <p className="min-w-0 truncate text-sm text-ink-muted tnum">
+                        {[work, time].filter(Boolean).join(" ・ ") || " "}
+                      </p>
                       <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
                         <span className="h-1.5 w-1.5 rounded-full bg-brand-600" aria-hidden />
                         {SITE_STATUS_LABEL[v.site.siteStatus as SiteStatus] ?? v.site.siteStatus}
                       </span>
                     </div>
-                    <h3 className="mt-3 break-words text-2xl font-bold leading-snug text-ink [text-wrap:pretty]">
+                    <h3 className="mt-2 break-words text-lg font-bold leading-snug text-ink [text-wrap:pretty]">
                       {v.site.name}
                     </h3>
-                    {work && <p className="mt-2 text-sm text-ink-muted">{work}</p>}
+                    {v.site.provisional && (
+                      <span className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                        <ClipboardCheck className="h-4 w-4" aria-hidden />
+                        仮登録
+                      </span>
+                    )}
 
                     {/* 引き継ぎ（未確認があれば赤で強く促す） */}
                     {handovers.length > 0 && <HomeHandoverBlock siteId={v.siteId} items={handovers} />}
 
-                    {(area || crew.length > 0) && (
-                      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
-                        {area && v.site.address && (
-                          <a
-                            href={mapSearchUrl(v.site.address)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex min-w-0 items-center gap-1.5 font-medium text-brand-600"
-                          >
-                            <MapPin className="h-4 w-4 shrink-0" aria-hidden />
-                            <span>{area}</span>
-                          </a>
-                        )}
-                        {crew.length > 0 && (
-                          <span
-                            className="flex min-w-0 items-center gap-2"
-                            aria-label={`担当 ${crew.map((p) => p.name).join("・")}`}
-                          >
-                            <span aria-hidden>担当</span>
-                            <span className="flex flex-wrap items-center gap-1" aria-hidden>
-                              {crew.map((p) => (
-                                <span key={p.id} title={p.name}>
-                                  <Avatar name={p.name} color={p.avatarColor} image={p.avatarImage} size="sm" />
-                                </span>
-                              ))}
-                            </span>
+                    {/* 場所（左）と担当（右） */}
+                    <div className="mt-4 flex items-center justify-between gap-3 text-sm text-ink-muted">
+                      {v.site.address ? (
+                        <a
+                          href={mapSearchUrl(v.site.address)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex min-w-0 items-center gap-1.5 active:opacity-70"
+                        >
+                          <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+                          <span className="truncate">{area ?? v.site.address}</span>
+                        </a>
+                      ) : (
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+                          住所未登録
+                        </span>
+                      )}
+                      {crew.length > 0 && (
+                        <span
+                          className="flex shrink-0 items-center gap-2"
+                          aria-label={`担当 ${crew.map((p) => p.name).join("・")}`}
+                        >
+                          <span aria-hidden>担当</span>
+                          <span className="flex items-center -space-x-1.5" aria-hidden>
+                            {crew.map((p) => (
+                              <span key={p.id} title={p.name}>
+                                <Avatar
+                                  name={p.name}
+                                  color={p.avatarColor}
+                                  image={p.avatarImage}
+                                  size="sm"
+                                  className="h-8 w-8 ring-2 ring-surface"
+                                />
+                              </span>
+                            ))}
                           </span>
-                        )}
-                      </div>
-                    )}
+                        </span>
+                      )}
+                    </div>
 
                     <LinkButton href={`/sites/${v.siteId}`} size="lg" className="mt-4 w-full">
                       現場の詳細を見る
@@ -418,10 +449,11 @@ export default async function HomePage() {
 
           {/* ── ② 今日の日報 ── */}
           {target && reportAction && (
-            <section className="flex items-center gap-3 border-b border-line px-1 pb-5">
+            <section className="space-y-4">
+              <SectionHeading title="今日の日報" />
+              <div className="flex items-center gap-3 px-1">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-col items-start gap-1.5">
-                  <h2 className="text-base font-bold text-ink">今日の日報</h2>
                   {allSubmitted ? (
                     <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                       提出済み
@@ -450,6 +482,7 @@ export default async function HomePage() {
                 {reportAction.label}
                 <ChevronRight className="h-4 w-4" aria-hidden />
               </Link>
+              </div>
             </section>
           )}
 
@@ -495,11 +528,8 @@ export default async function HomePage() {
           )}
 
           {/* ── ③ これからの予定 ── */}
-          <section className="space-y-2.5">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-xl font-bold text-ink">これからの予定</h2>
-              <SectionLink href="/calendar" label="すべて見る" />
-            </div>
+          <section className="space-y-4">
+            <SectionHeading title="これからの予定" right={<SectionLink href="/calendar" label="すべて見る" />} />
             {upcomingVisits.length === 0 ? (
               <div className="card px-4 py-5">
                 <p className="text-sm text-ink-muted">これからの現場の予定はありません</p>

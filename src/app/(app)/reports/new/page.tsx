@@ -13,19 +13,38 @@ import { fmtDateWithDay } from "@/lib/utils";
 import { jstDateKey, dateFromKey, dayRangeForKey } from "@/lib/date";
 import { isSurveySite, surveyFormHref } from "@/lib/missing-reports";
 import { Crown } from "lucide-react";
+import { SiteInfoCheck } from "@/features/sites/site-info-check";
+import { hasSiteEntryMissing, siteEntryMissing } from "@/lib/site-entry";
 
 export default async function NewReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ siteId?: string; date?: string }>;
+  searchParams: Promise<{ siteId?: string; date?: string; siteInfo?: string }>;
 }) {
   const user = await requireUser();
-  const { siteId, date } = await searchParams;
+  const { siteId, date, siteInfo } = await searchParams;
   if (!siteId) redirect("/sites");
 
   const site = await db.site.findUnique({
     where: { id: siteId },
-    select: { id: true, name: true, siteStatus: true },
+    select: {
+      id: true,
+      name: true,
+      siteStatus: true,
+      provisional: true,
+      // 仮登録のとき日報の前に確認する「現場で分かる項目」
+      address: true,
+      keyboxStatus: true,
+      keyboxNumber: true,
+      keyboxPlace: true,
+      keyboxNoneReason: true,
+      keyboxPhotoNoneReason: true,
+      photos: {
+        where: { kind: "KEYBOX" },
+        select: { id: true, caption: true, isVideo: true, width: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
   if (!site) notFound();
 
@@ -62,6 +81,40 @@ export default async function NewReportPage({
     voteState.consensus != null
       ? voteState.members.find((m) => m.userId === voteState.consensus)?.name ?? null
       : null;
+
+  // 仮登録の現場：メインの人が日報を書く前に、現場で分かる項目（住所・キーBOX・写真）の不足を確認する。
+  // 「保存して日報へ」「あとで」どちらでも ?siteInfo=done を付けて日報へ進む（次に開いたらまた出る）。
+  const entryMissing = siteEntryMissing(site, site.photos.length);
+  if (
+    !showGate &&
+    siteInfo !== "done" &&
+    site.provisional &&
+    site.siteStatus === "ACTIVE" &&
+    canInputMaterials &&
+    hasSiteEntryMissing(entryMissing)
+  ) {
+    const params = new URLSearchParams({ siteId: site.id, siteInfo: "done" });
+    if (date) params.set("date", dateKey);
+    return (
+      <div>
+        <PageHeader
+          title="現場情報の確認"
+          subtitle={site.name}
+          backHref={`/sites/${site.id}`}
+        />
+        <PageContainer size="narrow">
+          <SiteInfoCheck
+            siteId={site.id}
+            siteName={site.name}
+            missing={entryMissing}
+            initial={site}
+            keyboxPhotos={site.photos}
+            continueHref={`/reports/new?${params.toString()}`}
+          />
+        </PageContainer>
+      </div>
+    );
+  }
 
   if (showGate) {
     return (

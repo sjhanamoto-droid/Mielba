@@ -935,3 +935,64 @@ export async function removeSitePartner(id: string) {
     .catch(() => null);
   if (partner) revalidatePath(`/sites/${partner.siteId}`);
 }
+
+// ── 日報の前の「現場情報の確認」（仮登録の現場で、現場で分かる項目だけを入れる） ──
+// 住所・キーBOX・キーBOX写真のうち、確認画面に出した欄だけを更新し、仮登録かどうかを数え直す。
+export async function saveSiteEntryInfo(
+  siteId: string,
+  formData: FormData,
+): Promise<{ ok?: true; error?: string }> {
+  await requireUser();
+  const site = await db.site.findUnique({ where: { id: siteId }, select: { id: true } });
+  if (!site) return { error: "現場が見つかりません" };
+
+  const str = (k: string) => clean((formData.get(k) as string | null) ?? null);
+  const showAddress = formData.get("showAddress") === "1";
+  const showKeybox = formData.get("showKeybox") === "1";
+
+  const data: Prisma.SiteUpdateInput = {};
+  if (showAddress) {
+    const address = str("address");
+    if (address) data.address = address;
+  }
+
+  let keyboxPhotos: { kept: string[]; added: NewPhotoInput[] } | null = null;
+  if (showKeybox) {
+    const keyboxStatus = formData.get("keyboxStatus") === "NONE" ? "NONE" : "HAS";
+    const photoNone = formData.get("keyboxPhotoStatus") === "NONE";
+    const keyboxNoneReason = str("keyboxNoneReason");
+    const keyboxPhotoNoneReason = str("keyboxPhotoNoneReason");
+    // 「なし」を選んだときだけ理由を必須にする（番号・写真は分かる範囲で。空なら仮登録のまま）
+    if (keyboxStatus === "NONE" && !keyboxNoneReason) return { error: "キーBOXが無い理由を入力してください" };
+    if (photoNone && !keyboxPhotoNoneReason) return { error: "キーBOX写真が無い理由を入力してください" };
+    data.keyboxStatus = keyboxStatus;
+    data.keyboxNumber = keyboxStatus === "HAS" ? str("keyboxNumber") : null;
+    data.keyboxPlace = keyboxStatus === "HAS" ? str("keyboxPlace") : null;
+    data.keyboxNoneReason = keyboxStatus === "NONE" ? keyboxNoneReason : null;
+    data.keyboxPhotoNoneReason = photoNone ? keyboxPhotoNoneReason : null;
+    const raw = formData.get("keyboxPhotos");
+    const parsed = parseAndValidatePhotosField(typeof raw === "string" ? raw : "");
+    if ("error" in parsed) return { error: parsed.error };
+    keyboxPhotos = parsed;
+  }
+
+  try {
+    await db.$transaction(async (tx) => {
+      if (Object.keys(data).length > 0) await tx.site.update({ where: { id: siteId }, data });
+      if (keyboxPhotos) {
+        await applySitePhotoSets(tx, siteId, [
+          { kind: "KEYBOX", kept: keyboxPhotos.kept, added: keyboxPhotos.added },
+        ]);
+      }
+    });
+    await db.site.update({
+      where: { id: siteId },
+      data: { provisional: await recomputeProvisional(siteId) },
+    });
+  } catch (e) {
+    console.error("saveSiteEntryInfo failed:", e);
+    return { error: "保存に失敗しました。時間をおいて再度お試しください" };
+  }
+  revalidateSiteViews(siteId);
+  return { ok: true };
+}
