@@ -14,6 +14,8 @@ import {
   registerSiteMaterials,
   type OcrResult,
 } from "./ocr-actions";
+import { uploadToBlob } from "@/lib/blob-upload";
+import { formatMb, OCR_PDF_MAX_BYTES, PDF_MIME } from "@/lib/media-limits";
 
 // 画像を本体（最大1600px・OCR精度優先）＋サムネイル（320px）へ圧縮する
 const MAX_DIM = 1600;
@@ -61,20 +63,8 @@ function compress(file: File): Promise<{ dataUrl: string; thumbUrl: string; widt
   });
 }
 
-// PDFはbase64化して未圧縮で送るため上限を設ける（Server Action の bodySizeLimit=12mb 内に収める）
-// PDFは base64 のまま Server Action に渡すため、送信時は約1.33倍になる。
-// Vercel の関数はリクエスト本文が 4.5MB までなので、生ファイルは3MBが上限。
-const MAX_PDF_BYTES = 3 * 1024 * 1024;
-
-/** ファイルを dataURL（base64）として読み込む（PDF用・無圧縮） */
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+// PDFは Blob へ直接アップロードし、サーバーがそこから読み出して OCR に渡す
+// （本文に載せると Vercel の 4.5MB 上限に当たるため）。
 
 type Row = {
   name: string;
@@ -84,8 +74,15 @@ type Row = {
   amount: string; // 円（文字列で保持）
 };
 
-// 画像は圧縮して thumb/寸法を持つ。PDFは無圧縮のため dataUrl のみ。
-type Photo = { dataUrl: string; thumbUrl?: string; width?: number; height?: number };
+// 画像は圧縮して dataUrl・thumb・寸法を持つ。PDFは Blob に上げたパスとサイズだけ。
+type Photo = {
+  dataUrl?: string;
+  blobPath?: string;
+  sizeBytes?: number;
+  thumbUrl?: string;
+  width?: number;
+  height?: number;
+};
 
 function toRows(items: OcrResult["items"]): Row[] {
   return items.map((i) => ({
@@ -148,18 +145,31 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
       toast("対応していない形式です。JPEG・PNG・PDF のいずれかを選んでください。", { type: "error" });
       return;
     }
-    if (isPdf && file.size > MAX_PDF_BYTES) {
-      toast("PDFのサイズが大きすぎます（3MBまで）。分割やページ指定でお試しください。", { type: "error" });
+    if (isPdf && file.size > OCR_PDF_MAX_BYTES) {
+      toast(`PDFのサイズが大きすぎます（${formatMb(OCR_PDF_MAX_BYTES).replace(".0MB", "MB")}まで）。分割やページ指定でお試しください。`, { type: "error" });
       return;
     }
+    // 前のファイルの内容が残ったまま保存されないよう、読み取り前に片付ける
+    setPhoto(null);
+    setReviewing(false);
     setBusy(true);
     try {
-      // PDFは無圧縮でそのまま、画像は圧縮してから読み取る
-      const media: Photo = isPdf
-        ? { dataUrl: await readAsDataUrl(file) }
-        : await compress(file);
+      // PDFは Blob へそのまま上げ、画像は圧縮してから読み取る
+      let media: Photo;
+      if (isPdf) {
+        const up = await uploadToBlob(file, PDF_MIME, file.name);
+        if ("error" in up) {
+          toast(up.error, { type: "error" });
+          return;
+        }
+        media = { blobPath: up.blobPath, sizeBytes: file.size };
+      } else {
+        media = await compress(file);
+      }
       setPhoto(media);
-      const res = await ocrDeliverySlip({ dataUrl: media.dataUrl });
+      const res = await ocrDeliverySlip(
+        media.blobPath ? { pdfBlobPath: media.blobPath } : { dataUrl: media.dataUrl },
+      );
       if (res.status === "unconfigured") {
         toast("OCRが未設定です（管理者にAPIキー設定を依頼してください）。手入力で登録できます。", { type: "error" });
         setRows([{ name: "", quantity: "", unit: "", unitPrice: "", amount: "" }]);

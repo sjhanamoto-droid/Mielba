@@ -11,6 +11,9 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/session";
+import { readBlobBytes } from "@/lib/media";
+import { OCR_PDF_MAX_BYTES } from "@/lib/media-limits";
+import { isMediaBlobPath } from "@/lib/photos";
 
 // ───────────────────────── OCR（納品書/発注書の読み取り） ─────────────────────────
 
@@ -102,13 +105,42 @@ export type OcrResponse =
   | { status: "error"; message: string }
   | { status: "ok"; result: OcrResult };
 
-export async function ocrDeliverySlip(input: { dataUrl: string }): Promise<OcrResponse> {
+/** PDF の Blob パス（.pdf のみ）か */
+function isPdfBlobPath(p: string): boolean {
+  return isMediaBlobPath(p) && p.endsWith(".pdf");
+}
+
+/**
+ * 伝票を読み取る。画像は圧縮済みの dataUrl、PDF は Blob に上げたパス（pdfBlobPath）で受け取る。
+ * PDF を本文に載せると Vercel の 4.5MB 上限に当たるため、サーバーが Blob から読み出して Claude に渡す。
+ */
+export async function ocrDeliverySlip(input: {
+  dataUrl?: string;
+  pdfBlobPath?: string;
+}): Promise<OcrResponse> {
   await requireSuperAdmin();
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return { status: "unconfigured" };
 
-  const parsed = parseDataUrl(input.dataUrl || "");
+  let parsed: ParsedSource | null = null;
+  if (input.pdfBlobPath) {
+    if (!isPdfBlobPath(input.pdfBlobPath)) {
+      return { status: "error", message: "ファイルの保存先が不正です。選び直してください。" };
+    }
+    let pdf: Buffer | null = null;
+    try {
+      pdf = await readBlobBytes(input.pdfBlobPath, OCR_PDF_MAX_BYTES);
+    } catch (e) {
+      console.error("[material-ocr] PDFの読み出しに失敗:", e);
+    }
+    if (!pdf) {
+      return { status: "error", message: "PDFを読み込めませんでした。もう一度お試しください。" };
+    }
+    parsed = { kind: "pdf", data: pdf.toString("base64") };
+  } else {
+    parsed = parseDataUrl(input.dataUrl || "");
+  }
   if (!parsed) {
     return { status: "error", message: "対応していない形式です（JPEG・PNG・PDF）。もう一度お試しください。" };
   }
@@ -195,9 +227,12 @@ const registerSchema = z.object({
   supplier: z.string().trim().nullish(),
   orderedAt: z.string().trim().nullish(), // YYYY-MM-DD
   items: z.array(registerItemSchema).min(1, "材料を1件以上入力してください"),
+  // 伝票の画像（圧縮済み dataUrl）か PDF（Blob に上げたパス）のどちらか
   photo: z
     .object({
-      dataUrl: z.string().min(1),
+      dataUrl: z.string().min(1).nullish(),
+      blobPath: z.string().refine(isPdfBlobPath, "ファイルの保存先が不正です").nullish(),
+      sizeBytes: z.number().int().positive().max(OCR_PDF_MAX_BYTES).nullish(),
       thumbUrl: z.string().nullish(),
       width: z.number().int().nullish(),
       height: z.number().int().nullish(),
@@ -234,10 +269,14 @@ export async function registerSiteMaterials(
       // 伝票写真を保存（任意）。金額が写るため現場(siteId)には紐付けない
       // ＝現場の写真一覧に出さず、SiteMaterial.photoId からのみ参照する（最高管理者専用）。
       let photoId: string | null = null;
-      if (d.photo?.dataUrl) {
+      if (d.photo?.dataUrl || d.photo?.blobPath) {
+        const isPdfBlob = !!d.photo.blobPath;
         const photo = await tx.photo.create({
           data: {
-            dataUrl: d.photo.dataUrl,
+            dataUrl: isPdfBlob ? null : d.photo.dataUrl,
+            blobPath: d.photo.blobPath ?? null,
+            mimeType: isPdfBlob ? "application/pdf" : null,
+            sizeBytes: isPdfBlob ? (d.photo.sizeBytes ?? null) : null,
             thumbUrl: d.photo.thumbUrl ?? null,
             caption: d.supplier ?? (d.documentType === "ORDER" ? "発注書" : "納品書"),
             kind: d.documentType === "ORDER" ? "ORDER" : "DELIVERY",

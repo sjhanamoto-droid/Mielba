@@ -31,6 +31,9 @@ export const PDF_MAX_BYTES = 30 * 1024 * 1024;
 /** PDF の MIME タイプ（図面・工程表。Blob へそのまま上げる） */
 export const PDF_MIME = "application/pdf";
 
+/** 材料OCRに渡すPDFの上限バイト数（Claude API のリクエスト上限32MBに base64 で収まる大きさ） */
+export const OCR_PDF_MAX_BYTES = 20 * 1024 * 1024;
+
 /** 現場の図面・工程表・キーBOX写真の、1項目あたりの件数上限 */
 export const SITE_DOC_MAX_COUNT = 20;
 

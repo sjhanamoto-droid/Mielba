@@ -71,6 +71,11 @@ const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
 // 認証済みユーザーが任意のパスを差し込んで他人のファイルを紐づけるのを防ぐ。
 const BLOB_PATH_RE = /^media\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(mp4|mov|webm|jpg|png|webp|pdf)$/;
 
+/** createMediaUploadTarget が作った形の Blob パスか（任意のパスを差し込まれないよう保存・読み出し前に確かめる） */
+export function isMediaBlobPath(p: string): boolean {
+  return BLOB_PATH_RE.test(p);
+}
+
 /** dataUrl の MIME タイプを取り出す（不正なら null） */
 function mimeOf(dataUrl: string): string | null {
   const m = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+)(;base64)?,/i.exec(dataUrl);

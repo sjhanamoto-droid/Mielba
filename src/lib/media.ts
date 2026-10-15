@@ -73,6 +73,19 @@ export async function signedReadUrl(blobPath: string): Promise<string> {
   return presignedUrl;
 }
 
+/**
+ * Blob の中身をサーバー側で読み出す（材料OCRでPDFを Claude に渡す用途）。
+ * maxBytes を超えるもの・存在しないものは null。
+ */
+export async function readBlobBytes(blobPath: string, maxBytes: number): Promise<Buffer | null> {
+  const res = await fetch(await signedReadUrl(blobPath), { cache: "no-store" });
+  if (!res.ok) return null;
+  const len = Number(res.headers.get("content-length") ?? "0");
+  if (len > maxBytes) return null;
+  const buf = Buffer.from(await res.arrayBuffer());
+  return buf.byteLength > maxBytes ? null : buf;
+}
+
 export interface MediaUploadTarget {
   /** ブラウザが PUT する先 */
   uploadUrl: string;
