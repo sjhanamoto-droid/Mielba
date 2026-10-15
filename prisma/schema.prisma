@@ -277,6 +277,7 @@ model SiteVisit {
   note        String?
   createdById String? // 入力者（管理者の配員 or 本人の自己申告）
   mainVote    String? // メインの人の投票先 userId（対象日・現場の各配員が投票。全員一致で確定）
+  nightShiftAt DateTime? // 本人が「夜勤のため後で書く」を押した時刻（作業日の翌日12時まで日報ゲートを猶予）
   createdAt   DateTime @default(now())
 
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)

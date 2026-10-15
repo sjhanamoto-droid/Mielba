@@ -9,6 +9,9 @@ export const MISSING_LOOKBACK_DAYS = 14;
 // 当日分も、この時刻（JST）を過ぎたら未入力として強制する（17時の未提出通知と同じ時刻）。
 export const TODAY_DEADLINE_HOUR = 17;
 
+// 夜勤の猶予：本人が「夜勤のため後で書く」を押した現場入りは、作業日の翌日のこの時刻（JST）まで強制しない。
+export const NIGHT_SHIFT_GRACE_HOUR = 12;
+
 /** 今が JST で何時か（0-23） */
 function jstHourNow(): number {
   return Number(
@@ -26,7 +29,19 @@ export type MissingReport = {
   draftReportId: string | null; // 下書きがあれば編集リンク、なければ新規作成
   /** 現調中の現場（日報ではなく現調フォーマットを書く） */
   siteInSurvey: boolean;
+  /** 「夜勤のため後で書く」を出せるか（当日分、または前日分で今が猶予時刻前） */
+  canDeferNightShift: boolean;
 };
+
+/**
+ * 作業日 dateKey の現場入りを「夜勤のため後で」にできる／猶予中である期間か。
+ * 当日中、または翌日の NIGHT_SHIFT_GRACE_HOUR 時（JST）まで。
+ */
+export function withinNightShiftGrace(dateKey: string): boolean {
+  const todayKey = jstDateKey();
+  if (dateKey === todayKey) return true;
+  return addDaysKey(dateKey, 1) === todayKey && jstHourNow() < NIGHT_SHIFT_GRACE_HOUR;
+}
 
 /** 現調中の現場か（日報の代わりに現調フォーマットを書く） */
 export function isSurveySite(siteStatus: string): boolean {
@@ -57,6 +72,7 @@ export function surveyCoversVisit(
  * 指定ユーザーの「前日以前（17時以降は当日も）・直近 MISSING_LOOKBACK_DAYS 日」の範囲で、
  * 現場入り(SiteVisit)があるのに提出済み日報(SUBMITTED)が無い (現場, 日) を返す。
  * 現調フォーマットがその日以降に保存されている現場入りは済みとみなす。
+ * 夜勤の申告済み（nightShiftAt）は作業日の翌日 NIGHT_SHIFT_GRACE_HOUR 時まで除外する。
  * 下書き(DRAFT)がある場合は draftReportId を添えて編集導線に使う。新しい日付順。
  */
 export async function getMissingPastReports(userId: string): Promise<MissingReport[]> {
@@ -75,6 +91,7 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
       select: {
         siteId: true,
         date: true,
+        nightShiftAt: true,
         site: {
           select: {
             name: true,
@@ -106,6 +123,9 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
     const k = `${v.siteId}:${dateKey}`;
     if (submitted.has(k)) continue;
     if (surveyCoversVisit(v.site.survey?.updatedAt, v.date)) continue;
+    // 夜勤の申告済みは、作業日の翌日12時までゲートに出さない
+    const canDeferNightShift = withinNightShiftGrace(dateKey);
+    if (v.nightShiftAt && canDeferNightShift) continue;
     missing.push({
       siteId: v.siteId,
       siteName: v.site.name,
@@ -113,6 +133,7 @@ export async function getMissingPastReports(userId: string): Promise<MissingRepo
       dateLabel: dateKey === todayKey ? `今日（${fmtDateWithDay(v.date)}）` : fmtDateWithDay(v.date),
       draftReportId: draftByKey.get(k) ?? null,
       siteInSurvey: isSurveySite(v.site.siteStatus),
+      canDeferNightShift,
     });
   }
   return missing;

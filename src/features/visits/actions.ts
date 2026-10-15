@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin } from "@/lib/session";
-import { dateFromKey } from "@/lib/date";
+import { dateFromKey, storedDateKey } from "@/lib/date";
+import { withinNightShiftGrace } from "@/lib/missing-reports";
 import { removeFromWorkEvent } from "@/lib/work-event";
 
 export type VisitState = { error?: string; ok?: boolean };
@@ -170,5 +171,35 @@ export async function addMyVisit(
   } catch (e) {
     console.error("addMyVisit failed:", e);
     return { error: "現場入りの登録に失敗しました。通信環境をご確認のうえ、もう一度お試しください。" };
+  }
+}
+
+// ── 夜勤の申告：未入力日報ゲートで「夜勤のため後で書く」 ──
+// 自分の現場入りに nightShiftAt を付け、作業日の翌日12時(JST)までゲートを猶予する。
+// 申告できるのは当日分と、前日分（今が12時前）だけ（古い抜けの逃げ道にしない）。
+export async function deferReportForNightShift(
+  siteId: string,
+  dateStr: string,
+): Promise<VisitState> {
+  try {
+    const me = await requireUser();
+    const date = parseDateKey(dateStr);
+    if (!date) return { error: "日付が不正です" };
+    if (!withinNightShiftGrace(storedDateKey(date))) {
+      return { error: "この日の日報は後回しにできません。入力してください。" };
+    }
+
+    const { count } = await db.siteVisit.updateMany({
+      where: { siteId, userId: me.id, date },
+      data: { nightShiftAt: new Date() },
+    });
+    if (count === 0) return { error: "対象の現場入りが見つかりません" };
+
+    // ゲート（layout）を再計算して即座に閉じる
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (e) {
+    console.error("deferReportForNightShift failed:", e);
+    return { error: "保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください。" };
   }
 }

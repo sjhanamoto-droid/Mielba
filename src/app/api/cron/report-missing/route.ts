@@ -35,6 +35,7 @@ async function handle(req: NextRequest) {
         siteId: true,
         userId: true,
         date: true,
+        nightShiftAt: true,
         site: { select: { survey: { select: { updatedAt: true } } } },
       },
     }),
@@ -50,6 +51,8 @@ async function handle(req: NextRequest) {
   for (const visit of visits) {
     if (submitted.has(`${visit.siteId}:${visit.userId}`)) continue;
     if (surveyCoversVisit(visit.site.survey?.updatedAt, visit.date)) continue;
+    // 夜勤と申告済みの人には夕方の未入力通知を出さない（翌日12時までに書く）
+    if (visit.nightShiftAt) continue;
     const done = await createNotification({
       userId: visit.userId,
       type: "REPORT_MISSING",

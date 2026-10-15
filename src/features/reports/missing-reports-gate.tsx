@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, ChevronRight, ClipboardList, PenLine, Plus } from "lucide-react";
+import { AlertTriangle, ChevronRight, ClipboardList, Moon, PenLine, Plus } from "lucide-react";
 import { surveyFormHref, type MissingReport } from "@/lib/missing-reports";
+import { deferReportForNightShift } from "@/features/visits/actions";
 
 /**
  * 未入力日報の強制ゲート：前日以前（17時以降は当日も）に日報が未入力の現場があるとき、
@@ -14,6 +15,7 @@ import { surveyFormHref, type MissingReport } from "@/lib/missing-reports";
  * 日報の入力・編集画面にいる間だけは自らを隠し、実際にフォームを操作できるようにする。
  * 提出すると layout が再計算され（revalidatePath("/", "layout")）、残りが減っていく。
  * すべて入力済みになれば items が空になりゲートは消える。
+ * 夜勤の人は当日分・前日分（12時前）に限り「夜勤のため後で書く」で翌日12時まで猶予できる。
  */
 export function MissingReportsGate({ items }: { items: MissingReport[] }) {
   const pathname = usePathname();
@@ -23,6 +25,20 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
     /^\/reports\/[^/]+\/edit$/.test(pathname) ||
     /^\/sites\/[^/]+\/survey$/.test(pathname);
   const open = items.length > 0 && !onWritingRoute;
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  function deferNightShift(m: MissingReport) {
+    const key = `${m.siteId}:${m.dateKey}`;
+    setError(null);
+    setPendingKey(key);
+    startTransition(async () => {
+      const res = await deferReportForNightShift(m.siteId, m.dateKey);
+      if (res.error) setError(res.error);
+      setPendingKey(null);
+    });
+  }
 
   // 表示中は背景スクロールをロック
   useEffect(() => {
@@ -77,9 +93,10 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
               : m.draftReportId
                 ? "続きを書く"
                 : "日報を書く";
+            const key = `${m.siteId}:${m.dateKey}`;
             return (
+              <div key={key} className="space-y-1.5">
               <Link
-                key={`${m.siteId}:${m.dateKey}`}
                 href={href}
                 className="card flex w-full items-center gap-3 p-4 text-left tap-row hover:border-line-strong hover:shadow-float"
               >
@@ -104,8 +121,25 @@ export function MissingReportsGate({ items }: { items: MissingReport[] }) {
                   <ChevronRight className="h-4 w-4" />
                 </span>
               </Link>
+              {m.canDeferNightShift && (
+                <button
+                  type="button"
+                  onClick={() => deferNightShift(m)}
+                  disabled={pendingKey !== null}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2.5 text-[13px] font-bold text-ink-soft tap-row hover:border-line-strong disabled:opacity-50"
+                >
+                  <Moon className="h-4 w-4" />
+                  {pendingKey === key ? "保存中…" : "夜勤のため後で書く（明日12時まで）"}
+                </button>
+              )}
+              </div>
             );
           })}
+          {error && (
+            <p role="alert" className="px-1 text-sm font-medium text-status-danger">
+              {error}
+            </p>
+          )}
         </div>
       </div>
 
