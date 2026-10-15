@@ -7,11 +7,15 @@ import {
   formatMb,
   IMAGE_ALLOWED_MIMES,
   IMAGE_MAX_BYTES,
+  imageExtFor,
   MEDIA_MAX_COUNT,
+  PDF_MAX_BYTES,
+  PDF_MIME,
   VIDEO_ALLOWED_MIMES,
   VIDEO_MAX_BYTES,
   VIDEO_MAX_COUNT,
   VIDEO_MAX_DURATION_SEC,
+  videoExtFor,
 } from "@/lib/media-limits";
 
 /** 写真の表示URL。thumb=true でサムネイル（無ければAPI側で dataUrl にフォールバック） */
@@ -21,9 +25,9 @@ export function photoSrc(id: string, thumb?: boolean): string {
 
 /**
  * フォームから送られる新規ファイル。2種類ある。
- * - 写真・動画: 実体は Vercel Blob に直接アップロード済みで、ここには blobPath だけ来る
+ * - 写真・動画・PDF: 実体は Vercel Blob に直接アップロード済みで、ここには blobPath だけ来る
  *   （一覧用のサムネイルだけ base64 で本文に乗る）
- * - PDF と旧来の画像: dataUrl（圧縮済み base64）を DB にそのまま入れる
+ * - 旧来の画像・PDF: dataUrl（圧縮済み base64）を DB にそのまま入れる
  */
 export interface NewPhotoInput {
   dataUrl?: string;
@@ -65,7 +69,7 @@ const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
 
 // Blob 上のパスは createMediaUploadTarget が作った形だけ許す。
 // 認証済みユーザーが任意のパスを差し込んで他人のファイルを紐づけるのを防ぐ。
-const BLOB_PATH_RE = /^media\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(mp4|mov|webm|jpg|png|webp)$/;
+const BLOB_PATH_RE = /^media\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(mp4|mov|webm|jpg|png|webp|pdf)$/;
 
 /** dataUrl の MIME タイプを取り出す（不正なら null） */
 function mimeOf(dataUrl: string): string | null {
@@ -169,7 +173,7 @@ export function parseAndValidatePhotosField(
     const width = typeof o.width === "number" && Number.isFinite(o.width) ? o.width : undefined;
     const height = typeof o.height === "number" && Number.isFinite(o.height) ? o.height : undefined;
 
-    // 新規の写真・動画（実体は Blob にアップロード済み。ここにはパスだけ届く）
+    // 新規の写真・動画・PDF（実体は Blob にアップロード済み。ここにはパスだけ届く）
     if (typeof o.blobPath === "string" && o.blobPath.length > 0) {
       if (!BLOB_PATH_RE.test(o.blobPath)) {
         return { error: "ファイルの保存先が不正です。選び直して再度お試しください。" };
@@ -177,18 +181,26 @@ export function parseAndValidatePhotosField(
       const mimeType = typeof o.mimeType === "string" ? o.mimeType.toLowerCase() : "";
       const isVideo = VIDEO_ALLOWED_MIMES.includes(mimeType);
       const isImage = IMAGE_ALLOWED_MIMES.includes(mimeType);
-      if (!isVideo && !isImage) {
+      const isPdf = mimeType === PDF_MIME;
+      if (!isVideo && !isImage && !isPdf) {
         return {
-          error: "対応していない形式です（写真: JPEG / PNG / WebP、動画: MP4 / MOV / WebM）。",
+          error: "対応していない形式です（写真: JPEG / PNG / WebP、動画: MP4 / MOV / WebM、PDF）。",
         };
       }
-      const maxBytes = isVideo ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
+      // パスの拡張子と形式が食い違うもの（画像のパスに PDF と名乗る等）は受け付けない
+      const expectedExt = isVideo ? videoExtFor(mimeType) : isPdf ? "pdf" : imageExtFor(mimeType);
+      if (!o.blobPath.endsWith("." + expectedExt)) {
+        return { error: "ファイルの形式が不正です。選び直して再度お試しください。" };
+      }
+      const maxBytes = isVideo ? VIDEO_MAX_BYTES : isPdf ? PDF_MAX_BYTES : IMAGE_MAX_BYTES;
       const sizeBytes = typeof o.sizeBytes === "number" ? o.sizeBytes : NaN;
       if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > maxBytes) {
         return {
           error: isVideo
             ? `動画のサイズが大きすぎます（1本あたり${formatMb(VIDEO_MAX_BYTES)}まで）。`
-            : `写真のサイズが大きすぎます（1枚あたり${formatMb(IMAGE_MAX_BYTES)}まで）。`,
+            : isPdf
+              ? `PDFのサイズが大きすぎます（1件あたり${formatMb(PDF_MAX_BYTES)}まで）。`
+              : `写真のサイズが大きすぎます（1枚あたり${formatMb(IMAGE_MAX_BYTES)}まで）。`,
         };
       }
 
@@ -217,8 +229,9 @@ export function parseAndValidatePhotosField(
         caption,
         kind,
         isVideo,
-        width,
-        height,
+        // PDF は寸法を持たない（表示側は width が無いものを PDF として扱う）
+        width: isPdf ? undefined : width,
+        height: isPdf ? undefined : height,
       });
       if (added.length > MAX_NEW_PHOTOS) {
         return { error: `一度に追加できるのは${MAX_NEW_PHOTOS}件までです。` };

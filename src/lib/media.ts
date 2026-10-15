@@ -20,6 +20,8 @@ import {
   IMAGE_ALLOWED_MIMES,
   IMAGE_MAX_BYTES,
   imageExtFor,
+  PDF_MAX_BYTES,
+  PDF_MIME,
   VIDEO_ALLOWED_MIMES,
   VIDEO_MAX_BYTES,
   videoExtFor,
@@ -79,7 +81,7 @@ export interface MediaUploadTarget {
 }
 
 /**
- * 写真1枚・動画1本ぶんのアップロード先を用意する。
+ * 写真1枚・動画1本・PDF1件ぶんのアップロード先を用意する。
  *
  * URL は1つのパスに固定され、宣言サイズまでしか書き込めない（超過は CDN が 403 で拒否）。
  * 形式（allowedContentTypes）は署名に含めても単発 PUT では強制されないことを実測で確認済みなので、
@@ -94,15 +96,22 @@ export async function createMediaUploadTarget(
   }
   const isVideo = VIDEO_ALLOWED_MIMES.includes(contentType);
   const isImage = IMAGE_ALLOWED_MIMES.includes(contentType);
-  if (!isVideo && !isImage) {
-    return { error: "対応していない形式です（写真: JPEG / PNG / WebP、動画: MP4 / MOV / WebM）。" };
+  const isPdf = contentType === PDF_MIME;
+  if (!isVideo && !isImage && !isPdf) {
+    return { error: "対応していない形式です（写真: JPEG / PNG / WebP、動画: MP4 / MOV / WebM、PDF）。" };
   }
-  const maxBytes = isVideo ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
+  const maxBytes = isVideo ? VIDEO_MAX_BYTES : isPdf ? PDF_MAX_BYTES : IMAGE_MAX_BYTES;
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > maxBytes) {
-    return { error: isVideo ? "動画のサイズが上限を超えています。" : "写真のサイズが上限を超えています。" };
+    return {
+      error: isVideo
+        ? "動画のサイズが上限を超えています。"
+        : isPdf
+          ? "PDFのサイズが上限を超えています。"
+          : "写真のサイズが上限を超えています。",
+    };
   }
 
-  const ext = isVideo ? videoExtFor(contentType) : imageExtFor(contentType);
+  const ext = isVideo ? videoExtFor(contentType) : isPdf ? "pdf" : imageExtFor(contentType);
   const blobPath = `media/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`;
   const validUntil = Date.now() + PUT_URL_TTL_MS;
   // 上限は「その1件の実サイズ」に寄せる。全体上限のままだと、小さいファイルのつもりで

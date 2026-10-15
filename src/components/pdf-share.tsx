@@ -29,7 +29,8 @@ export async function sharePdfFile(photoId: string, label: string): Promise<void
     URL.revokeObjectURL(a.href);
   } catch (e) {
     if ((e as Error)?.name !== "AbortError") {
-      window.location.href = downloadUrl;
+      // アプリ画面は残したまま別タブで開く（Blob 保存のPDFは転送先で表示される）
+      window.open(downloadUrl, "_blank", "noopener");
     }
   }
 }

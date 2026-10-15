@@ -71,7 +71,7 @@ type FormState = { error?: string };
 const PROJECT_TYPES: ProjectType[] = ["REFORM", "RENOVATION", "NEWBUILD", "MAINTENANCE"];
 const BILLING_STATUSES: BillingStatus[] = ["UNBILLED", "BILLED", "PARTIAL", "PAID"];
 
-// SitePhotoField の hidden JSON（{id} 維持 or {dataUrl,...} 新規の配列）から枚数を数える。
+// SitePhotoField の hidden JSON（{id} 維持 or {blobPath,...} 新規の配列）から枚数を数える。
 // 空文字 / "[]" / 不正は 0 枚。サーバー側 computeProvisional（kept+added）と一致させる。
 function countPhotosField(value: FormDataEntryValue | null): number {
   if (typeof value !== "string" || value.trim() === "") return 0;
@@ -193,10 +193,16 @@ export function SiteForm({
       bypassRef.current = false;
       return;
     }
+    setClientError(null);
+    // 図面・工程表・キーBOX写真のアップロードが終わる前に保存すると、その分が抜け落ちる
+    if (e.currentTarget.querySelector("[data-site-upload-busy]")) {
+      e.preventDefault();
+      setClientError("ファイルをアップロード中です。終わってから保存してください");
+      return;
+    }
     // 現調は情報が揃っていないのが普通。必須チェックも仮登録の確認も出さない。
     if (surveyMode) return;
     const fd = new FormData(e.currentTarget);
-    setClientError(null);
     // ── ハード必須：理由が空なら保存させない（仮登録もさせない）──
     if (keyboxStatus === "NONE" && ((fd.get("keyboxNoneReason") as string | null) ?? "").trim() === "") {
       e.preventDefault();

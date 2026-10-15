@@ -53,6 +53,11 @@ export function SiteInfoCheck({
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // キーBOX写真のアップロードが終わる前に保存すると、その分が抜け落ちる
+    if (e.currentTarget.querySelector("[data-site-upload-busy]")) {
+      setError("写真をアップロード中です。終わってから保存してください");
+      return;
+    }
     const fd = new FormData(e.currentTarget);
     setError(null);
     start(async () => {

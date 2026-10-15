@@ -6,6 +6,8 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { deleteBlobPaths } from "@/lib/media";
+import { SITE_DOC_MAX_COUNT } from "@/lib/media-limits";
+import { deleteUnreferencedBlobs } from "@/lib/blob-cleanup";
 import { putInTrash, snapshotBlobPaths, snapshotGraph } from "@/lib/trash";
 import { requireAdmin, requireUser } from "@/lib/session";
 import { parseAndValidatePhotosField, type NewPhotoInput } from "@/lib/photos";
@@ -154,11 +156,20 @@ const SITE_PHOTO_FIELDS = [
 
 type SitePhotoSet = { kind: string; kept: string[]; added: NewPhotoInput[] };
 
+/** 図面・工程表・キーBOX写真の1項目ぶんを検証する（件数は既存＋新規で数える） */
+function parseSiteDocField(raw: FormDataEntryValue | null): { kept: string[]; added: NewPhotoInput[] } | { error: string } {
+  const parsed = parseAndValidatePhotosField(typeof raw === "string" ? raw : "");
+  if ("error" in parsed) return parsed;
+  if (parsed.kept.length + parsed.added.length > SITE_DOC_MAX_COUNT) {
+    return { error: `図面・工程表・キーBOX写真は、それぞれ${SITE_DOC_MAX_COUNT}件までです。` };
+  }
+  return parsed;
+}
+
 function parseSitePhotoFields(formData: FormData): SitePhotoSet[] | { error: string } {
   const sets: SitePhotoSet[] = [];
   for (const spec of SITE_PHOTO_FIELDS) {
-    const raw = formData.get(spec.field);
-    const parsed = parseAndValidatePhotosField(typeof raw === "string" ? raw : "");
+    const parsed = parseSiteDocField(formData.get(spec.field));
     if ("error" in parsed) return { error: parsed.error };
     sets.push({ kind: spec.kind, kept: parsed.kept, added: parsed.added });
   }
@@ -229,16 +240,20 @@ function keyboxReasonError(
   return null;
 }
 
-// kind ごとに「kept に無い既存写真を削除 → added を作成」する
+// kind ごとに「kept に無い既存写真を削除 → added を作成」する。
+// 外した写真の Blob パスを返す（コミット後に deleteUnreferencedBlobs で片付ける。
+// 毎日の掃除は一度に20件を超えると止まるので、図面の差し替えで溜めないようその場で消す）
 async function applySitePhotoSets(
   tx: Prisma.TransactionClient,
   siteId: string,
   sets: SitePhotoSet[],
-) {
+): Promise<string[]> {
+  const removedBlobPaths: string[] = [];
   for (const set of sets) {
-    await tx.photo.deleteMany({
-      where: { siteId, kind: set.kind, id: { notIn: set.kept } },
-    });
+    const where = { siteId, kind: set.kind, id: { notIn: set.kept } };
+    const removed = await tx.photo.findMany({ where, select: { blobPath: true } });
+    for (const r of removed) if (r.blobPath) removedBlobPaths.push(r.blobPath);
+    await tx.photo.deleteMany({ where });
     if (set.added.length > 0) {
       await tx.photo.createMany({
         data: set.added.map((p) => ({
@@ -258,6 +273,7 @@ async function applySitePhotoSets(
       });
     }
   }
+  return removedBlobPaths;
 }
 
 // 現調フォームの写真・動画を現調記録(Survey)に保存する。
@@ -526,6 +542,7 @@ export async function updateSite(siteId: string, formData: FormData) {
   if (surveyPhotos && "error" in surveyPhotos) return { error: surveyPhotos.error };
 
   let customerId: string;
+  let removedBlobPaths: string[] = [];
   try {
     const site = await db.$transaction(async (tx) => {
       const updated = await tx.site.update({
@@ -534,7 +551,7 @@ export async function updateSite(siteId: string, formData: FormData) {
         data: { ...data, provisional },
       });
       // 写真の欄（キーBOX/図面/工程表）は簡易フォームでは出していないので触らない
-      if (!surveyEdit) await applySitePhotoSets(tx, siteId, photoSets);
+      if (!surveyEdit) removedBlobPaths = await applySitePhotoSets(tx, siteId, photoSets);
       if (surveyPhotos) await applySurveyPhotos(tx, siteId, surveyPhotos);
       return updated;
     });
@@ -542,6 +559,8 @@ export async function updateSite(siteId: string, formData: FormData) {
   } catch {
     return { error: "現場の保存に失敗しました。時間をおいて再度お試しください" };
   }
+  // 片付けに失敗しても保存は済んでいる（残った分は毎日の掃除が拾う）
+  await deleteUnreferencedBlobs(removedBlobPaths).catch(() => {});
 
   revalidatePath("/sites");
   revalidatePath(`/sites/${siteId}`);
@@ -970,17 +989,17 @@ export async function saveSiteEntryInfo(
     data.keyboxPlace = keyboxStatus === "HAS" ? str("keyboxPlace") : null;
     data.keyboxNoneReason = keyboxStatus === "NONE" ? keyboxNoneReason : null;
     data.keyboxPhotoNoneReason = photoNone ? keyboxPhotoNoneReason : null;
-    const raw = formData.get("keyboxPhotos");
-    const parsed = parseAndValidatePhotosField(typeof raw === "string" ? raw : "");
+    const parsed = parseSiteDocField(formData.get("keyboxPhotos"));
     if ("error" in parsed) return { error: parsed.error };
     keyboxPhotos = parsed;
   }
 
+  let removedBlobPaths: string[] = [];
   try {
     await db.$transaction(async (tx) => {
       if (Object.keys(data).length > 0) await tx.site.update({ where: { id: siteId }, data });
       if (keyboxPhotos) {
-        await applySitePhotoSets(tx, siteId, [
+        removedBlobPaths = await applySitePhotoSets(tx, siteId, [
           { kind: "KEYBOX", kept: keyboxPhotos.kept, added: keyboxPhotos.added },
         ]);
       }
@@ -993,6 +1012,8 @@ export async function saveSiteEntryInfo(
     console.error("saveSiteEntryInfo failed:", e);
     return { error: "保存に失敗しました。時間をおいて再度お試しください" };
   }
+  // 片付けに失敗しても保存は済んでいる（残った分は毎日の掃除が拾う）
+  await deleteUnreferencedBlobs(removedBlobPaths).catch(() => {});
   revalidateSiteViews(siteId);
   return { ok: true };
 }

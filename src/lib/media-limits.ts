@@ -25,6 +25,15 @@ export const MEDIA_MAX_COUNT = 60;
 /** 現場メモ1件に添えられる写真・動画の点数（「その場で数枚」の用途なので日報より少なめ） */
 export const MEMO_MEDIA_MAX_COUNT = 20;
 
+/** 図面・工程表のPDF1件あたりの上限バイト数（元請から届く図面一式でも収まる大きさ） */
+export const PDF_MAX_BYTES = 30 * 1024 * 1024;
+
+/** PDF の MIME タイプ（図面・工程表。Blob へそのまま上げる） */
+export const PDF_MIME = "application/pdf";
+
+/** 現場の図面・工程表・キーBOX写真の、1項目あたりの件数上限 */
+export const SITE_DOC_MAX_COUNT = 20;
+
 /** Blob へ直接上げる画像の形式（アップローダーが JPEG に変換してから送る） */
 export const IMAGE_ALLOWED_MIMES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 

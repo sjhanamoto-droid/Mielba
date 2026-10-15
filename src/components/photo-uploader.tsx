@@ -6,6 +6,7 @@ import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
 import { buttonClass } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { uploadToBlob } from "@/lib/blob-upload";
 import {
   formatMb,
   looksLikeVideo,
@@ -25,7 +26,7 @@ import {
  * - 既存（DB保存済み）: id のみ保持（本体を再送しない。プレビューは photoSrc(id, true)）
  * - 新規の写真・動画: 先に Vercel Blob へ直接アップロードし、blobPath と
  *   一覧用サムネイル（thumbUrl）だけを保持する
- * - dataUrl は旧経路（現場フォームの図面・工程表など、少数のファイル）だけが使う
+ * - dataUrl は旧経路（以前に保存されたデータの互換用）だけが使う
  */
 export type UploaderPhoto = {
   id?: string;
@@ -235,30 +236,6 @@ function readVideoMeta(file: File): Promise<VideoMeta> {
   });
 }
 
-/** 進捗つきで Blob へ直接 PUT する（fetch では進捗が取れないので XHR を使う） */
-function putWithProgress(
-  url: string,
-  file: Blob,
-  contentType: string,
-  onProgress: (ratio: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    // 署名に含めた形式と一致させる（ここがずれると CDN 側で弾かれる）
-    xhr.setRequestHeader("content-type", contentType);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded / e.total);
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error(`upload failed: ${xhr.status}`));
-    };
-    xhr.onerror = () => reject(new Error("upload failed"));
-    xhr.send(file);
-  });
-}
-
 /**
  * hidden input（または Server Action の引数）に載せるJSON。既存={id}のみ、新規は画像/動画で形が違う。
  * サーバー側は parseAndValidatePhotosField でこの形を検証する。
@@ -380,35 +357,6 @@ export function PhotoUploader({
     };
   }, []);
 
-  /** 動画1本を検証してBlobへ上げる。成功したら追加用の1件を返す */
-  /** Blob のアップロード先を取り、本体を直接 PUT する（写真・動画で共通） */
-  async function uploadToBlob(
-    body: Blob,
-    contentType: string,
-    label: string,
-    onProgress: (ratio: number) => void,
-  ): Promise<{ blobPath: string } | { error: string }> {
-    const res = await fetch("/api/media/upload-url", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ contentType, sizeBytes: body.size }),
-    });
-    if (!res.ok) {
-      const info = (await res.json().catch(() => null)) as { error?: string } | null;
-      return { error: info?.error ?? `${label} のアップロードを開始できませんでした` };
-    }
-    const { uploadUrl, blobPath } = (await res.json()) as {
-      uploadUrl: string;
-      blobPath: string;
-    };
-    try {
-      await putWithProgress(uploadUrl, body, contentType, onProgress);
-    } catch {
-      return { error: `${label} のアップロードに失敗しました。電波の良い場所で再度お試しください` };
-    }
-    return { blobPath };
-  }
-
   /** 写真1枚：軽量化して Blob へ上げ、サムネイルだけフォームに載せる */
   async function processImage(
     file: File,
@@ -438,6 +386,7 @@ export function PhotoUploader({
     };
   }
 
+  /** 動画1本を検証してBlobへ上げる。成功したら追加用の1件を返す */
   async function processVideo(
     file: File,
     onProgress: (ratio: number) => void,
