@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { MapPin, ChevronRight, AlertTriangle, Building2 } from "lucide-react";
 import { setSiteStage } from "@/features/sites/actions";
 import { useToast } from "@/components/ui/toast";
 import { CardLink } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/modal";
 import { Badge, SiteStatusBadge } from "@/components/ui/badge";
 import { PROJECT_TYPE_LABEL, SITE_STAGES, siteStageIndex, type ProjectType } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -66,24 +68,33 @@ export function SiteStageStepper({
 
 // 一覧カード上で進捗をタップして変更する（管理者のみ）。カード全体がリンクのため、
 // タップはカード遷移させない（preventDefault + stopPropagation）。楽観更新＋失敗時ロールバック。
+// 誤タップで進捗が変わらないよう、変更前に確認ダイアログを挟む。
 function EditableStageStepper({
   siteId,
+  siteName,
   index,
   className,
 }: {
   siteId: string;
+  siteName: string;
   index: number;
   className?: string;
 }) {
   const toast = useToast();
   const [pending, start] = useTransition();
   const [optimistic, setOptimistic] = useState<number | null>(null);
+  // 確認待ちの変更先（null＝ダイアログを閉じている）
+  const [asking, setAsking] = useState<number | null>(null);
   const current = optimistic ?? index;
 
   function select(e: React.SyntheticEvent, i: number) {
     e.preventDefault();
     e.stopPropagation();
     if (i === current || pending) return;
+    setAsking(i);
+  }
+
+  function apply(i: number) {
     setOptimistic(i);
     start(async () => {
       const r = await setSiteStage(siteId, i);
@@ -97,35 +108,62 @@ function EditableStageStepper({
   }
 
   return (
-    <div
-      className={cn("flex items-stretch gap-1 overflow-x-auto", pending && "opacity-70", className)}
-      aria-label="進捗ステータス（タップで変更）"
-    >
-      {SITE_STAGES.map((label, i) => {
-        const active = i === current;
-        return (
-          <span
-            key={label}
-            role="button"
-            tabIndex={0}
-            aria-pressed={active}
-            aria-disabled={pending}
-            onClick={(e) => select(e, i)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") select(e, i);
-            }}
-            className={cn(
-              "flex-1 cursor-pointer rounded-md px-1 py-2 text-center text-[10px] font-bold leading-none tracking-tight whitespace-nowrap transition-colors active:scale-[0.97]",
-              active
-                ? "bg-brand-500 text-white shadow-sm"
-                : "bg-surface-sunken text-ink-faint hover:bg-brand-50 hover:text-brand-700",
-            )}
-          >
-            {label}
-          </span>
-        );
-      })}
-    </div>
+    <>
+      <div
+        className={cn("flex items-stretch gap-1 overflow-x-auto", pending && "opacity-70", className)}
+        aria-label="進捗ステータス（タップで変更）"
+      >
+        {SITE_STAGES.map((label, i) => {
+          const active = i === current;
+          return (
+            <span
+              key={label}
+              role="button"
+              tabIndex={0}
+              aria-pressed={active}
+              aria-disabled={pending}
+              onClick={(e) => select(e, i)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") select(e, i);
+              }}
+              className={cn(
+                "flex-1 cursor-pointer rounded-md px-1 py-2 text-center text-[10px] font-bold leading-none tracking-tight whitespace-nowrap transition-colors active:scale-[0.97]",
+                active
+                  ? "bg-brand-500 text-white shadow-sm"
+                  : "bg-surface-sunken text-ink-faint hover:bg-brand-50 hover:text-brand-700",
+              )}
+            >
+              {label}
+            </span>
+          );
+        })}
+      </div>
+      {/* カード（リンク）の外に出す。中に置くとダイアログのタップでカードの遷移まで走る */}
+      {asking !== null &&
+        createPortal(
+          // React のイベントはポータル越しでも親（リンク）へ伝わるので、ここで止める
+          <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <ConfirmDialog
+              open
+              onClose={() => setAsking(null)}
+              title="進捗を変更しますか？"
+              description={
+                <>
+                  「<span className="font-bold">{siteName}</span>」の進捗を
+                  <span className="font-bold">「{SITE_STAGES[current]}」→「{SITE_STAGES[asking]}」</span>
+                  に変更します。
+                  {asking === SITE_STAGES.length - 1 && (
+                    <span className="mt-1 block">「完了」にすると、現場は「過去」に移ります。</span>
+                  )}
+                </>
+              }
+              confirmLabel="変更する"
+              onConfirm={() => apply(asking)}
+            />
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -218,6 +256,7 @@ export function SiteCard({
         (stageEditable ? (
           <EditableStageStepper
             siteId={site.id}
+            siteName={site.name}
             index={siteStageIndex(site.siteStatus, site.projectStatus)}
             className="mt-3"
           />
