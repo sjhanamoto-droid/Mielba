@@ -81,6 +81,7 @@ export default async function SiteDetailPage({
     include: {
       customer: { select: { id: true, name: true } },
       createdBy: { select: { name: true } },
+      assignee: { select: { name: true } },
       survey: {
         select: {
           id: true,
@@ -507,6 +508,15 @@ export default async function SiteDetailPage({
                 />
                 <DataRow
                   label="現場担当者"
+                  value={
+                    <span className="inline-flex items-center gap-1">
+                      <UserRound className="h-3.5 w-3.5 text-ink-muted" />
+                      {site.assignee?.name ?? <span className="text-ink-faint">未定</span>}
+                    </span>
+                  }
+                />
+                <DataRow
+                  label="元請の担当者"
                   value={
                     site.siteContactName ? (
                       <span className="inline-flex items-center gap-1">

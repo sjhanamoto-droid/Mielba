@@ -25,6 +25,7 @@ import {
 } from "@/lib/constants";
 
 type CustomerOption = { id: string; name: string };
+type AssigneeOption = { id: string; name: string };
 
 export type SiteFormData = {
   id: string;
@@ -39,6 +40,7 @@ export type SiteFormData = {
   locationName: string | null;
   address: string | null;
   keybox: string | null;
+  assigneeId: string | null; // 現場担当者（自社）。null＝未定
   siteContactName: string | null;
   siteContactPhone: string | null;
   keyboxStatus: string | null;
@@ -105,12 +107,15 @@ function SubmitButton({ isEdit }: { isEdit: boolean }) {
 
 export function SiteForm({
   customers,
+  assignees,
   site,
   sitePhotos = [],
   surveyPhotos = [],
   admin = false,
 }: {
   customers: CustomerOption[];
+  /** 現場担当者（自社）の候補 */
+  assignees: AssigneeOption[];
   site?: SiteFormData;
   sitePhotos?: SiteFormPhoto[];
   /** 現調の写真・動画（現調フォーマットと同じ置き場所。編集時は既存分を渡す） */
@@ -329,18 +334,15 @@ export function SiteForm({
           <Field label="場所（住所）" required htmlFor="address" className="sm:col-span-2">
             <Input id="address" name="address" required defaultValue={site?.address ?? ""} placeholder="東京都◯◯区…" />
           </Field>
-          <Field label="現場担当者（元請側）" htmlFor="siteContactName">
-            <Input id="siteContactName" name="siteContactName" defaultValue={site?.siteContactName ?? ""} placeholder="山田 太郎" />
-          </Field>
-          <Field label="担当者の電話番号" htmlFor="siteContactPhone">
-            <Input
-              id="siteContactPhone"
-              name="siteContactPhone"
-              type="tel"
-              inputMode="tel"
-              defaultValue={site?.siteContactPhone ?? ""}
-              placeholder="090-1234-5678"
-            />
+          <Field label="現場担当者" htmlFor="assigneeId" hint="（自社）" className="sm:col-span-2">
+            <Select id="assigneeId" name="assigneeId" defaultValue={site?.assigneeId ?? ""}>
+              <option value="">未定</option>
+              {assignees.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label="備考" htmlFor="memo" hint="（日報の前後に残しておきたいこと・注意点など）" className="sm:col-span-2">
             <Textarea
@@ -512,6 +514,19 @@ export function SiteForm({
           </Field>
           <Field label="契約書番号" htmlFor="contractNumber">
             <Input id="contractNumber" name="contractNumber" defaultValue={site?.contractNumber ?? ""} />
+          </Field>
+          <Field label="現場担当者（元請側）" htmlFor="siteContactName">
+            <Input id="siteContactName" name="siteContactName" defaultValue={site?.siteContactName ?? ""} placeholder="山田 太郎" />
+          </Field>
+          <Field label="担当者の電話番号" htmlFor="siteContactPhone">
+            <Input
+              id="siteContactPhone"
+              name="siteContactPhone"
+              type="tel"
+              inputMode="tel"
+              defaultValue={site?.siteContactPhone ?? ""}
+              placeholder="090-1234-5678"
+            />
           </Field>
           <Field label="作業場所名" htmlFor="locationName" className="sm:col-span-2">
             <Input id="locationName" name="locationName" defaultValue={site?.locationName ?? ""} placeholder="2F 浴室 など" />

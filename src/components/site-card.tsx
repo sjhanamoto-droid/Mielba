@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { MapPin, ChevronRight, AlertTriangle, Building2 } from "lucide-react";
+import { MapPin, ChevronRight, AlertTriangle, Building2, UserRound } from "lucide-react";
 import { setSiteStage } from "@/features/sites/actions";
 import { useToast } from "@/components/ui/toast";
 import { CardLink } from "@/components/ui/card";
@@ -177,6 +177,8 @@ export type SiteCardData = {
   provisional?: boolean;
   customer?: { name: string } | null;
   createdByName?: string;
+  /** 現場担当者（自社）。null＝未定、undefined＝出さない */
+  assigneeName?: string | null;
 };
 
 export function SiteCard({
@@ -204,7 +206,22 @@ export function SiteCard({
             {PROJECT_TYPE_LABEL[site.projectType as ProjectType] ?? site.projectType}
           </span>
         </div>
-        <SiteStatusBadge status={site.siteStatus} className="shrink-0 px-3 py-1 text-sm font-bold" />
+        <div className="flex shrink-0 items-center gap-2">
+          {/* 現場担当者（自社）。状態ピルの左に置く */}
+          {site.assigneeName !== undefined && (
+            <span
+              className={cn(
+                "flex max-w-[8rem] items-center gap-1 text-sm font-semibold",
+                site.assigneeName ? "text-ink-soft" : "text-ink-faint",
+              )}
+              aria-label={`現場担当者: ${site.assigneeName ?? "未定"}`}
+            >
+              <UserRound className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="truncate">{site.assigneeName ?? "未定"}</span>
+            </span>
+          )}
+          <SiteStatusBadge status={site.siteStatus} className="px-3 py-1 text-sm font-bold" />
+        </div>
       </div>
 
       {/* 現場名を一番大きく */}

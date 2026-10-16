@@ -16,9 +16,10 @@ export default async function EditSitePage({
   const admin = isAdmin(user); // 受注済 → 現調に戻す操作は管理者のみ
   const { id } = await params;
 
-  const [site, customers, sitePhotos, surveyPhotoRows] = await Promise.all([
+  const [site, customers, users, sitePhotos, surveyPhotoRows] = await Promise.all([
     db.site.findUnique({ where: { id } }),
     db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.user.findMany({ select: { id: true, name: true, active: true }, orderBy: { name: "asc" } }),
     // 既存写真は {id} 参照のみ渡す（base64 を RSC ペイロードに載せない）
     db.photo.findMany({
       where: { siteId: id },
@@ -36,6 +37,11 @@ export default async function EditSitePage({
   if (!site) notFound();
   // 現場の編集は全ログインユーザー可（スタッフも現場情報を最新に保てるように）
 
+  // 現場担当者（自社）の候補：有効ユーザー＋今の担当者（無効にした人でも選択を保つ）
+  const assignees = users
+    .filter((u) => u.active || u.id === site.assigneeId)
+    .map((u) => ({ id: u.id, name: u.name }));
+
   const surveyPhotos: UploadPhoto[] = surveyPhotoRows.map((p) => ({
     id: p.id,
     caption: p.caption ?? "",
@@ -51,6 +57,7 @@ export default async function EditSitePage({
       <PageContainer size="narrow">
         <SiteForm
           customers={customers}
+          assignees={assignees}
           site={site}
           sitePhotos={sitePhotos}
           surveyPhotos={surveyPhotos}

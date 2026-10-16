@@ -52,6 +52,7 @@ const siteSchema = z.object({
   ),
   locationName: optionalText,
   address: z.string().min(1, "場所（住所）を入力してください"),
+  assigneeId: optionalText, // 現場担当者（自社）。空＝未定
   siteContactName: optionalText,
   siteContactPhone: optionalText,
   keyboxStatus: z.preprocess(
@@ -91,6 +92,7 @@ function parseSiteForm(formData: FormData) {
     billingStatus: formData.get("billingStatus"),
     locationName: formData.get("locationName"),
     address: formData.get("address"),
+    assigneeId: formData.get("assigneeId"),
     siteContactName: formData.get("siteContactName"),
     siteContactPhone: formData.get("siteContactPhone"),
     keyboxStatus: formData.get("keyboxStatus"),
@@ -112,6 +114,14 @@ function parseSiteForm(formData: FormData) {
   });
 }
 
+// 現場担当者（自社）は登録済みのユーザーから選ぶ。未定（空）はそのまま通す。
+// 退職などで無効にした人がすでに担当になっている現場は、そのまま保存できるようにする。
+async function assigneeError(assigneeId?: string): Promise<string | null> {
+  if (!assigneeId) return null;
+  const u = await db.user.findUnique({ where: { id: assigneeId }, select: { id: true } });
+  return u ? null : "現場担当者が見つかりません。選び直してください";
+}
+
 // data 形（create / update 共通）
 // 注: 旧 keybox フィールドは v0.4 で「旧キーBOXメモ（表示のみ）」となったため、
 //     フォームからは更新しない（値は保持される）。
@@ -125,6 +135,7 @@ function toData(d: z.infer<typeof siteSchema>) {
     billingStatus: d.billingStatus ?? null,
     locationName: d.locationName ?? null,
     address: d.address ?? null,
+    assigneeId: d.assigneeId ?? null,
     siteContactName: d.siteContactName ?? null,
     siteContactPhone: d.siteContactPhone ?? null,
     keyboxStatus: d.keyboxStatus ?? null,
@@ -319,6 +330,8 @@ export async function createSite(formData: FormData) {
   }
   const keyboxErr = keyboxReasonError(parsed.data, formData);
   if (keyboxErr) return { error: keyboxErr };
+  const assigneeErr = await assigneeError(parsed.data.assigneeId);
+  if (assigneeErr) return { error: assigneeErr };
   const photoSets = parseSitePhotoFields(formData);
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
@@ -506,6 +519,8 @@ export async function updateSite(siteId: string, formData: FormData) {
   }
   const keyboxErr = keyboxReasonError(parsed.data, formData);
   if (keyboxErr) return { error: keyboxErr };
+  const assigneeErr = await assigneeError(parsed.data.assigneeId);
+  if (assigneeErr) return { error: assigneeErr };
   const photoSets = parseSitePhotoFields(formData);
   if (!Array.isArray(photoSets)) {
     return { error: photoSets.error };
@@ -527,8 +542,7 @@ export async function updateSite(siteId: string, formData: FormData) {
         name: d.name,
         projectType: d.projectType,
         address: d.address ?? null,
-        siteContactName: d.siteContactName ?? null,
-        siteContactPhone: d.siteContactPhone ?? null,
+        assigneeId: d.assigneeId ?? null,
         memo: d.memo?.replace(/\r\n/g, "\n").trim() || null,
       }
     : toData(d);

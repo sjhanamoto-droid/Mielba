@@ -9,10 +9,14 @@ import { SiteForm } from "@/features/sites/site-form";
 
 export default async function NewSitePage() {
   await requireUser();
-  const customers = await db.customer.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
+  const [customers, assignees] = await Promise.all([
+    db.customer.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    // 現場担当者（自社）の候補：有効ユーザー
+    db.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
 
   return (
     <div>
@@ -26,7 +30,7 @@ export default async function NewSitePage() {
             action={<LinkButton href="/customers/new" size="sm">顧客を登録</LinkButton>}
           />
         ) : (
-          <SiteForm customers={customers} />
+          <SiteForm customers={customers} assignees={assignees} />
         )}
       </PageContainer>
     </div>

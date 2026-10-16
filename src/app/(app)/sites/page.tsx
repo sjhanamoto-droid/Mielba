@@ -70,6 +70,7 @@ export default async function SitesPage({
       include: {
         customer: { select: { id: true, name: true } },
         createdBy: { select: { name: true } },
+        assignee: { select: { name: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: shown + 1, // 「さらに表示」の有無を判定するため1件多く取得
@@ -159,7 +160,7 @@ export default async function SitesPage({
                 </h2>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
                   {surveySites.map((s) => (
-                    <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} stageEditable={admin} />
+                    <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name, assigneeName: s.assignee?.name ?? null }} stageEditable={admin} />
                   ))}
                 </div>
                 <div className="mt-5 border-t border-line" />
@@ -170,7 +171,7 @@ export default async function SitesPage({
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>a]:h-full">
               {otherSites.map((s) => (
-                <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} stageEditable={admin} />
+                <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name, assigneeName: s.assignee?.name ?? null }} stageEditable={admin} />
               ))}
             </div>
             {hasMore && (

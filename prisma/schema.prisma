@@ -58,6 +58,7 @@ model User {
   siteVisits     SiteVisit[]
   eventParticipations EventParticipant[]
   createdSites   Site[]          @relation("SiteCreator")
+  assignedSites  Site[]          @relation("SiteAssignee")
   notifications     Notification[]     @relation("UserNotifications")
   pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
   siteMemos         SiteMemo[]         @relation("SiteMemoAuthor")
@@ -160,6 +161,7 @@ model Site {
 
   // ── 要望対応：作成者・キーBOXあり/なし・仮登録 ──
   createdById      String? // 作成者（現場を登録したユーザー）
+  assigneeId       String? // 現場担当者（自社）。null＝未定
   keyboxStatus     String? // "HAS"(あり) | "NONE"(なし)
   keyboxNoneReason String? // キーBOXなしの理由（NONE時に必須）
   keyboxPhotoNoneReason String? // キーBOX写真が撮れない理由（写真なし時に必須）
@@ -202,6 +204,7 @@ model Site {
 
   customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   createdBy   User?            @relation("SiteCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  assignee    User?            @relation("SiteAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   survey      Survey?
   reports     DailyReport[]
   events      CalendarEvent[]

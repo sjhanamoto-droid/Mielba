@@ -39,6 +39,7 @@ export default async function CustomerDetailPage({
         include: {
           customer: { select: { name: true } },
           createdBy: { select: { name: true } },
+          assignee: { select: { name: true } },
         },
       },
     },
@@ -142,7 +143,7 @@ export default async function CustomerDetailPage({
             ) : (
               <div className="space-y-2.5">
                 {customer.sites.map((s) => (
-                  <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name }} />
+                  <SiteCard key={s.id} site={{ ...s, createdByName: s.createdBy?.name, assigneeName: s.assignee?.name ?? null }} />
                 ))}
               </div>
             )}
