@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { AlertCircle, Save, UserPlus } from "lucide-react";
 import { createUser, updateUser, type UserFormState } from "./actions";
@@ -8,6 +8,7 @@ import { Field, Input, Select } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { ColorPicker } from "@/features/settings/color-picker";
 import { AvatarImageField } from "./avatar-image-field";
+import { PayRateFields } from "./pay-rate-fields";
 import { ROLE_OPTIONS, ROLE_OPTIONS_SUPER_ADMIN, ROLE_LABEL } from "@/lib/constants";
 
 type UserData = {
@@ -36,11 +37,15 @@ function SubmitButton({ isEdit }: { isEdit: boolean }) {
 export function UserForm({
   user,
   canAssignSuperAdmin = false,
+  payRateTodayKey,
 }: {
   user?: UserData;
   /** 最高管理者の付与可否（最高管理者のみ true）。選択肢の出し分けに使う */
   canAssignSuperAdmin?: boolean;
+  /** 指定時は新規追加フォームに「給与・原価単価」欄を出す（最高管理者のみ。値は今日の日付キー） */
+  payRateTodayKey?: string;
 }) {
+  const [role, setRole] = useState(user?.role ?? "STAFF");
   const isEdit = !!user;
   const [state, formAction] = useActionState<UserFormState, FormData>(
     isEdit ? updateUser : createUser,
@@ -61,7 +66,7 @@ export function UserForm({
           <Input id="name" name="name" defaultValue={user?.name} placeholder="例：山田 太郎" required />
         </Field>
         <Field label="権限" htmlFor="role" required>
-          <Select id="role" name="role" defaultValue={user?.role ?? "STAFF"}>
+          <Select id="role" name="role" value={role} onChange={(e) => setRole(e.target.value)}>
             {roleOptions.map((r) => (
               <option key={r} value={r}>{ROLE_LABEL[r]}</option>
             ))}
@@ -74,6 +79,15 @@ export function UserForm({
           <Input id="department" name="department" defaultValue={user?.department ?? ""} placeholder="例：工事部 / 内装 / 設備" />
         </Field>
       </div>
+
+      {!isEdit && payRateTodayKey && (
+        <fieldset className="space-y-3 rounded-2xl border border-line p-4">
+          <legend className="px-1 text-sm font-bold text-ink">
+            給与・原価単価 <span className="text-xs font-normal text-ink-faint">任意・最高管理者のみ表示</span>
+          </legend>
+          <PayRateFields role={role} todayKey={payRateTodayKey} />
+        </fieldset>
+      )}
 
       <Field label="プロフィール画像" hint="任意">
         <AvatarImageField

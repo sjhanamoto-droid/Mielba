@@ -3,16 +3,34 @@
 
 // SUPER_ADMIN(最高管理者) が最上位。管理者権限を内包し、原価・金額など会計情報の
 // 閲覧/入力と、材料のOCR登録を行える唯一の権限。
-export type Role = "SUPER_ADMIN" | "ADMIN" | "STAFF";
+// STAFF(スタッフ)＝社員、PART_TIME(アルバイト)。権限はどちらも一般スタッフと同じ（管理機能なし）。
+export type Role = "SUPER_ADMIN" | "ADMIN" | "STAFF" | "PART_TIME";
 export const ROLE_LABEL: Record<Role, string> = {
   SUPER_ADMIN: "最高管理者",
   ADMIN: "管理者",
   STAFF: "スタッフ",
+  PART_TIME: "アルバイト",
 };
 // セレクトの並び（スタッフを既定の先頭に）。最高管理者は最高管理者のみが付与できるため、
 // UI 側で表示可否を出し分ける（ROLE_OPTIONS_SUPER_ADMIN を使う）。
-export const ROLE_OPTIONS: Role[] = ["STAFF", "ADMIN"];
-export const ROLE_OPTIONS_SUPER_ADMIN: Role[] = ["STAFF", "ADMIN", "SUPER_ADMIN"];
+export const ROLE_OPTIONS: Role[] = ["STAFF", "PART_TIME", "ADMIN"];
+export const ROLE_OPTIONS_SUPER_ADMIN: Role[] = ["STAFF", "PART_TIME", "ADMIN", "SUPER_ADMIN"];
+
+// ── 給与形態（原価単価の履歴 StaffPayRate） ──
+// 社員（スタッフ・管理者）は月給、アルバイトは日当が既定。時給も選べる。
+export type PayType = "MONTHLY" | "DAILY" | "HOURLY";
+export const PAY_TYPE_LABEL: Record<PayType, string> = {
+  MONTHLY: "月給",
+  DAILY: "日当",
+  HOURLY: "時給",
+};
+export const PAY_TYPE_OPTIONS: PayType[] = ["MONTHLY", "DAILY", "HOURLY"];
+export function defaultPayTypeForRole(role: string): PayType {
+  return role === "PART_TIME" ? "DAILY" : "MONTHLY";
+}
+export function employmentLabelForRole(role: string): string {
+  return role === "PART_TIME" ? "アルバイト" : "社員";
+}
 
 // アバター色のプリセット（ユーザー登録時に選択）
 export const AVATAR_COLORS: { value: string; label: string }[] = [

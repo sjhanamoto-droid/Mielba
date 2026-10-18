@@ -8,6 +8,7 @@ import { requireAdmin, isSuperAdmin } from "@/lib/session";
 import { hashPassword } from "@/lib/password";
 import { validateAvatarDataUrl } from "@/lib/photos";
 import { DEFAULT_AVATAR_COLOR } from "@/lib/constants";
+import { parsePayRate, upsertPayRate } from "./pay-rate";
 
 export type UserFormState = { error?: string; ok?: boolean };
 
@@ -19,7 +20,7 @@ function nz(v: FormDataEntryValue | null): string | undefined {
 const baseShape = {
   name: z.string().min(1, "氏名を入力してください"),
   email: z.string().email("メールアドレスの形式が正しくありません"),
-  role: z.enum(["SUPER_ADMIN", "ADMIN", "STAFF"]),
+  role: z.enum(["SUPER_ADMIN", "ADMIN", "STAFF", "PART_TIME"]),
   department: z.string().optional(),
   avatarColor: z.string().optional(),
 };
@@ -60,19 +61,27 @@ export async function createUser(
   if (avatarResult && typeof avatarResult === "object") return { error: avatarResult.error };
   const avatarImage = avatarResult as string | null;
 
+  // 給与・原価単価（任意・最高管理者のみ）。入力があれば初回の単価として登録する
+  const payRate = isSuperAdmin(me) ? parsePayRate(formData) : { data: null };
+  if (payRate.error) return { error: payRate.error };
+
   const exists = await db.user.findUnique({ where: { email: d.email } });
   if (exists) return { error: "このメールアドレスは既に登録されています" };
 
-  await db.user.create({
-    data: {
-      name: d.name,
-      email: d.email,
-      role: d.role,
-      department: d.department ?? null,
-      avatarColor: d.avatarColor ?? DEFAULT_AVATAR_COLOR,
-      avatarImage,
-      passwordHash: await hashPassword(d.password),
-    },
+  // ユーザーと初回単価は一括で（単価だけ失敗してユーザーだけ残る、を防ぐ）
+  await db.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        name: d.name,
+        email: d.email,
+        role: d.role,
+        department: d.department ?? null,
+        avatarColor: d.avatarColor ?? DEFAULT_AVATAR_COLOR,
+        avatarImage,
+        passwordHash: await hashPassword(d.password),
+      },
+    });
+    if (payRate.data) await upsertPayRate(created.id, payRate.data, tx);
   });
   revalidatePath("/settings/staff");
   redirect("/settings/staff");
