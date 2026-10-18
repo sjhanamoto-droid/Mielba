@@ -68,14 +68,19 @@ model User {
 // ─────────────────────── StaffPayRate（給与・原価単価の履歴） ───────────────────────
 // 単価は「適用開始日」つきの履歴で持つ。ある日の原価は「その日以前で最も新しい適用開始日」の
 // 行を使う（src/lib/pay-rates.ts）。昇給・単価変更は新しい行を足すだけなので、過去の現場原価は変わらない。
+// 1日の原価は src/lib/labor-cost.ts で計算する（月給＝月の人件費÷その月の稼働日数／日当／時給×作業時間）。
+// 月給の適用開始日は月の1日（月単位で切り替える）。
 // 財務情報＝最高管理者のみ閲覧・入力。
 model StaffPayRate {
   id            String   @id @default(cuid())
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   payType       String // MONTHLY(月給) | DAILY(日当) | HOURLY(時給)
-  payAmount     Int? // 月給・日当・時給の額（円）。payType に対応
-  costUnitPrice Int // 原価単価（円／1人工）。現場原価の計算に使う
+  payAmount       Int? // 月給なら基本給、日当・時給ならその額（円）
+  socialInsurance Int? // 月給のみ：社会保険料（会社負担分）／月
+  bonusMonthly    Int? // 月給のみ：賞与の月割り
+  otherCost       Int? // 月給のみ：その他の会社負担費用／月
+  costUnitPrice   Int? // 旧：手入力の原価単価（円／人工）。計算には使わない（過去データとして残置）
   effectiveFrom DateTime // 適用開始日（サーバーTZ深夜0時。dateFromKey で保存）
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

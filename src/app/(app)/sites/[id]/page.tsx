@@ -31,6 +31,7 @@ import { SiteDetailTabs } from "@/features/sites/site-detail-tabs";
 import { ConfirmRegistrationButton } from "@/features/sites/confirm-registration-button";
 import { Tabs } from "@/components/ui/tabs";
 import { todayRange, storedDateKey, jstDateKey } from "@/lib/date";
+import { laborCostForSite } from "@/lib/labor-cost";
 import { cn, fmtDate, fmtDateWithDay, fmtMonthDay, fmtYen } from "@/lib/utils";
 import {
   PROJECT_TYPE_LABEL,
@@ -163,6 +164,7 @@ export default async function SiteDetailPage({
     materialUses,
     reportPhotos,
     todayCrew,
+    laborCost,
   ] = await Promise.all([
     db.dailyReport.count({ where: { siteId: site.id } }),
     // 人工は提出済み(SUBMITTED)のみ数える（勤怠・人工超過チェックと同じ基準）
@@ -228,6 +230,8 @@ export default async function SiteDetailPage({
       select: { user: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     }),
+    // 人件費（自動計算）は会計情報のため最高管理者のみ計算する
+    superAdmin ? laborCostForSite(site.id) : Promise.resolve(null),
   ]);
 
   const parkingTotal = parkingAgg._sum.parkingFee ?? 0;
@@ -611,6 +615,27 @@ export default async function SiteDetailPage({
                 : "金額は最高管理者のみ閲覧できます。"}
             </p>
           </section>
+
+          {/* 人件費（自動計算）— 会計情報のため最高管理者のみ */}
+          {laborCost && (
+            <section className="space-y-2.5">
+              <SectionTitle size="lg">人件費（自動計算）</SectionTitle>
+              <Card className="p-4">
+                <p className="text-2xl font-bold text-ink tnum">{fmtYen(Math.round(laborCost.cost))}</p>
+                <p className="mt-0.5 text-sm text-ink-muted tnum">
+                  提出済み日報 延べ {Math.round(laborCost.manDays * 10) / 10} 人工
+                </p>
+                {laborCost.missingRateManDays > 0 && (
+                  <p className="mt-2 text-xs font-semibold text-status-danger">
+                    給与・原価単価が未登録のスタッフの {Math.round(laborCost.missingRateManDays * 10) / 10} 人工は含まれていません（スタッフ管理で登録できます）。
+                  </p>
+                )}
+              </Card>
+              <p className="px-1 text-[11px] text-ink-faint">
+                月給は「月の人件費 ÷ その月の稼働日数」、日当はそのまま、時給は作業時間で計算。1日に2現場の日は半分ずつ。
+              </p>
+            </section>
+          )}
 
           {/* 備考（現場情報に常設。編集は現場の編集画面から） */}
           <section className="space-y-2.5">

@@ -21,7 +21,7 @@ export async function savePayRate(
 
   const { data, error } = parsePayRate(formData);
   if (error) return { error };
-  if (!data) return { error: "原価単価を入力してください" };
+  if (!data) return { error: "金額を入力してください" };
 
   await upsertPayRate(userId, data);
   revalidatePath(`/settings/staff/${userId}/edit`);
