@@ -9,6 +9,7 @@
 // 事務所作業だけの日も稼働日数には入るが、どの現場にも配らない。
 // 単価は rateOn でその日に有効な行を使う（昇給しても過去の月は変わらない）。
 
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { dateFromKey, monthRangeForKey, storedDateKey } from "@/lib/date";
 import { rateOn } from "@/lib/pay-rates";
@@ -32,10 +33,13 @@ export type CostReport = {
   endTime: string | null;
 };
 
-export type CostOfficeDay = { userId: string; date: Date };
+/** 事務所作業の日。minutes は稼働時間の集計用（終日は 8:00-17:00。/attendance と同じ） */
+export type CostOfficeDay = { userId: string; date: Date; minutes?: number };
 
 export type UserMonthCost = {
   workDays: number;
+  /** 稼働時間（分）＝日報の作業時間＋事務所作業。/attendance と同じ */
+  minutes: number;
   /** 月給の月額（その月に月給の単価が無ければ null） */
   monthlyTotal: number | null;
   /** 月給の1日あたり＝月額 ÷ 月給が適用される稼働日数（稼働0日なら null） */
@@ -58,21 +62,26 @@ export function allocateMonth(
   reports: CostReport[],
   officeDays: CostOfficeDay[],
   rates: CostRate[],
-): { bySite: Map<string, SiteMonthCost>; byUser: Map<string, UserMonthCost> } {
+): {
+  bySite: Map<string, SiteMonthCost>;
+  byUser: Map<string, UserMonthCost>;
+  /** 人×現場（キーは "userId|siteId"） */
+  byUserSite: Map<string, SiteMonthCost>;
+} {
   // 人×日 → その日の日報
-  const days = new Map<string, { userId: string; dateKey: string; reports: CostReport[] }>();
+  const days = new Map<string, { userId: string; dateKey: string; reports: CostReport[]; officeMinutes: number }>();
   const dayOf = (userId: string, date: Date) => {
     const dateKey = storedDateKey(date);
     const k = `${userId}|${dateKey}`;
     let d = days.get(k);
     if (!d) {
-      d = { userId, dateKey, reports: [] };
+      d = { userId, dateKey, reports: [], officeMinutes: 0 };
       days.set(k, d);
     }
     return d;
   };
   for (const r of reports) dayOf(r.userId, r.workDate).reports.push(r);
-  for (const o of officeDays) dayOf(o.userId, o.date);
+  for (const o of officeDays) dayOf(o.userId, o.date).officeMinutes += o.minutes ?? 0;
 
   const ratesByUser = new Map<string, CostRate[]>();
   for (const r of rates) {
@@ -87,8 +96,10 @@ export function allocateMonth(
   const monthlyDays = new Map<string, number>();
   const rateOfDay = new Map<string, CostRate | null>();
   for (const [k, d] of days) {
-    const u = byUser.get(d.userId) ?? { workDays: 0, monthlyTotal: null, perDay: null, total: 0, missingRateDays: 0 };
+    const u = byUser.get(d.userId) ?? { workDays: 0, minutes: 0, monthlyTotal: null, perDay: null, total: 0, missingRateDays: 0 };
     u.workDays += 1;
+    u.minutes += d.officeMinutes;
+    for (const r of d.reports) u.minutes += workMinutes(r.startTime, r.endTime);
     byUser.set(d.userId, u);
     const rate = rateOn(ratesByUser.get(d.userId) ?? [], dateFromKey(d.dateKey));
     rateOfDay.set(k, rate);
@@ -96,12 +107,17 @@ export function allocateMonth(
   }
 
   const bySite = new Map<string, SiteMonthCost>();
-  const addSite = (siteId: string, cost: number, manDays: number, missing = false) => {
-    const s = bySite.get(siteId) ?? { cost: 0, manDays: 0, missingRateManDays: 0 };
+  const byUserSite = new Map<string, SiteMonthCost>();
+  const add = (map: Map<string, SiteMonthCost>, key: string, cost: number, manDays: number, missing: boolean) => {
+    const s = map.get(key) ?? { cost: 0, manDays: 0, missingRateManDays: 0 };
     s.cost += cost;
     s.manDays += manDays;
     if (missing) s.missingRateManDays += manDays;
-    bySite.set(siteId, s);
+    map.set(key, s);
+  };
+  const addSite = (userId: string, siteId: string, cost: number, manDays: number, missing = false) => {
+    add(bySite, siteId, cost, manDays, missing);
+    add(byUserSite, `${userId}|${siteId}`, cost, manDays, missing);
   };
 
   for (const [k, d] of days) {
@@ -110,14 +126,16 @@ export function allocateMonth(
     const share = d.reports.length > 0 ? 1 / d.reports.length : 0;
     if (!rate || rate.payAmount == null) {
       u.missingRateDays += 1;
-      for (const r of d.reports) addSite(r.siteId, 0, share, true);
+      for (const r of d.reports) addSite(d.userId, r.siteId, 0, share, true);
       continue;
     }
     if (rate.payType === "HOURLY") {
+      // 事務所作業の時間も時給で人件費に入れる（どの現場にも配らない）
+      u.total += (d.officeMinutes / 60) * rate.payAmount;
       for (const r of d.reports) {
         const cost = (workMinutes(r.startTime, r.endTime) / 60) * rate.payAmount;
         u.total += cost;
-        addSite(r.siteId, cost, share);
+        addSite(d.userId, r.siteId, cost, share);
       }
       continue;
     }
@@ -128,14 +146,17 @@ export function allocateMonth(
       dayCost = u.perDay;
     }
     u.total += dayCost;
-    for (const r of d.reports) addSite(r.siteId, dayCost * share, share);
+    for (const r of d.reports) addSite(d.userId, r.siteId, dayCost * share, share);
   }
 
-  return { bySite, byUser };
+  return { bySite, byUser, byUserSite };
 }
 
-/** 'YYYY-MM' の1か月分を DB から読んで計算する（全員分。月給の割る日数に他の現場の日も要るため） */
-export async function laborCostForMonth(ym: string) {
+/**
+ * 'YYYY-MM' の1か月分を DB から読んで計算する（全員分。月給の割る日数に他の現場の日も要るため）。
+ * 同じリクエスト内では月ごとに1回だけ計算する（React cache）。
+ */
+export const laborCostForMonth = cache(async (ym: string) => {
   const range = monthRangeForKey(ym);
   const [reports, office, rates] = await Promise.all([
     db.dailyReport.findMany({
@@ -144,16 +165,20 @@ export async function laborCostForMonth(ym: string) {
     }),
     db.calendarEvent.findMany({
       where: { category: "OFFICE", date: range, ownerId: { not: null }, isPrivate: false },
-      select: { ownerId: true, date: true },
+      select: { ownerId: true, date: true, startTime: true, endTime: true, allDay: true },
     }),
     db.staffPayRate.findMany({ where: { effectiveFrom: { lt: range.lt } } }),
   ]);
   return allocateMonth(
     reports,
-    office.map((o) => ({ userId: o.ownerId!, date: o.date })),
+    office.map((o) => ({
+      userId: o.ownerId!,
+      date: o.date,
+      minutes: o.allDay ? workMinutes("08:00", "17:00") : workMinutes(o.startTime, o.endTime),
+    })),
     rates,
   );
-}
+});
 
 /** 現場の人件費（その現場に日報がある月だけを計算して合計） */
 export async function laborCostForSite(siteId: string): Promise<SiteMonthCost> {

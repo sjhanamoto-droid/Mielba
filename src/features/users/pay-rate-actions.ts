@@ -24,8 +24,8 @@ export async function savePayRate(
   if (!data) return { error: "金額を入力してください" };
 
   await upsertPayRate(userId, data);
-  revalidatePath(`/settings/staff/${userId}/edit`);
-  revalidatePath("/settings/staff");
+  revalidatePath(`/staff/${userId}`);
+  revalidatePath("/staff");
   return { ok: true };
 }
 
@@ -34,7 +34,7 @@ export async function deletePayRate(id: string): Promise<PayRateFormState> {
   const rate = await db.staffPayRate.findUnique({ where: { id }, select: { userId: true } });
   if (!rate) return { error: "単価が見つかりません" };
   await db.staffPayRate.delete({ where: { id } });
-  revalidatePath(`/settings/staff/${rate.userId}/edit`);
-  revalidatePath("/settings/staff");
+  revalidatePath(`/staff/${rate.userId}`);
+  revalidatePath("/staff");
   return { ok: true };
 }

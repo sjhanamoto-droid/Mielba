@@ -1,14 +1,12 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ChevronRight, IdCard } from "lucide-react";
 import { requireAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { PageContainer } from "@/components/app-shell/page-container";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { UserForm } from "@/features/users/user-form";
-import { PayRateManager } from "@/features/users/pay-rate-manager";
-import { dateFromKey, jstDateKey, storedDateKey } from "@/lib/date";
-import { rateOn } from "@/lib/pay-rates";
-import { laborCostForMonth, monthlyTotal } from "@/lib/labor-cost";
 
 export default async function EditStaffPage({
   params,
@@ -23,24 +21,8 @@ export default async function EditStaffPage({
   });
   if (!user) notFound();
 
-  // 給与・原価単価は財務情報＝最高管理者のみ
+  // 給与・人件費は財務情報＝最高管理者のみ（スタッフページで管理する）
   const superAdmin = isSuperAdmin(me);
-  const todayKey = jstDateKey();
-  const rates = superAdmin
-    ? await db.staffPayRate.findMany({ where: { userId: id }, orderBy: { effectiveFrom: "desc" } })
-    : [];
-  const current = rateOn(rates, dateFromKey(todayKey));
-  // 月給なら今月の見込み（月の人件費 ÷ 今月の稼働日数）
-  let estimate = null;
-  if (current?.payType === "MONTHLY" && current.payAmount != null) {
-    const ym = todayKey.slice(0, 7);
-    const { byUser } = await laborCostForMonth(ym);
-    estimate = {
-      monthLabel: `${Number(ym.slice(0, 4))}年${Number(ym.slice(5))}月`,
-      monthlyTotal: monthlyTotal(current),
-      workDays: byUser.get(id)?.workDays ?? 0,
-    };
-  }
 
   return (
     <div>
@@ -52,27 +34,14 @@ export default async function EditStaffPage({
         </Card>
 
         {superAdmin && (
-          <>
-            <SectionTitle className="mb-2.5 mt-6">給与・原価単価</SectionTitle>
-            <Card className="p-4 sm:p-5">
-              <PayRateManager
-                userId={user.id}
-                role={user.role}
-                currentId={current?.id ?? null}
-                todayKey={todayKey}
-                estimate={estimate}
-                rates={rates.map((r) => ({
-                  id: r.id,
-                  payType: r.payType,
-                  payAmount: r.payAmount,
-                  socialInsurance: r.socialInsurance,
-                  bonusMonthly: r.bonusMonthly,
-                  otherCost: r.otherCost,
-                  effectiveFromKey: storedDateKey(r.effectiveFrom),
-                }))}
-              />
-            </Card>
-          </>
+          <Link
+            href={`/staff/${user.id}?tab=pay`}
+            className="card mt-4 flex items-center gap-3 px-4 py-3.5 tap-row"
+          >
+            <IdCard className="h-5 w-5 shrink-0 text-brand-600" />
+            <span className="flex-1 text-sm font-bold text-ink">給与・人件費はスタッフページで管理します</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+          </Link>
         )}
       </PageContainer>
     </div>
