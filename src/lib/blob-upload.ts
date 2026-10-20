@@ -56,7 +56,33 @@ export async function uploadToBlob(
   try {
     await putWithProgress(uploadUrl, body, contentType, onProgress);
   } catch {
-    return { error: `${label} のアップロードに失敗しました。電波の良い場所で再度お試しください` };
+    // 電波が一瞬途切れただけのことが多いので、1回だけやり直す（署名URLは同じものを使える）
+    try {
+      onProgress(0);
+      await putWithProgress(uploadUrl, body, contentType, onProgress);
+    } catch {
+      return { error: `${label} のアップロードに失敗しました。電波の良い場所で再度お試しください` };
+    }
   }
   return { blobPath };
+}
+
+/**
+ * 選んだファイルの本体を先にメモリへ読み込む。
+ * Android の Chrome では Google ドライブや添付ファイルから選ぶと、端末に実体のない参照が渡され、
+ * 送信時の読み出しに失敗して XHR が通信エラーになる（電波と区別できない）。先に読んでおけば
+ * 読めないファイルはここで分かり、読めたものは確実に送れる。PDF など数十MBまでの用途向け。
+ */
+export async function readLocalCopy(
+  file: File,
+  contentType: string,
+): Promise<{ body: Blob } | { error: string }> {
+  try {
+    const buf = await file.arrayBuffer();
+    return { body: new Blob([buf], { type: contentType }) };
+  } catch {
+    return {
+      error: `${file.name} を端末から読み込めませんでした。ファイルを端末に保存（ダウンロード）してから選び直してください`,
+    };
+  }
 }

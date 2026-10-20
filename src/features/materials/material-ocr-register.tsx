@@ -14,7 +14,7 @@ import {
   registerSiteMaterials,
   type OcrResult,
 } from "./ocr-actions";
-import { uploadToBlob } from "@/lib/blob-upload";
+import { readLocalCopy, uploadToBlob } from "@/lib/blob-upload";
 import { formatMb, OCR_PDF_MAX_BYTES, PDF_MIME } from "@/lib/media-limits";
 
 // 画像を本体（最大1600px・OCR精度優先）＋サムネイル（320px）へ圧縮する
@@ -157,7 +157,12 @@ export function MaterialOcrRegister({ site }: { site: { id: string; name: string
       // PDFは Blob へそのまま上げ、画像は圧縮してから読み取る
       let media: Photo;
       if (isPdf) {
-        const up = await uploadToBlob(file, PDF_MIME, file.name);
+        const local = await readLocalCopy(file, PDF_MIME);
+        if ("error" in local) {
+          toast(local.error, { type: "error" });
+          return;
+        }
+        const up = await uploadToBlob(local.body, PDF_MIME, file.name);
         if ("error" in up) {
           toast(up.error, { type: "error" });
           return;

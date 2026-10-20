@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, X, Loader2, FileText } from "lucide-react";
 import type { PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
-import { uploadToBlob } from "@/lib/blob-upload";
+import { readLocalCopy, uploadToBlob } from "@/lib/blob-upload";
 import { formatMb, PDF_MAX_BYTES, PDF_MIME, SITE_DOC_MAX_COUNT } from "@/lib/media-limits";
 
 /**
@@ -167,7 +167,9 @@ export function SitePhotoField({
           error: `${f.name} は${formatMb(f.size)}あり、上限の${formatMb(PDF_MAX_BYTES)}を超えるため追加できませんでした`,
         };
       }
-      const up = await uploadToBlob(f, PDF_MIME, f.name, onProgress);
+      const local = await readLocalCopy(f, PDF_MIME);
+      if ("error" in local) return local;
+      const up = await uploadToBlob(local.body, PDF_MIME, f.name, onProgress);
       if ("error" in up) return up;
       return { blobPath: up.blobPath, mimeType: PDF_MIME, sizeBytes: f.size, caption: f.name, isPdf: true };
     }
