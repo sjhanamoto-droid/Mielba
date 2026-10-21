@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, Play, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Loader2, Play, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
@@ -23,6 +23,21 @@ export type PhotoData = {
   /** 動画の長さ（秒）。編集用アップローダーの「0:08」表示に使う */
   duration?: number | null;
 };
+
+/** 保存するときのファイル名（キャプション＋日時。使えない文字は除く） */
+function saveFileName(photo: PhotoData, mime: string): string {
+  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/heic" ? "heic" : "jpg";
+  const base = (photo.caption ?? "").replace(/[\\/:*?"<>|\r\n]/g, "").trim().slice(0, 40) || "写真";
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${base}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
+}
+
+async function fetchPhotoBlob(id: string): Promise<Blob> {
+  const res = await fetch(photoSrc(id));
+  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+  return res.blob();
+}
 
 /**
  * 動画のタイル。サムネイル（先頭フレーム）があれば出し、無ければ再生アイコンにする。
@@ -80,6 +95,11 @@ export function PhotoGrid({
   // 表示中の画像を拡大しているか（拡大中は横スライドを止めて、画像の移動に指を使う）
   const [zoomed, setZoomed] = useState(false);
   const zoomRef = useRef<ZoomableImageHandle | null>(null);
+  // 写真の保存。iPhone は共有シートの「画像を保存」で写真アプリ（カメラロール）に入る。
+  // 共有シートはタップ直後でないと開けないので、表示中の画像は先に読み込んでおく。
+  const blobCache = useRef(new Map<string, Promise<Blob>>());
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   const total = photos.length;
   const active = activeIndex != null ? (photos[activeIndex] ?? null) : null;
@@ -91,6 +111,7 @@ export function PhotoGrid({
     setConfirmDelete(false);
     setDeleteError(null);
     setZoomed(false);
+    setSaveMsg(null);
   }
 
   function open(index: number) {
@@ -182,6 +203,68 @@ export function PhotoGrid({
     // close/go は毎回作り直されるので、使う値（activeIndex など）を依存に入れる
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, activeIndex, deleting, total]);
+
+  // 表示中の写真は保存用に中身を読んでおく（直近3枚だけ持つ）。
+  // 横スライドで通り過ぎるだけの写真まで読まないよう、少し止まってから読む
+  useEffect(() => {
+    if (!active || active.isVideo) return;
+    const cache = blobCache.current;
+    if (cache.has(active.id)) return;
+    const timer = setTimeout(() => {
+      const p = fetchPhotoBlob(active.id);
+      // 失敗したら次のタップで読み直す
+      p.catch(() => cache.delete(active.id));
+      cache.set(active.id, p);
+      while (cache.size > 3) cache.delete(cache.keys().next().value as string);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [active]);
+
+  async function savePhoto(p: PhotoData) {
+    if (saving) return;
+    setSaving(true);
+    setSaveMsg(null);
+    const cache = blobCache.current;
+    try {
+      let pending = cache.get(p.id);
+      if (!pending) {
+        pending = fetchPhotoBlob(p.id);
+        cache.set(p.id, pending);
+      }
+      const blob = await pending;
+      const type = blob.type || "image/jpeg";
+      const name = saveFileName(p, type);
+      const file = new File([blob], name, { type });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+        } catch (e) {
+          const err = e as Error;
+          if (err?.name === "AbortError") return; // 共有シートを閉じただけ
+          if (err?.name === "NotAllowedError") {
+            // 読み込みに時間がかかってタップ直後でなくなった。読み込み済みなので次は開ける
+            setSaveMsg("準備ができました。もう一度「保存」を押してください");
+            return;
+          }
+          throw err;
+        }
+        return;
+      }
+      // パソコンなど：そのままダウンロード
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    } catch {
+      cache.delete(p.id);
+      setSaveMsg("保存できませんでした。通信状況を確かめて、もう一度お試しください");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // 隣の写真を先に読んでおく（次へ進んだときに待たせない。動画は重いので対象外）
   useEffect(() => {
@@ -402,6 +485,21 @@ export function PhotoGrid({
             className="safe-bottom flex max-w-full touch-none flex-wrap items-center justify-center gap-2 px-4 pb-4 pt-1 text-center text-white"
             onClick={(e) => e.stopPropagation()}
           >
+            {!active.isVideo && (
+              <button
+                type="button"
+                onClick={() => savePhoto(active)}
+                disabled={saving}
+                className="flex min-h-[40px] items-center gap-1.5 rounded-full bg-white px-4 text-sm font-bold text-ink active:scale-95"
+              >
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Download className="h-4 w-4" aria-hidden />
+                )}
+                保存
+              </button>
+            )}
             <Badge tone="neutral">{PHOTO_KIND_LABEL[active.kind as PhotoKind] ?? active.kind}</Badge>
             {active.caption && <span className="text-sm">{active.caption}</span>}
             {onDelete && canDelete?.(active) && (
@@ -440,6 +538,11 @@ export function PhotoGrid({
                   削除
                 </button>
               )
+            )}
+            {saveMsg && (
+              <span role="status" className="basis-full text-xs font-semibold text-white/90">
+                {saveMsg}
+              </span>
             )}
             {deleteError && (
               <span role="alert" className="basis-full text-xs font-semibold text-red-300">
