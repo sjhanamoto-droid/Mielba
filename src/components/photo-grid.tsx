@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Play, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
@@ -54,10 +54,6 @@ function VideoThumb({ photo }: { photo: PhotoData }) {
   );
 }
 
-/** 横スワイプとみなす最小の移動量（px）と、縦方向に対する比率 */
-const SWIPE_MIN_PX = 50;
-const SWIPE_RATIO = 1.2;
-
 export function PhotoGrid({
   photos,
   canDelete,
@@ -77,7 +73,9 @@ export function PhotoGrid({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const touchRef = useRef<{ x: number; y: number; ok: boolean } | null>(null);
+  // 拡大表示は横スクロール（スナップ）で1枚ずつ並べる。スマホは指でスライド、ボタンでも移動
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const isOpen = activeIndex != null;
 
   const total = photos.length;
   const active = activeIndex != null ? (photos[activeIndex] ?? null) : null;
@@ -102,17 +100,45 @@ export function PhotoGrid({
     setActiveIndex(null);
   }
 
-  /** 前後へ移動する（端では止まる。削除中は動かさない） */
+  /** 前後へ移動する（端では止まる。削除中は動かさない）。表示位置はスクロールから決まる */
   function go(delta: 1 | -1) {
-    if (deleting) return;
-    setActiveIndex((cur) => {
-      if (cur == null) return cur;
-      const next = cur + delta;
-      if (next < 0 || next >= total) return cur;
-      return next;
-    });
-    resetPerPhoto();
+    const el = trackRef.current;
+    if (deleting || activeIndex == null || !el) return;
+    const next = activeIndex + delta;
+    if (next < 0 || next >= total) return;
+    el.scrollTo({ left: next * el.clientWidth, behavior: "smooth" });
   }
+
+  /** スクロール位置から今見えている写真を決める */
+  function onTrackScroll() {
+    const el = trackRef.current;
+    if (!el || el.clientWidth === 0) return;
+    const idx = Math.min(total - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)));
+    if (idx !== activeIndex) {
+      resetPerPhoto();
+      setActiveIndex(idx);
+    }
+  }
+
+  // 開いたとき：タップした写真の位置へ即座に合わせる（アニメーションなし）
+  useLayoutEffect(() => {
+    const el = trackRef.current;
+    if (!isOpen || !el || activeIndex == null) return;
+    el.scrollLeft = activeIndex * el.clientWidth;
+    // 開いた瞬間だけ合わせる（以降はスクロールが activeIndex を動かす）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // 画面の回転・幅の変化でずれないよう、今の写真に合わせ直す
+  useEffect(() => {
+    if (!isOpen) return;
+    const onResize = () => {
+      const el = trackRef.current;
+      if (el && activeIndex != null) el.scrollLeft = activeIndex * el.clientWidth;
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isOpen, activeIndex]);
 
   async function runDelete(p: PhotoData) {
     if (!onDelete) return;
@@ -148,9 +174,9 @@ export function PhotoGrid({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-    // close/go は state の setter しか使わないので依存に入れない
+    // close/go は毎回作り直されるので、使う値（activeIndex など）を依存に入れる
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, deleting, total]);
+  }, [active, activeIndex, deleting, total]);
 
   // 隣の写真を先に読んでおく（次へ進んだときに待たせない。動画は重いので対象外）
   useEffect(() => {
@@ -162,24 +188,6 @@ export function PhotoGrid({
       img.src = photoSrc(p.id);
     }
   }, [activeIndex, photos]);
-
-  function onTouchStart(e: React.TouchEvent<HTMLDivElement>) {
-    const t = e.touches[0];
-    const el = e.target as HTMLElement | null;
-    // 動画の操作バー（シーク）上のドラッグは前後移動と誤認しない
-    touchRef.current = { x: t.clientX, y: t.clientY, ok: !el?.closest?.("video") };
-  }
-
-  function onTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
-    const start = touchRef.current;
-    touchRef.current = null;
-    if (!start?.ok) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return;
-    go(dx < 0 ? 1 : -1);
-  }
 
   if (photos.length === 0) return null;
 
@@ -225,22 +233,20 @@ export function PhotoGrid({
       {active && activeIndex != null && (
         /*
          * data-noswipe: 現場詳細のタブ（連絡・メモ／現場情報／日報）は横スワイプで切り替わるので、
-         * ライトボックス上のスワイプはタブ側に拾わせない（前後の写真へ移動する操作にする）。
-         * touch-none: 背面のページがスクロールしないようにする。
+         * ライトボックス上のスワイプはタブ側に拾わせない（写真を横にスライドする操作にする）。
+         * 背面のページは body の overflow で止め、上下の帯は touch-none で動かさない。
          */
         <div
           role="dialog"
           aria-modal="true"
           aria-label={active.caption || (active.isVideo ? "動画" : "写真")}
           data-noswipe
-          className="fixed inset-0 z-50 flex touch-none flex-col items-center justify-center overscroll-contain bg-black/90 p-4 animate-fade-in"
+          className="fixed inset-0 z-50 flex flex-col overscroll-contain bg-black/90 animate-fade-in"
           onClick={close}
-          onTouchStart={onTouchStart}
-          onTouchEnd={onTouchEnd}
         >
           {/* 上部：枚数と閉じる */}
           <div
-            className="safe-top absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4"
+            className="safe-top absolute inset-x-0 top-0 z-20 flex touch-none items-center justify-between px-4 pt-4"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold text-white tnum">
@@ -256,7 +262,7 @@ export function PhotoGrid({
             </button>
           </div>
 
-          {/* 前後へ（端では薄くして無効に）。スマホは横スワイプでも移動できる */}
+          {/* 前後へ（端では薄くして無効に）。スマホは横にスライドしても移動できる */}
           {total > 1 && (
             <>
               <button
@@ -292,50 +298,81 @@ export function PhotoGrid({
             </>
           )}
 
-          {active.isVideo ? (
-            playbackFailed ? (
-              <div
-                className="max-w-sm rounded-xl bg-white p-5 text-center text-sm"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <p className="font-bold text-ink">この端末では再生できませんでした</p>
-                <p className="mt-1.5 text-[12px] text-ink-muted">
-                  iPhoneの「高効率」設定で撮った動画は、Androidやパソコンで再生できないことがあります。
-                </p>
-                <a
-                  href={photoSrc(active.id)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-flex rounded-lg bg-brand-500 px-4 py-2 font-bold text-white"
-                >
-                  ダウンロードして開く
-                </a>
-              </div>
-            ) : (
-              <video
-                key={active.id}
-                src={photoSrc(active.id)}
-                controls
-                playsInline
-                preload="metadata"
-                onError={() => setPlaybackFailed(true)}
-                className="max-h-[80vh] max-w-full rounded-xl"
-                onClick={(e) => e.stopPropagation()}
-              />
-            )
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={active.id}
-              src={photoSrc(active.id)}
-              alt={active.caption ?? ""}
-              decoding="async"
-              className="max-h-[80vh] max-w-full rounded-xl object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          )}
+          {/* 写真を横一列に並べてスナップ。削除の通信中は動かさない */}
           <div
-            className="mt-3 flex max-w-full flex-wrap items-center justify-center gap-2 text-center text-white"
+            ref={trackRef}
+            onScroll={onTrackScroll}
+            className={cn(
+              "no-scrollbar flex min-h-0 w-full flex-1 snap-x snap-mandatory overscroll-x-contain touch-pan-x",
+              deleting ? "overflow-hidden" : "overflow-x-auto",
+            )}
+          >
+            {photos.map((p, i) => {
+              const isActive = i === activeIndex;
+              // 近くの写真だけ読み込む（遠い写真や動画本体は表示するまで読まない）
+              const near = Math.abs(i - activeIndex) <= 1;
+              return (
+                <div
+                  key={p.id}
+                  className="flex h-full w-full shrink-0 snap-center snap-always items-center justify-center px-4 pb-2 pt-16"
+                >
+                  {!near ? null : p.isVideo ? (
+                    !isActive ? (
+                      // 隣の動画はサムネイルだけ（スライドしてきたら本体を読む）
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={photoSrc(p.id, true)}
+                        alt=""
+                        className="max-h-full max-w-full rounded-xl object-contain opacity-60"
+                      />
+                    ) : playbackFailed ? (
+                      <div
+                        className="max-w-sm rounded-xl bg-white p-5 text-center text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <p className="font-bold text-ink">この端末では再生できませんでした</p>
+                        <p className="mt-1.5 text-[12px] text-ink-muted">
+                          iPhoneの「高効率」設定で撮った動画は、Androidやパソコンで再生できないことがあります。
+                        </p>
+                        <a
+                          href={photoSrc(p.id)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex rounded-lg bg-brand-500 px-4 py-2 font-bold text-white"
+                        >
+                          ダウンロードして開く
+                        </a>
+                      </div>
+                    ) : (
+                      <video
+                        key={p.id}
+                        src={photoSrc(p.id)}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        onError={() => setPlaybackFailed(true)}
+                        className="max-h-full max-w-full rounded-xl"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={photoSrc(p.id)}
+                      alt={p.caption ?? ""}
+                      decoding="async"
+                      draggable={false}
+                      className="max-h-full max-w-full select-none rounded-xl object-contain"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            className="safe-bottom flex max-w-full touch-none flex-wrap items-center justify-center gap-2 px-4 pb-4 pt-1 text-center text-white"
             onClick={(e) => e.stopPropagation()}
           >
             <Badge tone="neutral">{PHOTO_KIND_LABEL[active.kind as PhotoKind] ?? active.kind}</Badge>
