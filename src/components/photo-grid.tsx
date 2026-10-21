@@ -26,17 +26,33 @@ export type PhotoData = {
 
 /** 保存するときのファイル名（キャプション＋日時。使えない文字は除く） */
 function saveFileName(photo: PhotoData, mime: string): string {
-  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/heic" ? "heic" : "jpg";
-  const base = (photo.caption ?? "").replace(/[\\/:*?"<>|\r\n]/g, "").trim().slice(0, 40) || "写真";
+  const ext = photo.isVideo
+    ? mime === "video/quicktime" ? "mov" : mime === "video/webm" ? "webm" : "mp4"
+    : mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/heic" ? "heic" : "jpg";
+  const base =
+    (photo.caption ?? "").replace(/[\\/:*?"<>|\r\n]/g, "").trim().slice(0, 40) || (photo.isVideo ? "動画" : "写真");
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${base}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
 }
 
-async function fetchPhotoBlob(id: string): Promise<Blob> {
+/** 写真・動画の中身を読む。onProgress には 0〜1 を渡す（大きさが分からなければ呼ばない） */
+async function fetchPhotoBlob(id: string, onProgress?: (ratio: number) => void): Promise<Blob> {
   const res = await fetch(photoSrc(id));
   if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
-  return res.blob();
+  const total = Number(res.headers.get("Content-Length")) || 0;
+  if (!onProgress || !total || !res.body) return res.blob();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress(Math.min(1, loaded / total));
+  }
+  return new Blob(chunks as BlobPart[], { type: res.headers.get("Content-Type") ?? "" });
 }
 
 /**
@@ -99,10 +115,15 @@ export function PhotoGrid({
   // 共有シートはタップ直後でないと開けないので、表示中の画像は先に読み込んでおく。
   const blobCache = useRef(new Map<string, Promise<Blob>>());
   const [saving, setSaving] = useState(false);
+  // 動画の読み込みの進み具合（0〜1。分からないときは null）
+  const [saveProgress, setSaveProgress] = useState<number | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // 読み込み中に別の写真へ移った・閉じたときは共有シートを出さない
+  const activeIdRef = useRef<string | null>(null);
 
   const total = photos.length;
   const active = activeIndex != null ? (photos[activeIndex] ?? null) : null;
+  activeIdRef.current = active?.id ?? null;
   const hasPrev = activeIndex != null && activeIndex > 0;
   const hasNext = activeIndex != null && activeIndex < total - 1;
 
@@ -224,14 +245,20 @@ export function PhotoGrid({
     if (saving) return;
     setSaving(true);
     setSaveMsg(null);
+    setSaveProgress(null);
     const cache = blobCache.current;
     try {
       let pending = cache.get(p.id);
       if (!pending) {
-        pending = fetchPhotoBlob(p.id);
+        // 動画は重いので押したときに読む（進み具合を出す）。メモリを食うので動画は1本だけ持つ
+        if (p.isVideo) {
+          for (const [id] of cache) if (photos.find((x) => x.id === id)?.isVideo) cache.delete(id);
+        }
+        pending = fetchPhotoBlob(p.id, p.isVideo ? setSaveProgress : undefined);
         cache.set(p.id, pending);
       }
       const blob = await pending;
+      if (activeIdRef.current !== p.id) return;
       const type = blob.type || "image/jpeg";
       const name = saveFileName(p, type);
       const file = new File([blob], name, { type });
@@ -243,7 +270,11 @@ export function PhotoGrid({
           if (err?.name === "AbortError") return; // 共有シートを閉じただけ
           if (err?.name === "NotAllowedError") {
             // 読み込みに時間がかかってタップ直後でなくなった。読み込み済みなので次は開ける
-            setSaveMsg("準備ができました。もう一度「保存」を押してください");
+            setSaveMsg(
+              p.isVideo
+                ? "動画の準備ができました。もう一度「保存」を押してください"
+                : "準備ができました。もう一度「保存」を押してください",
+            );
             return;
           }
           throw err;
@@ -263,6 +294,7 @@ export function PhotoGrid({
       setSaveMsg("保存できませんでした。通信状況を確かめて、もう一度お試しください");
     } finally {
       setSaving(false);
+      setSaveProgress(null);
     }
   }
 
@@ -485,21 +517,19 @@ export function PhotoGrid({
             className="safe-bottom flex max-w-full touch-none flex-wrap items-center justify-center gap-2 px-4 pb-4 pt-1 text-center text-white"
             onClick={(e) => e.stopPropagation()}
           >
-            {!active.isVideo && (
-              <button
-                type="button"
-                onClick={() => savePhoto(active)}
-                disabled={saving}
-                className="flex min-h-[40px] items-center gap-1.5 rounded-full bg-white px-4 text-sm font-bold text-ink active:scale-95"
-              >
-                {saving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Download className="h-4 w-4" aria-hidden />
-                )}
-                保存
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => savePhoto(active)}
+              disabled={saving}
+              className="flex min-h-[40px] items-center gap-1.5 rounded-full bg-white px-4 text-sm font-bold text-ink active:scale-95"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Download className="h-4 w-4" aria-hidden />
+              )}
+              {saving && saveProgress != null ? `読み込み中 ${Math.round(saveProgress * 100)}%` : "保存"}
+            </button>
             <Badge tone="neutral">{PHOTO_KIND_LABEL[active.kind as PhotoKind] ?? active.kind}</Badge>
             {active.caption && <span className="text-sm">{active.caption}</span>}
             {onDelete && canDelete?.(active) && (
