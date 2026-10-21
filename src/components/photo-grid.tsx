@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, Play, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Play, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PHOTO_KIND_LABEL, type PhotoKind } from "@/lib/constants";
 import { photoSrc } from "@/lib/photos";
 import { cn } from "@/lib/utils";
+import { ZoomableImage, type ZoomableImageHandle } from "@/components/zoomable-image";
 
 /**
  * 表示用の写真メタデータ。base64（dataUrl/thumbUrl）は含めない。
@@ -76,6 +77,9 @@ export function PhotoGrid({
   // 拡大表示は横スクロール（スナップ）で1枚ずつ並べる。スマホは指でスライド、ボタンでも移動
   const trackRef = useRef<HTMLDivElement | null>(null);
   const isOpen = activeIndex != null;
+  // 表示中の画像を拡大しているか（拡大中は横スライドを止めて、画像の移動に指を使う）
+  const [zoomed, setZoomed] = useState(false);
+  const zoomRef = useRef<ZoomableImageHandle | null>(null);
 
   const total = photos.length;
   const active = activeIndex != null ? (photos[activeIndex] ?? null) : null;
@@ -86,6 +90,7 @@ export function PhotoGrid({
     setPlaybackFailed(false);
     setConfirmDelete(false);
     setDeleteError(null);
+    setZoomed(false);
   }
 
   function open(index: number) {
@@ -252,6 +257,30 @@ export function PhotoGrid({
             <span className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold text-white tnum">
               {activeIndex + 1} / {total}
             </span>
+            {!active.isVideo && (
+              <span className="ml-auto mr-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => zoomRef.current?.zoomOut()}
+                  disabled={!zoomed}
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white",
+                    !zoomed && "opacity-30",
+                  )}
+                  aria-label="縮小"
+                >
+                  <ZoomOut className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => zoomRef.current?.zoomIn()}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
+                  aria-label="拡大"
+                >
+                  <ZoomIn className="h-5 w-5" />
+                </button>
+              </span>
+            )}
             <button
               type="button"
               onClick={close}
@@ -304,7 +333,7 @@ export function PhotoGrid({
             onScroll={onTrackScroll}
             className={cn(
               "no-scrollbar flex min-h-0 w-full flex-1 snap-x snap-mandatory overscroll-x-contain touch-pan-x",
-              deleting ? "overflow-hidden" : "overflow-x-auto",
+              deleting || zoomed ? "overflow-hidden" : "overflow-x-auto",
             )}
           >
             {photos.map((p, i) => {
@@ -314,7 +343,7 @@ export function PhotoGrid({
               return (
                 <div
                   key={p.id}
-                  className="flex h-full w-full shrink-0 snap-center snap-always items-center justify-center px-4 pb-2 pt-16"
+                  className="flex h-full w-full shrink-0 snap-center snap-always items-center justify-center overflow-hidden px-4 pb-2 pt-16"
                 >
                   {!near ? null : p.isVideo ? (
                     !isActive ? (
@@ -356,14 +385,12 @@ export function PhotoGrid({
                       />
                     )
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <ZoomableImage
+                      ref={isActive ? zoomRef : undefined}
                       src={photoSrc(p.id)}
                       alt={p.caption ?? ""}
-                      decoding="async"
-                      draggable={false}
-                      className="max-h-full max-w-full select-none rounded-xl object-contain"
-                      onClick={(e) => e.stopPropagation()}
+                      active={isActive}
+                      onZoomChange={isActive ? setZoomed : undefined}
                     />
                   )}
                 </div>
