@@ -1,13 +1,15 @@
 import { db } from "@/lib/db";
 import { getAppSettings } from "@/lib/settings";
 import { todayRange } from "@/lib/date";
+import { isNonWorkEventCategory } from "@/lib/constants";
 
 // 日報の「次回の作業日」まわりの共通処理（日報の保存・確認日の全画面・毎朝の通知で使う）。
 
 /**
- * 日報で決まった次回作業日を予定（カレンダー）に入れる。
- * この日報から作った予定（source=PROCESS）を作り直す。date が null なら消すだけ。
- * 参加者は付けない（配員は今までどおり管理者が組む）。
+ * 日報で決まった次回作業日を予定（カレンダー）に入れる。date が null なら消すだけ。
+ * この日報から作った予定（source=PROCESS）は誰でもカレンダーで編集できるので、
+ * 既にあれば作り直さず日付だけ合わせる（カレンダーで足した参加者・時間を消さない）。
+ * 新しく作るときは参加者を付けない（配員は今までどおり管理者が組む）。
  */
 export async function syncNextWorkEvent(
   reportId: string,
@@ -15,8 +17,52 @@ export async function syncNextWorkEvent(
   date: Date | null,
   createdById: string,
 ): Promise<void> {
-  await db.calendarEvent.deleteMany({ where: { reportId, source: "PROCESS" } });
-  if (!date) return;
+  if (!date) {
+    await db.calendarEvent.deleteMany({ where: { reportId, source: "PROCESS" } });
+    return;
+  }
+  const existing = await db.calendarEvent.findFirst({
+    where: { reportId, source: "PROCESS" },
+    select: { id: true, siteId: true, date: true, participants: { select: { userId: true } } },
+  });
+  if (existing) {
+    if (existing.date.getTime() === date.getTime()) return;
+    await db.calendarEvent.update({ where: { id: existing.id }, data: { date } });
+    // 参加者がいれば、現場入り（配員）も新しい日付へ移す（旧日付に日報がある人の現場入りは残す）
+    const userIds = existing.participants.map((p) => p.userId);
+    const eventSiteId = existing.siteId ?? siteId;
+    if (userIds.length > 0) {
+      for (const userId of userIds) {
+        await db.siteVisit.upsert({
+          where: { siteId_userId_date: { siteId: eventSiteId, userId, date } },
+          update: {},
+          create: { siteId: eventSiteId, userId, date, createdById },
+        });
+      }
+      const reported = await db.dailyReport.findMany({
+        where: { siteId: eventSiteId, workDate: existing.date, userId: { in: userIds } },
+        select: { userId: true },
+      });
+      const keep = new Set(reported.map((r) => r.userId));
+      // 同じ日・同じ現場に残る別の作業予定の参加者も残す（カレンダー側の掃除と同じ考え方）
+      const others = await db.calendarEvent.findMany({
+        where: { siteId: eventSiteId, date: existing.date, id: { not: existing.id } },
+        select: { category: true, participants: { select: { userId: true } } },
+      });
+      for (const e of others) {
+        if (isNonWorkEventCategory(e.category)) continue;
+        for (const p of e.participants) keep.add(p.userId);
+      }
+      await db.siteVisit.deleteMany({
+        where: {
+          siteId: eventSiteId,
+          date: existing.date,
+          userId: { in: userIds.filter((u) => !keep.has(u)) },
+        },
+      });
+    }
+    return;
+  }
   const [site, settings] = await Promise.all([
     db.site.findUnique({ where: { id: siteId }, select: { name: true } }),
     getAppSettings(),

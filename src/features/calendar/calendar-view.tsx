@@ -34,6 +34,7 @@ import {
   EVENT_SOURCE_COLOR,
   EVENT_CATEGORY_LABEL,
   EVENT_CATEGORY_COLOR,
+  isUserEditableEventSource,
   type EventSource,
   type EventCategory,
 } from "@/lib/constants";
@@ -508,9 +509,9 @@ function EventDetailModal({
               <ArrowRight className="h-5 w-5" />
             </LinkButton>
           )}
-          {(ev.source === "MANUAL" || canDelete) && (
+          {(isUserEditableEventSource(ev.source) || canDelete) && (
             <div className="flex gap-2">
-              {ev.source === "MANUAL" && (
+              {isUserEditableEventSource(ev.source) && (
                 <Button variant="outline" className="flex-1" onClick={() => onEdit(ev)}>
                   <Pencil className="h-4 w-4" />
                   編集
@@ -518,7 +519,7 @@ function EventDetailModal({
               )}
               <Button
                 variant="ghost"
-                className={cn("text-status-danger hover:bg-red-50", ev.source !== "MANUAL" && "flex-1")}
+                className={cn("text-status-danger hover:bg-red-50", !isUserEditableEventSource(ev.source) && "flex-1")}
                 onClick={() => onDelete(ev)}
               >
                 <Trash2 className="h-4 w-4" />

@@ -8,6 +8,7 @@ import { dateFromKey } from "@/lib/date";
 import {
   EVENT_CATEGORY_LABEL,
   isNonWorkEventCategory,
+  isUserEditableEventSource,
   type EventCategory,
 } from "@/lib/constants";
 
@@ -235,7 +236,8 @@ export async function updateEvent(
     if (existing.isPrivate && existing.ownerId !== user.id) {
       return { error: "予定が見つかりません" };
     }
-    if (existing.source !== "MANUAL") return { error: "この予定は編集できません" };
+    // 手動の予定と、日報の次回作業日から入った予定（PROCESS）は誰でも編集できる
+    if (!isUserEditableEventSource(existing.source)) return { error: "この予定は編集できません" };
 
     const parsed = eventSchema.safeParse({
       title: formData.get("title") || undefined,
@@ -290,8 +292,26 @@ export async function updateEvent(
         allDay: d.allDay,
         note: note || null,
         isPrivate,
+        // 日報から入った予定を別の現場へ移したら、もう元の日報の次回作業日ではないので切り離す
+        ...(existing.source === "PROCESS" && existing.siteId !== siteId
+          ? { source: "MANUAL", reportId: null }
+          : {}),
       },
     });
+
+    // 日報から入った予定の日付を動かしたら、元の日報の「次回作業日」も合わせる
+    if (
+      existing.source === "PROCESS" &&
+      existing.reportId &&
+      existing.siteId === siteId &&
+      existing.date.getTime() !== date.getTime()
+    ) {
+      await db.dailyReport.updateMany({
+        where: { id: existing.reportId, nextWorkChoice: "DATE" },
+        data: { nextWorkDate: date },
+      });
+      revalidatePath(`/reports/${existing.reportId}`);
+    }
 
     // 参加者を差し替え
     await db.eventParticipant.deleteMany({ where: { eventId: id } });
@@ -339,7 +359,7 @@ export async function deleteEvent(
 ): Promise<{ ok?: boolean; error?: string }> {
   try {
     const user = await requireUser();
-    // 手動予定は誰でも削除可能。日報由来（配達・工程など）は管理者のみ削除可。参加者は cascade で削除。
+    // 手動予定・日報の次回作業日から入った予定は誰でも削除可能。それ以外（配達など）は管理者のみ。参加者は cascade で削除。
     const event = await db.calendarEvent.findUnique({
       where: { id },
       select: {
@@ -357,7 +377,7 @@ export async function deleteEvent(
     if (event.isPrivate && event.ownerId !== user.id) {
       return { error: "予定が見つかりません" };
     }
-    if (event.source !== "MANUAL" && !isAdmin(user)) return { error: "この予定は削除できません" };
+    if (!isUserEditableEventSource(event.source) && !isAdmin(user)) return { error: "この予定は削除できません" };
     const participantIds = event.participants.map((p) => p.userId);
     await db.calendarEvent.delete({ where: { id } });
     // 現場作業予定なら、紐づく現場入り(配員)も掃除してカレンダーと一致させる

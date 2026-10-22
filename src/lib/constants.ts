@@ -243,6 +243,12 @@ export const EVENT_SOURCE_LABEL: Record<EventSource, string> = {
   PROCESS: "次回工程",
   MILESTONE: "工程",
 };
+// 誰でも編集・削除できる予定の出どころ（手動の予定と、日報の次回作業日から入った予定）
+export const USER_EDITABLE_EVENT_SOURCES: readonly string[] = ["MANUAL", "PROCESS"];
+export function isUserEditableEventSource(source: string): boolean {
+  return USER_EDITABLE_EVENT_SOURCES.includes(source);
+}
+
 export const EVENT_SOURCE_COLOR: Record<EventSource, string> = {
   MANUAL: "#2f63f5",
   DELIVERY: "#f98307",
