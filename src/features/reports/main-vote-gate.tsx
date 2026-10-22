@@ -76,11 +76,14 @@ export function MainVoteGate({
   const nameOf = (userId: string) =>
     state.members.find((m) => m.userId === userId)?.name ?? "不明";
 
-  const votedCount = state.members.filter((m) => m.vote).length;
+  // 日報を書き終えた未投票の人は待たない（棄権）。残りの全員が揃えば確定する
+  const abstained = new Set(state.abstained ?? []);
+  const waiting = state.members.filter((m) => !abstained.has(m.userId));
+  const votedCount = waiting.filter((m) => m.vote).length;
   const distinctVotes = new Set(
     state.members.filter((m) => m.vote).map((m) => m.vote),
   );
-  const allVoted = state.members.every((m) => m.vote);
+  const allVoted = waiting.every((m) => m.vote);
   const split = distinctVotes.size > 1;
 
   return (
@@ -96,7 +99,7 @@ export function MainVoteGate({
         </div>
         <p className="text-sm text-ink-soft">
           その日の配員 <span className="font-bold">{state.members.length}名</span> 全員が
-          同じ人を選ぶと日報に進めます。材料・在庫はメインの人が入力します。
+          同じ人を選ぶと日報に進めます（日報を書き終えた人の投票は待ちません）。材料・在庫はメインの人が入力します。
         </p>
       </div>
 
@@ -157,7 +160,7 @@ export function MainVoteGate({
       {/* 全員の投票状況 */}
       <div className="space-y-2.5">
         <span className="flex items-center gap-1.5 px-1 text-sm font-semibold text-ink-soft">
-          投票状況（{votedCount}/{state.members.length} 名）
+          投票状況（{votedCount}/{waiting.length} 名）
         </span>
         <div className="card divide-y divide-line p-0">
           {state.members.map((m) => (
@@ -165,7 +168,11 @@ export function MainVoteGate({
               <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
                 {m.name}
               </span>
-              {m.vote ? (
+              {abstained.has(m.userId) && !m.vote ? (
+                <span className="shrink-0 text-xs font-medium text-ink-muted">
+                  日報提出済み（投票なし）
+                </span>
+              ) : m.vote ? (
                 <span className="shrink-0 text-xs font-bold text-brand-700 dark:text-brand-300">
                   → {nameOf(m.vote)} に投票
                 </span>
