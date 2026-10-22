@@ -76,6 +76,7 @@ export function HandoverPanel({
   const ordered = [...open].sort((a, b) => Number(a.readByMe) - Number(b.readByMe));
   // 今日この現場に入る人のうち、まだ読んでいない人がいる引き継ぎがあるか
   const teamUnread = open.some((h) => h.unreadNames.length > 0);
+  const alerting = teamUnread || unreadByMe > 0;
 
   function run(id: string, fn: () => Promise<ActionResult>) {
     setBusyId(id);
@@ -95,34 +96,42 @@ export function HandoverPanel({
 
   return (
     <div className="space-y-2.5">
-      {/* 対応中：今日の担当に未確認があれば赤い注意を先頭に */}
-      {open.length > 0 && (teamUnread || unreadByMe > 0) && (
-        <div className="rounded-2xl border border-red-200 border-t-4 border-t-red-500 bg-red-50/70 px-4 py-3.5 dark:border-red-900/60 dark:border-t-red-500 dark:bg-red-950/30">
-          <p className="flex items-center gap-2 text-base font-bold text-red-600 dark:text-red-400">
-            <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
-            {teamUnread ? "今日の担当に未確認があります" : `あなたが未確認の引き継ぎが${unreadByMe}件あります`}
-          </p>
-          <p className="mt-1 text-sm text-ink-soft">
-            {teamUnread ? "各引き継ぎの確認状況を確認してください。" : "内容を読んで「確認しました」を押してください。"}
-          </p>
-        </div>
-      )}
-
-      {/* 対応中の引き継ぎ（隠さず全件を開いた状態で並べる） */}
+      {/*
+        対応中の引き継ぎ（隠さず全件を開いた状態で並べる）。
+        今日の担当に未確認があれば、赤い注意と引き継ぎ全件を1つの赤枠で囲む（どこまでが対象か分かるように）
+      */}
       {open.length > 0 && (
-        <ol className="space-y-3">
-          {ordered.map((h, i) => (
-            <OpenHandoverItem
-              // 内容が書き換わったらチェックをやり直す
-              key={`${h.id}:${h.content}`}
-              item={h}
-              no={i + 1}
-              busy={busyId === h.id}
-              onRead={() => run(h.id, () => markHandoverRead(h.id))}
-              onClose={() => run(h.id, () => closeHandover(h.id))}
-            />
-          ))}
-        </ol>
+        <div
+          className={cn(
+            alerting &&
+              "overflow-hidden rounded-2xl border-2 border-red-400 bg-red-50/60 dark:border-red-700 dark:bg-red-950/20",
+          )}
+        >
+          {alerting && (
+            <div className="border-b border-red-200 px-4 py-3.5 dark:border-red-900/60">
+              <p className="flex items-center gap-2 text-base font-bold text-red-600 dark:text-red-400">
+                <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
+                {teamUnread ? "今日の担当に未確認があります" : `あなたが未確認の引き継ぎが${unreadByMe}件あります`}
+              </p>
+              <p className="mt-1 text-sm text-ink-soft">
+                {teamUnread ? "各引き継ぎの確認状況を確認してください。" : "内容を読んで「確認しました」を押してください。"}
+              </p>
+            </div>
+          )}
+          <ol className={cn("space-y-3", alerting && "p-2.5")}>
+            {ordered.map((h, i) => (
+              <OpenHandoverItem
+                // 内容が書き換わったらチェックをやり直す
+                key={`${h.id}:${h.content}`}
+                item={h}
+                no={i + 1}
+                busy={busyId === h.id}
+                onRead={() => run(h.id, () => markHandoverRead(h.id))}
+                onClose={() => run(h.id, () => closeHandover(h.id))}
+              />
+            ))}
+          </ol>
+        </div>
       )}
 
       {error && (
