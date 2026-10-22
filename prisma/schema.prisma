@@ -62,6 +62,7 @@ model User {
   notifications     Notification[]     @relation("UserNotifications")
   pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
   siteMemos         SiteMemo[]         @relation("SiteMemoAuthor")
+  uploadedPhotos    Photo[]            @relation("PhotoUploader")
   payRates          StaffPayRate[]
 }
 
@@ -488,8 +489,10 @@ model Photo {
   isVideo   Boolean  @default(false)
   width     Int?
   height    Int?
+  uploadedById String? // 投稿者（現場・現調に直接上げた分。日報・メモの写真は親の投稿者で分かる）
   createdAt DateTime @default(now())
 
+  uploadedBy User?    @relation("PhotoUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   report DailyReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
   survey Survey?      @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   site   Site?        @relation(fields: [siteId], references: [id], onDelete: Cascade)

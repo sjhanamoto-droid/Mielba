@@ -22,6 +22,10 @@ export type PhotoData = {
   height?: number | null;
   /** 動画の長さ（秒）。編集用アップローダーの「0:08」表示に使う */
   duration?: number | null;
+  /** 投稿日（「2026/10/22」）。渡すと一覧の左下と拡大表示に出す */
+  postedAt?: string | null;
+  /** 投稿者の名前（分からなければ null） */
+  postedBy?: string | null;
 };
 
 /** 保存するときのファイル名（キャプション＋日時。使えない文字は除く） */
@@ -341,9 +345,16 @@ export function PhotoGrid({
                 弊社分
               </span>
             )}
-            {p.caption && (
-              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-3 text-left text-[10px] font-medium text-white">
-                {p.caption}
+            {(p.caption || p.postedAt) && (
+              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4 text-left text-white">
+                {p.caption && <span className="block truncate text-[10px] font-medium">{p.caption}</span>}
+                {/* 投稿日と投稿者（左下） */}
+                {p.postedAt && (
+                  <span className="block truncate text-[10px] font-semibold tnum text-white/90">
+                    {p.postedAt}
+                    {p.postedBy ? `・${p.postedBy}` : ""}
+                  </span>
+                )}
               </span>
             )}
           </button>
@@ -532,6 +543,12 @@ export function PhotoGrid({
             </button>
             <Badge tone="neutral">{PHOTO_KIND_LABEL[active.kind as PhotoKind] ?? active.kind}</Badge>
             {active.caption && <span className="text-sm">{active.caption}</span>}
+            {active.postedAt && (
+              <span className="text-xs font-semibold text-white/80 tnum">
+                投稿 {active.postedAt}
+                {active.postedBy ? `・${active.postedBy}` : ""}
+              </span>
+            )}
             {onDelete && canDelete?.(active) && (
               confirmDelete ? (
                 <span className="flex items-center gap-1.5">

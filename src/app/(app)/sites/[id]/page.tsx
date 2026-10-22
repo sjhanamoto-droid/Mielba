@@ -99,6 +99,7 @@ export default async function SiteDetailPage({
               width: true,
               height: true,
               createdAt: true,
+              uploadedBy: { select: { name: true } },
             },
             orderBy: { createdAt: "asc" },
           },
@@ -128,6 +129,7 @@ export default async function SiteDetailPage({
         take: 200,
         select: {
           atSurvey: true,
+          createdBy: { select: { name: true } },
           // メモに添えた写真・動画（base64 は載せず {id} 参照で渡し、実体は /api/photos/[id] から）
           photos: {
             select: {
@@ -191,6 +193,7 @@ export default async function SiteDetailPage({
         width: true,
         height: true,
         createdAt: true,
+        uploadedBy: { select: { name: true } },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -220,6 +223,8 @@ export default async function SiteDetailPage({
         width: true,
         height: true,
         createdAt: true,
+        uploadedBy: { select: { name: true } },
+        report: { select: { user: { select: { name: true } } } },
       },
       orderBy: { createdAt: "desc" },
       take: 60,
@@ -255,7 +260,11 @@ export default async function SiteDetailPage({
   const memoPhotosAtWork: TimedPhoto[] = [];
   for (const m of site.memos) {
     for (const p of m.photos) {
-      (m.atSurvey ? memoPhotosAtSurvey : memoPhotosAtWork).push({ ...p, deletable: false });
+      (m.atSurvey ? memoPhotosAtSurvey : memoPhotosAtWork).push({
+        ...p,
+        deletable: false,
+        postedBy: m.createdBy?.name ?? null,
+      });
     }
   }
   // 並べ替えが済んだら createdAt は落とす（クライアントには表示に要る項目だけ渡す。両タブに載るので二重に送られる）
@@ -268,18 +277,31 @@ export default async function SiteDetailPage({
     height: p.height,
     duration: p.duration,
     deletable: p.deletable,
+    // 投稿日（日本時間の年月日）と投稿者。投稿者が記録されていない古い写真は日付だけ
+    postedAt: jstDateKey(p.createdAt).replace(/-/g, "/"),
+    postedBy: p.postedBy ?? null,
   });
   // 現調：撮った順（古い順）。施工：新しい順
   const surveyPhotos: SitePhotoItem[] = [
-    ...(site.survey?.photos ?? []).map((p): TimedPhoto => ({ ...p, deletable: true })),
+    ...(site.survey?.photos ?? []).map(
+      (p): TimedPhoto => ({ ...p, deletable: true, postedBy: p.uploadedBy?.name ?? null }),
+    ),
     ...memoPhotosAtSurvey,
   ]
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     .map(toItem);
   const workPhotos: SitePhotoItem[] = [
-    ...reportPhotos.map((p): TimedPhoto => ({ ...p, deletable: false })),
+    ...reportPhotos.map(
+      (p): TimedPhoto => ({
+        ...p,
+        deletable: false,
+        postedBy: p.uploadedBy?.name ?? p.report?.user.name ?? null,
+      }),
+    ),
     // セクションから直接上げた施工写真（現場直付け・kind=WORK）
-    ...sitePhotos.filter((p) => p.kind === "WORK").map((p): TimedPhoto => ({ ...p, deletable: true })),
+    ...sitePhotos
+      .filter((p) => p.kind === "WORK")
+      .map((p): TimedPhoto => ({ ...p, deletable: true, postedBy: p.uploadedBy?.name ?? null })),
     ...memoPhotosAtWork,
   ]
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

@@ -20,7 +20,7 @@ const SAVE_FAIL_MSG = "写真の保存に失敗しました。時間をおいて
 
 /** セクションから写真・動画を追加する（photosJson はアップローダーの出力。実体は Blob に上げ済み） */
 export async function addSitePhotos(siteId: string, photosJson: string) {
-  await requireUser();
+  const user = await requireUser();
   const parsed = parseAndValidatePhotosField(photosJson);
   if ("error" in parsed) return { error: parsed.error };
   if (parsed.added.length === 0) return { error: "追加する写真・動画がありません。" };
@@ -46,6 +46,7 @@ export async function addSitePhotos(siteId: string, photosJson: string) {
     isVideo: p.isVideo,
     width: p.width ?? null,
     height: p.height ?? null,
+    uploadedById: user.id,
   }));
 
   try {

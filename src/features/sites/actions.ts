@@ -258,6 +258,7 @@ async function applySitePhotoSets(
   tx: Prisma.TransactionClient,
   siteId: string,
   sets: SitePhotoSet[],
+  uploadedById: string,
 ): Promise<string[]> {
   const removedBlobPaths: string[] = [];
   for (const set of sets) {
@@ -280,6 +281,7 @@ async function applySitePhotoSets(
           isVideo: p.isVideo,
           width: p.width ?? null,
           height: p.height ?? null,
+          uploadedById,
         })),
       });
     }
@@ -293,6 +295,7 @@ async function applySurveyPhotos(
   tx: Prisma.TransactionClient,
   siteId: string,
   photos: { kept: string[]; added: NewPhotoInput[] },
+  uploadedById: string,
 ): Promise<void> {
   const existing = await tx.survey.findUnique({ where: { siteId }, select: { id: true } });
   // 現調記録がまだ無く、追加する写真も無いなら何もしない。
@@ -317,6 +320,7 @@ async function applySurveyPhotos(
       isVideo: p.isVideo,
       width: p.width ?? null,
       height: p.height ?? null,
+      uploadedById,
     })),
   });
 }
@@ -362,9 +366,9 @@ export async function createSite(formData: FormData) {
           projectStatus: survey ? "ESTIMATING" : "ORDERED",
         },
       });
-      await applySitePhotoSets(tx, created.id, photoSets);
+      await applySitePhotoSets(tx, created.id, photoSets, user.id);
       if (survey && surveyPhotos.added.length > 0) {
-        await applySurveyPhotos(tx, created.id, surveyPhotos);
+        await applySurveyPhotos(tx, created.id, surveyPhotos, user.id);
       }
       return created;
     });
@@ -507,7 +511,7 @@ export async function convertEventToSite(
 
 export async function updateSite(siteId: string, formData: FormData) {
   // 編集は全ログインユーザー可（現場情報は全員で最新に保つ運用。作成は元々全員可）
-  await requireUser();
+  const user = await requireUser();
   const existing = await db.site.findUnique({
     where: { id: siteId },
     select: { createdById: true, siteStatus: true, registrationConfirmed: true },
@@ -565,8 +569,8 @@ export async function updateSite(siteId: string, formData: FormData) {
         data: { ...data, provisional },
       });
       // 写真の欄（キーBOX/図面/工程表）は簡易フォームでは出していないので触らない
-      if (!surveyEdit) removedBlobPaths = await applySitePhotoSets(tx, siteId, photoSets);
-      if (surveyPhotos) await applySurveyPhotos(tx, siteId, surveyPhotos);
+      if (!surveyEdit) removedBlobPaths = await applySitePhotoSets(tx, siteId, photoSets, user.id);
+      if (surveyPhotos) await applySurveyPhotos(tx, siteId, surveyPhotos, user.id);
       return updated;
     });
     customerId = site.customerId;
@@ -808,7 +812,7 @@ function clean(v: string | null | undefined): string | null {
 
 export async function saveSurvey(siteId: string, formData: FormData) {
   // 現調に行った本人が現場で書けるよう、全ログインユーザーに開放する
-  await requireUser();
+  const user = await requireUser();
   const parsed = surveySchema.safeParse({
     address: formData.get("address"),
     keybox: formData.get("keybox"),
@@ -861,6 +865,7 @@ export async function saveSurvey(siteId: string, formData: FormData) {
             isVideo: p.isVideo,
             width: p.width ?? null,
             height: p.height ?? null,
+            uploadedById: user.id,
           })),
         });
       }
@@ -975,7 +980,7 @@ export async function saveSiteEntryInfo(
   siteId: string,
   formData: FormData,
 ): Promise<{ ok?: true; error?: string }> {
-  await requireUser();
+  const user = await requireUser();
   const site = await db.site.findUnique({ where: { id: siteId }, select: { id: true } });
   if (!site) return { error: "現場が見つかりません" };
 
@@ -1015,7 +1020,7 @@ export async function saveSiteEntryInfo(
       if (keyboxPhotos) {
         removedBlobPaths = await applySitePhotoSets(tx, siteId, [
           { kind: "KEYBOX", kept: keyboxPhotos.kept, added: keyboxPhotos.added },
-        ]);
+        ], user.id);
       }
     });
     await db.site.update({
