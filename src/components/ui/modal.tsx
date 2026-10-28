@@ -20,12 +20,15 @@ export function Modal({
   title,
   children,
   className,
+  overlayClassName,
 }: {
   open: boolean;
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
   className?: string;
+  /** 全画面の確認（z-[87] など）の上に重ねるときに z-index を上書きする */
+  overlayClassName?: string;
 }) {
   const panelRef = React.useRef<HTMLDivElement>(null);
   const titleId = React.useId();
@@ -89,7 +92,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+      className={cn("fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4", overlayClassName)}
       onKeyDown={onKeyDown}
     >
       {/* 背景（タップで閉じる） */}

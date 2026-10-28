@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
-import { dateFromKey } from "@/lib/date";
+import { dateFromKey, storedDateKey } from "@/lib/date";
+import { findNearbySiteWorkEvents, type NearbyEvent } from "@/lib/nearby-events";
 import {
   EVENT_CATEGORY_LABEL,
   isNonWorkEventCategory,
@@ -292,16 +293,15 @@ export async function updateEvent(
         allDay: d.allDay,
         note: note || null,
         isPrivate,
-        // 日報から入った予定を別の現場へ移したら、もう元の日報の次回作業日ではないので切り離す
-        ...(existing.source === "PROCESS" && existing.siteId !== siteId
-          ? { source: "MANUAL", reportId: null }
+        // 日報に結び付いた予定を別の現場へ移したら、もう元の日報の次回作業日ではないので切り離す
+        ...(existing.reportId && existing.siteId !== siteId
+          ? { source: existing.source === "PROCESS" ? "MANUAL" : existing.source, reportId: null }
           : {}),
       },
     });
 
-    // 日報から入った予定の日付を動かしたら、元の日報の「次回作業日」も合わせる
+    // 日報に結び付いた予定の日付を動かしたら、元の日報の「次回作業日」も合わせる
     if (
-      existing.source === "PROCESS" &&
       existing.reportId &&
       existing.siteId === siteId &&
       existing.date.getTime() !== date.getTime()
@@ -413,5 +413,183 @@ export async function deleteVisitGroup(
   } catch (e) {
     console.error("deleteVisitGroup failed:", e);
     return { error: "現場入りの削除に失敗しました。通信環境をご確認のうえ、もう一度お試しください。" };
+  }
+}
+
+// ───────────────────────── 同じ現場の予定の重複確認 ─────────────────────────
+// 手動の予定と日報の次回作業日が二重に入らないよう、保存の前に前後数日の同じ現場の作業予定を探す。
+export async function checkNearbyEvents(input: {
+  siteId: string;
+  date: string;
+  excludeEventId?: string | null;
+  excludeReportId?: string | null;
+  minDateKey?: string | null;
+}): Promise<{ events: NearbyEvent[] }> {
+  try {
+    await requireUser();
+    if (!input.siteId || !parseDateKey(input.date)) return { events: [] };
+    const events = await findNearbySiteWorkEvents(input.siteId, input.date, {
+      excludeEventId: input.excludeEventId,
+      excludeReportId: input.excludeReportId,
+      minDateKey: input.minDateKey && parseDateKey(input.minDateKey) ? input.minDateKey : null,
+    });
+    return { events };
+  } catch (e) {
+    // 確認できなくても保存は止めない（今までどおり保存できる）
+    console.error("checkNearbyEvents failed:", e);
+    return { events: [] };
+  }
+}
+
+type DuplicateTarget = {
+  id: string;
+  siteId: string | null;
+  date: Date;
+  title: string;
+  category: string | null;
+  location: string | null;
+  note: string | null;
+  allDay: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  isPrivate: boolean;
+  ownerId: string | null;
+  source: string;
+  reportId: string | null;
+  participants: { userId: string }[];
+};
+
+async function loadEditableEvent(id: string, userId: string): Promise<DuplicateTarget | null> {
+  const e = await db.calendarEvent.findUnique({
+    where: { id },
+    include: { participants: { select: { userId: true } } },
+  });
+  if (!e || (e.isPrivate && e.ownerId !== userId) || !isUserEditableEventSource(e.source)) return null;
+  return e;
+}
+
+// 片方を消す前に、日報の結び付きと次回作業日を残す方へ移す。
+// 残す方は人がまとめた予定になるので手動の予定（MANUAL）にする（日報を消しても消えない）。
+async function handOverReportLink(from: DuplicateTarget, to: DuplicateTarget, date: Date): Promise<void> {
+  const linkTo = !to.reportId && from.reportId ? { reportId: from.reportId } : {};
+  await db.calendarEvent.update({ where: { id: to.id }, data: { source: "MANUAL", ...linkTo } });
+  if (!from.reportId) return;
+  await db.calendarEvent.update({ where: { id: from.id }, data: { reportId: null } });
+  await db.dailyReport.updateMany({
+    where: { id: from.reportId, nextWorkChoice: "DATE" },
+    data: { nextWorkDate: date },
+  });
+  revalidatePath(`/reports/${from.reportId}`);
+}
+
+/**
+ * 入力中の予定を、近い日にある同じ現場の予定（targetId）にまとめる＝新しく作らない。
+ * useNewDate: true なら今入れた日付が正しい（既存の予定をその日付へ動かす）、false なら既存の日付のまま。
+ * 入力した参加者は既存の予定に足し、内容（メモ）も消さずに足す。時間は既存の予定のまま。
+ * 編集中の予定（formData の id）があれば、まとめたあと消す（日報の結び付きは既存の予定へ移す）。
+ */
+export async function mergeIntoEvent(
+  formData: FormData,
+  targetId: string,
+  useNewDate: boolean,
+): Promise<{ ok?: boolean; error?: string }> {
+  try {
+    const user = await requireUser();
+    const target = await loadEditableEvent(targetId, user.id);
+    if (!target || !target.siteId) return { error: "まとめる予定が見つかりません" };
+    const newDateKey = (formData.get("date") ?? "").toString();
+    const newDate = parseDateKey(newDateKey);
+    if (!newDate) return { error: "日付が不正です" };
+    const finalDate = useNewDate ? newDate : target.date;
+
+    const sourceId = (formData.get("id") ?? "").toString();
+    const source = sourceId && sourceId !== targetId ? await loadEditableEvent(sourceId, user.id) : null;
+    if (sourceId && sourceId !== targetId && !source) return { error: "予定が見つかりません" };
+
+    const participants = [
+      ...new Set([
+        ...target.participants.map((p) => p.userId),
+        ...formData.getAll("participants").map(String).filter(Boolean),
+      ]),
+    ];
+    // 入力した件名（作業内容）も、現場予定の登録と同じく内容の先頭に残す
+    const typedTitle = (formData.get("title") ?? "").toString().trim();
+    const typedNote = (formData.get("note") ?? "").toString().trim();
+    const newNote =
+      typedTitle && typedTitle !== target.title && !typedNote.includes(typedTitle)
+        ? [typedTitle, typedNote].filter(Boolean).join("\n")
+        : typedNote;
+    const oldNote = (target.note ?? "").trim();
+    const note = newNote && !oldNote.includes(newNote) ? [oldNote, newNote].filter(Boolean).join("\n") : oldNote;
+
+    const fd = new FormData();
+    fd.set("id", target.id);
+    fd.set("siteId", target.siteId);
+    fd.set("date", storedDateKey(finalDate));
+    if (target.category) fd.set("category", target.category);
+    fd.set("title", target.title);
+    fd.set("location", target.location ?? (formData.get("location") ?? "").toString());
+    fd.set("note", note);
+    fd.set("allDay", target.allDay ? "true" : "false");
+    if (target.startTime) fd.set("startTime", target.startTime);
+    if (target.endTime) fd.set("endTime", target.endTime);
+    for (const uid of participants) fd.append("participants", uid);
+
+    const res = await updateEvent(fd);
+    if (res.error) return res;
+    // 既存の予定を直せてから、日報の結び付きを移して編集中の予定を消す
+    const merged = await loadEditableEvent(target.id, user.id);
+    if (merged) {
+      if (source) await handOverReportLink(source, merged, finalDate);
+      else await db.calendarEvent.update({ where: { id: target.id }, data: { source: "MANUAL" } });
+    }
+    if (source) {
+      const del = await deleteEvent(source.id);
+      if (del.error) return del;
+    }
+    revalidateCalendar(target.siteId);
+    return { ok: true };
+  } catch (e) {
+    console.error("mergeIntoEvent failed:", e);
+    return { error: "予定をまとめられませんでした。通信環境をご確認のうえ、もう一度お試しください。" };
+  }
+}
+
+/**
+ * 既にカレンダーに二重に入っている同じ現場の予定を1つにする。keepId を残し、dropId を消す。
+ * 消す方の参加者は残す方へ足し、日報の次回作業日の結び付きも残す方へ移す（日付は残す方に合わせる）。
+ */
+export async function resolveDuplicate(
+  keepId: string,
+  dropId: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  try {
+    const user = await requireUser();
+    if (keepId === dropId) return { error: "対象が不正です" };
+    const [keep, drop] = await Promise.all([
+      loadEditableEvent(keepId, user.id),
+      loadEditableEvent(dropId, user.id),
+    ]);
+    if (!keep || !drop) return { error: "予定が見つかりません" };
+    if (!keep.siteId || keep.siteId !== drop.siteId) return { error: "同じ現場の予定ではありません" };
+
+    const have = new Set(keep.participants.map((p) => p.userId));
+    const add = drop.participants.map((p) => p.userId).filter((u) => !have.has(u));
+    if (add.length > 0) {
+      await db.eventParticipant.createMany({
+        data: add.map((userId) => ({ eventId: keep.id, userId })),
+      });
+      if (!isNonWorkEventCategory(keep.category)) {
+        await ensureVisits(keep.siteId, add, keep.date, user.id);
+      }
+    }
+    await handOverReportLink(drop, keep, keep.date);
+    const del = await deleteEvent(drop.id);
+    if (del.error) return del;
+    revalidateCalendar(keep.siteId);
+    return { ok: true };
+  } catch (e) {
+    console.error("resolveDuplicate failed:", e);
+    return { error: "予定をまとめられませんでした。通信環境をご確認のうえ、もう一度お試しください。" };
   }
 }

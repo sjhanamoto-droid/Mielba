@@ -18,10 +18,12 @@ import {
   Building2,
   User,
   EyeOff,
+  AlertTriangle,
 } from "lucide-react";
 import { EventForm } from "./event-form";
 import type { PickerSite } from "./site-picker";
-import { deleteEvent, deleteVisitGroup } from "./actions";
+import { deleteEvent, deleteVisitGroup, resolveDuplicate } from "./actions";
+import { shortDateLabel } from "./duplicate-confirm";
 import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +63,10 @@ export type CalendarEventData = {
   owner: PersonRef | null; // この予定で現場に行く人（担当）
   createdBy: PersonRef | null; // 入力した人
   participants: PersonRef[]; // 参加者（現場に行く人・複数）
+  dateKey?: string; // 保存日付のキー（重複かもの比較用）
+  fromReport?: boolean; // 日報の次回作業日に結び付いた予定
+  // 同じ現場で前後数日にある別の作業予定（重複かもしれないもの）
+  nearby?: { id: string; dateKey: string; source: string; fromReport: boolean }[];
 };
 
 // 現場入り（配員・自己申告）。現場×日でまとめた「誰が行くか」を読み取り専用チップで表示する。
@@ -378,18 +384,23 @@ function EventRow({
   );
 }
 
+type DuplicateResolveTarget = { keepId: string; dropId: string; keepKey: string; dropKey: string };
+
 // ─────────────────── 予定の詳細モーダル（全ビュー共通） ───────────────────
 function EventDetailModal({
   event,
   onClose,
   onEdit,
   onDelete,
+  onResolveDuplicate,
   canDelete,
 }: {
   event: CalendarEventData | null;
   onClose: () => void;
   onEdit: (ev: CalendarEventData) => void;
   onDelete: (ev: CalendarEventData) => void;
+  /** 重複かもしれない2つの予定のうち keep を残して drop を消す */
+  onResolveDuplicate: (target: DuplicateResolveTarget) => void;
   canDelete: boolean; // 管理者：日報由来の予定も削除できる
 }) {
   if (!event) return null;
@@ -500,6 +511,56 @@ function EventDetailModal({
             <p className="text-xs text-ink-faint">入力: {ev.createdBy.name}</p>
           )}
         </dl>
+
+        {/* 重複かも：同じ現場の近い日に別の作業予定がある */}
+        {isUserEditableEventSource(ev.source) && (ev.nearby?.length ?? 0) > 0 && ev.dateKey && (
+          <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-3">
+            <p className="flex items-start gap-1.5 text-sm font-bold text-amber-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              近い日に同じ現場の予定があります
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-900/80">
+              同じ工事が二重に入っていないか確認してください。別の工事なら、このままで大丈夫です。
+            </p>
+            <ul className="mt-2.5 space-y-2.5">
+              {ev.nearby!.map((n) => {
+                  const thisKey = ev.dateKey!;
+                  return (
+                    <li key={n.id} className="rounded-xl bg-surface p-2.5">
+                      <p className="text-sm font-semibold text-ink">
+                        {shortDateLabel(n.dateKey)}
+                        <span className="ml-1.5 text-xs font-medium text-ink-muted">
+                          {n.fromReport ? "日報の次回作業日" : "カレンダーで登録"}
+                        </span>
+                      </p>
+                      <div className="mt-2 grid gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            onResolveDuplicate({ keepId: ev.id, dropId: n.id, keepKey: thisKey, dropKey: n.dateKey })
+                          }
+                        >
+                          {n.dateKey === thisKey ? "この予定を残す（もう片方を消す）" : `${shortDateLabel(thisKey)}が正しい（${shortDateLabel(n.dateKey)}を消す）`}
+                        </Button>
+                        {n.dateKey !== thisKey && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              onResolveDuplicate({ keepId: n.id, dropId: ev.id, keepKey: n.dateKey, dropKey: thisKey })
+                            }
+                          >
+                            {shortDateLabel(n.dateKey)}が正しい（この予定を消す）
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          </div>
+        )}
 
         {/* アクション */}
         <div className="mt-5 space-y-2">
@@ -745,6 +806,7 @@ export function CalendarView({
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventData | null>(null);
   // 削除は確認ダイアログを挟む（確認なし即削除の修正）
   const [deleteTarget, setDeleteTarget] = useState<CalendarEventData | null>(null);
+  const [resolveTarget, setResolveTarget] = useState<DuplicateResolveTarget | null>(null);
 
   const [selectedVisit, setSelectedVisit] = useState<CalendarVisitData | null>(null);
   const [visitDeleteTarget, setVisitDeleteTarget] = useState<CalendarVisitData | null>(null);
@@ -760,6 +822,18 @@ export function CalendarView({
       setSelectedVisit(null);
     }
     setVisitDeleteTarget(null);
+  }
+
+  async function handleResolveConfirm() {
+    if (!resolveTarget) return;
+    const r = await resolveDuplicate(resolveTarget.keepId, resolveTarget.dropId);
+    if (r?.error) {
+      toast(r.error, { type: "error" });
+    } else {
+      toast("予定を1つにまとめました");
+      setSelectedEvent(null);
+    }
+    setResolveTarget(null);
   }
 
   async function handleDeleteConfirm() {
@@ -917,6 +991,7 @@ export function CalendarView({
         onClose={() => setSelectedEvent(null)}
         onEdit={handleEdit}
         onDelete={(ev) => setDeleteTarget(ev)}
+        onResolveDuplicate={setResolveTarget}
         canDelete={canDelete}
       />
 
@@ -941,6 +1016,22 @@ export function CalendarView({
         }
         confirmLabel="削除する"
         danger
+      />
+
+      <ConfirmDialog
+        open={resolveTarget !== null}
+        onClose={() => setResolveTarget(null)}
+        onConfirm={handleResolveConfirm}
+        title="予定を1つにまとめますか？"
+        description={
+          resolveTarget ? (
+            <>
+              {shortDateLabel(resolveTarget.keepKey)}の予定を残し、{shortDateLabel(resolveTarget.dropKey)}
+              の予定を消します。消す方の参加者は残す方へ移り、日報の次回作業日も残す方の日付に合わせます。
+            </>
+          ) : undefined
+        }
+        confirmLabel="まとめる"
       />
 
       <ConfirmDialog

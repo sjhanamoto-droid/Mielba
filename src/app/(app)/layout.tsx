@@ -55,6 +55,7 @@ export default async function AppLayout({
         missingReports={missingReports}
         nextWorkChecks={nextWorkChecks.map((c) => ({
           reportId: c.reportId,
+          siteId: c.siteId,
           siteName: c.siteName,
           workDate: c.workDate,
           nextCheckDate: c.nextCheckDate,

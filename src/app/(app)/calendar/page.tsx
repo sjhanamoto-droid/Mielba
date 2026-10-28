@@ -3,8 +3,9 @@ import { PageContainer } from "@/components/app-shell/page-container";
 import { CalendarView, type CalendarViewMode } from "@/features/calendar/calendar-view";
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
-import { jstDateKey, dateFromKey, addDaysKey } from "@/lib/date";
-import { isNonWorkEventCategory } from "@/lib/constants";
+import { jstDateKey, dateFromKey, addDaysKey, storedDateKey } from "@/lib/date";
+import { NEARBY_EVENT_DAYS, isDuplicateCandidateCategory } from "@/lib/nearby-events";
+import { isNonWorkEventCategory, isUserEditableEventSource, USER_EDITABLE_EVENT_SOURCES } from "@/lib/constants";
 import { visibleEventWhere } from "@/lib/event-visibility";
 
 // "YYYY-MM" を解釈。不正なら当月（日本時間の暦日基準）。
@@ -75,7 +76,12 @@ export default async function CalendarPage({
 
   // 権限: 管理者は全件、スタッフは自分の担当現場＋自分の個人予定
   // 互いに独立した4クエリを1波で並列取得（本番PostgreSQLの往復回数を削減）
-  const [events, allVisits, sites, users] = await Promise.all([
+  // 重複かも判定のため、表示範囲の前後数日も含めて同じ現場の作業予定を取る
+  const dupStart = new Date(rangeStart);
+  dupStart.setDate(dupStart.getDate() - NEARBY_EVENT_DAYS);
+  const dupEnd = new Date(rangeEnd);
+  dupEnd.setDate(dupEnd.getDate() + NEARBY_EVENT_DAYS);
+  const [events, allVisits, sites, users, dupPool] = await Promise.all([
     db.calendarEvent.findMany({
       // 担当という区別は廃止。全員が全現場の予定を見られる。
       // ただし最高管理者が「他の人に表示しない」で入れた個人予定は本人だけに出す。
@@ -118,7 +124,33 @@ export default async function CalendarPage({
       select: { id: true, name: true, avatarColor: true, avatarImage: true},
       orderBy: { name: "asc" },
     }),
+    db.calendarEvent.findMany({
+      where: {
+        siteId: { not: null },
+        isPrivate: false,
+        source: { in: [...USER_EDITABLE_EVENT_SOURCES] },
+        date: { gte: dupStart, lt: dupEnd },
+      },
+      select: { id: true, siteId: true, date: true, category: true, source: true, reportId: true },
+    }),
   ]);
+
+  // 同じ現場で前後数日に別の作業予定がある予定に「重複かも」の印を付ける（予定の詳細で片方にまとめられる）
+  const poolBySite = new Map<string, typeof dupPool>();
+  for (const e of dupPool) {
+    if (!e.siteId || !isDuplicateCandidateCategory(e.category)) continue;
+    const list = poolBySite.get(e.siteId) ?? [];
+    list.push(e);
+    poolBySite.set(e.siteId, list);
+  }
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  function nearbyOf(e: (typeof events)[number]) {
+    if (!e.siteId || e.isPrivate || !isUserEditableEventSource(e.source) || !isDuplicateCandidateCategory(e.category)) return [];
+    return (poolBySite.get(e.siteId) ?? [])
+      .filter((o) => o.id !== e.id && Math.abs(Math.round((o.date.getTime() - e.date.getTime()) / DAY_MS)) <= NEARBY_EVENT_DAYS)
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .map((o) => ({ id: o.id, dateKey: storedDateKey(o.date), source: o.source, fromReport: !!o.reportId }));
+  }
 
   const viewEvents = events.map((e) => ({
     id: e.id,
@@ -136,6 +168,9 @@ export default async function CalendarPage({
     owner: e.owner,
     createdBy: e.createdBy,
     participants: e.participants.map((p) => p.user),
+    dateKey: storedDateKey(e.date),
+    fromReport: !!e.reportId,
+    nearby: nearbyOf(e),
   }));
 
   // 現場予定(CalendarEvent)に参加者として既に出ている人は「現場入り」から除外し、重複表示を防ぐ。

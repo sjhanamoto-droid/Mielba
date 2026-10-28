@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useFormStatus } from "react-dom";
 import { X, AlertCircle, CalendarPlus, Check, Save, Plus, Loader2, Eye, EyeOff } from "lucide-react";
-import { createEvent, updateEvent } from "./actions";
+import { createEvent, updateEvent, checkNearbyEvents, mergeIntoEvent } from "./actions";
+import { DuplicateConfirm } from "./duplicate-confirm";
+import type { NearbyEvent } from "@/lib/nearby-events";
 import { quickCreateSite } from "@/features/sites/actions";
 import { Field, Input, Textarea, Select } from "@/components/ui/form";
 import { SitePicker, type PickerSite } from "./site-picker";
@@ -38,8 +39,7 @@ type EditEvent = {
   participants: { id: string }[];
 };
 
-function SubmitButton({ isEdit }: { isEdit: boolean }) {
-  const { pending } = useFormStatus();
+function SubmitButton({ isEdit, pending }: { isEdit: boolean; pending: boolean }) {
   return (
     <button
       type="submit"
@@ -100,6 +100,9 @@ export function EventForm({
   const [title, setTitle] = useState(event?.title ?? "");
   // 公開範囲（最高管理者の個人予定のみ）。true = 自分だけに表示。
   const [isPrivate, setIsPrivate] = useState(event?.isPrivate ?? false);
+  const [submitting, setSubmitting] = useState(false);
+  // 近い日に同じ現場の作業予定があったときの確認（保存待ちの入力内容と候補）
+  const [dup, setDup] = useState<{ formData: FormData; dateKey: string; events: NearbyEvent[] } | null>(null);
 
   async function handleAddSite() {
     const name = newSiteName.trim();
@@ -176,8 +179,35 @@ export function EventForm({
       setError("現場を選択してください。無ければ「現場を追加」で登録できます。");
       return;
     }
+    // 同じ現場の前後数日に作業予定があれば、重複でないか確認してから保存する
+    // （編集で現場も日付も変えていないときは聞かない）
+    const dateKey = (formData.get("date") ?? "").toString();
+    const unchanged = isEdit && event?.site?.id === siteId && !!event && toDateInputValue(event.date) === dateKey;
+    if (mode === "site" && siteId && (!category || category === "WORK") && !unchanged) {
+      const { events } = await checkNearbyEvents({ siteId, date: dateKey, excludeEventId: event?.id });
+      if (events.length > 0) {
+        setDup({ formData, dateKey, events });
+        return;
+      }
+    }
+    await save(formData);
+  }
+
+  async function save(formData: FormData) {
     const res = await (isEdit ? updateEvent : createEvent)(formData);
     if (res?.error) {
+      setDup(null);
+      setError(res.error);
+      return;
+    }
+    onClose();
+  }
+
+  async function merge(eventId: string, useNewDate: boolean) {
+    if (!dup) return;
+    const res = await mergeIntoEvent(dup.formData, eventId, useNewDate);
+    if (res?.error) {
+      setDup(null);
       setError(res.error);
       return;
     }
@@ -207,7 +237,20 @@ export function EventForm({
           </button>
         </div>
 
-        <form action={action} className="space-y-4">
+        {/* onSubmit で送る（action だと保存前の確認で止めたときに入力欄が初期値に戻ってしまう） */}
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (submitting) return;
+            setSubmitting(true);
+            try {
+              await action(new FormData(e.currentTarget));
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+          className="space-y-4"
+        >
           {isEdit && <input type="hidden" name="id" value={event.id} />}
 
           {/* ── 種類（と現場） ── */}
@@ -537,8 +580,17 @@ export function EventForm({
             </div>
           )}
 
-          <SubmitButton isEdit={isEdit} />
+          <SubmitButton isEdit={isEdit} pending={submitting} />
         </form>
+        <DuplicateConfirm
+          open={!!dup}
+          newDateKey={dup?.dateKey ?? ""}
+          events={dup?.events ?? []}
+          onBack={() => setDup(null)}
+          onMerge={merge}
+          onSeparate={() => (dup ? save(dup.formData) : undefined)}
+          separateLabel={isEdit ? "別の工事なのでこのまま保存する" : "別の工事として追加する"}
+        />
       </div>
     </div>
   );

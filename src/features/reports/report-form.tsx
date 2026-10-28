@@ -15,6 +15,9 @@ import { AiAssistPanel } from "./ai-assist-panel";
 import { VoiceInputButton } from "./voice-input-button";
 import type { AiExtractResult } from "./ai-actions";
 import { createReport, updateReport } from "./actions";
+import { checkNearbyEvents } from "@/features/calendar/actions";
+import { DuplicateConfirm } from "@/features/calendar/duplicate-confirm";
+import type { NearbyEvent } from "@/lib/nearby-events";
 import {
   draftKeyFor, loadDraft, clearDraft, markDraftPending, clearDraftPending,
   shouldOfferRestore, useReportAutosave, useLeaveGuard,
@@ -196,6 +199,11 @@ export function ReportForm({
   const [nextCheckDate, setNextCheckDate] = useState<string>(
     initial?.nextCheckDate ? toDateInputValue(initial.nextCheckDate) : "",
   );
+  // 次回作業日の重複確認：近い日に同じ現場の予定があったときの候補と、選んだ結果
+  //（同じ日付で保存し直すときは聞き直さない。「同じ工事」を選んだらその予定に結び付ける）
+  const initialNextWorkDate = initial?.nextWorkDate ? toDateInputValue(initial.nextWorkDate) : "";
+  const [nextDup, setNextDup] = useState<{ formData: FormData; events: NearbyEvent[] } | null>(null);
+  const [nextDecided, setNextDecided] = useState<{ dateKey: string; linkEventId: string | null } | null>(null);
 
   const [materials, setMaterials] = useState<MaterialRow[]>(
     initial?.materials?.map((m) => ({
@@ -309,6 +317,29 @@ export function ReportForm({
   async function action(formData: FormData) {
     setError(null);
     setFieldErrors({});
+    // 次回作業日を新しく入れたときは、同じ現場の前後数日に予定がないか確認してから保存する
+    if (
+      !materialsLocked &&
+      nextWorkChoice === "DATE" &&
+      nextWorkDate &&
+      nextWorkDate !== initialNextWorkDate &&
+      nextDecided?.dateKey !== nextWorkDate
+    ) {
+      const { events } = await checkNearbyEvents({
+        siteId,
+        date: nextWorkDate,
+        excludeReportId: initial?.id,
+        minDateKey: workDate ? addDaysKey(workDate, 1) : null,
+      });
+      if (events.length > 0) {
+        setNextDup({ formData, events });
+        return;
+      }
+    }
+    await send(formData);
+  }
+
+  async function send(formData: FormData) {
     markDraftPending(draftKey);
     const res = await submit(formData);
     if (res?.error) {
@@ -391,6 +422,7 @@ export function ReportForm({
   }
 
   return (
+    <>
     <form ref={formRef} action={action} className="space-y-6">
       {mode === "edit" && initial && (
         <input type="hidden" name="reportId" value={initial.id} />
@@ -955,6 +987,9 @@ export function ReportForm({
           </SectionTitle>
           <div className={cn("card space-y-3 p-4", fieldErrors.nextWork && "border-red-300")}>
             <input type="hidden" name="nextWorkChoice" value={nextWorkChoice} />
+            {nextDecided?.linkEventId && nextDecided.dateKey === nextWorkDate && (
+              <input type="hidden" name="nextWorkLinkEventId" value={nextDecided.linkEventId} />
+            )}
             <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="次回の作業日">
               {(
                 [
@@ -1041,6 +1076,30 @@ export function ReportForm({
 
       <SubmitButtons allowDraft={!(mode === "edit" && initial?.status === "SUBMITTED")} />
     </form>
+    <DuplicateConfirm
+      open={!!nextDup}
+      newDateKey={nextWorkDate}
+      events={nextDup?.events ?? []}
+      onBack={() => setNextDup(null)}
+      onMerge={async (eventId, useNewDate) => {
+        if (!nextDup) return;
+        const target = nextDup.events.find((e) => e.id === eventId);
+        const dateKey = useNewDate || !target ? nextWorkDate : target.dateKey;
+        nextDup.formData.set("nextWorkDate", dateKey);
+        nextDup.formData.set("nextWorkLinkEventId", eventId);
+        setNextWorkDate(dateKey);
+        setNextDecided({ dateKey, linkEventId: eventId });
+        setNextDup(null);
+        await send(nextDup.formData);
+      }}
+      onSeparate={async () => {
+        if (!nextDup) return;
+        setNextDecided({ dateKey: nextWorkDate, linkEventId: null });
+        setNextDup(null);
+        await send(nextDup.formData);
+      }}
+    />
+    </>
   );
 }
 

@@ -3,12 +3,16 @@
 import { useEffect, useState, useTransition } from "react";
 import { ArrowRight, CalendarClock, Loader2 } from "lucide-react";
 import { resolveNextWork } from "./actions";
+import { checkNearbyEvents } from "@/features/calendar/actions";
+import { DuplicateConfirm } from "@/features/calendar/duplicate-confirm";
+import type { NearbyEvent } from "@/lib/nearby-events";
 import { DateWheelPicker } from "@/components/ui/date-wheel-picker";
 import { addDaysKey, jstDateKey } from "@/lib/date";
 import { cn, fmtDateWithDay } from "@/lib/utils";
 
 export type NextWorkCheckItem = {
   reportId: string;
+  siteId: string;
   siteName: string;
   workDate: Date | string;
   nextCheckDate: Date | string;
@@ -87,6 +91,8 @@ function NextWorkCard({
   const [postpone, setPostpone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // 近い日に同じ現場の予定があったときの確認
+  const [dup, setDup] = useState<NearbyEvent[] | null>(null);
 
   const value = mode === "date" ? date : postpone;
   const ready = !!value;
@@ -95,10 +101,30 @@ function NextWorkCard({
     if (!ready || pending) return;
     setError(null);
     start(async () => {
+      if (mode === "date") {
+        const { events } = await checkNearbyEvents({
+          siteId: item.siteId,
+          date,
+          excludeReportId: item.reportId,
+          minDateKey: todayKey,
+        });
+        if (events.length > 0) {
+          setDup(events);
+          return;
+        }
+      }
       const r = await resolveNextWork(item.reportId, mode === "date" ? { date } : { postpone });
       if (r.error) setError(r.error);
       else onDone();
     });
+  }
+
+  async function decide(dateKey: string, linkEventId: string | null) {
+    setDup(null);
+    setDate(dateKey);
+    const r = await resolveNextWork(item.reportId, { date: dateKey, linkEventId });
+    if (r.error) setError(r.error);
+    else onDone();
   }
 
   return (
@@ -202,6 +228,18 @@ function NextWorkCard({
           決めた次回の作業日は、現場の予定に「次回工程」として入ります
         </p>
       </div>
+      <DuplicateConfirm
+        open={!!dup}
+        newDateKey={date}
+        events={dup ?? []}
+        overlayClassName="z-[88]"
+        onBack={() => setDup(null)}
+        onMerge={(eventId, useNewDate) => {
+          const target = dup?.find((e) => e.id === eventId);
+          return decide(useNewDate || !target ? date : target.dateKey, eventId);
+        }}
+        onSeparate={() => decide(date, null)}
+      />
     </div>
   );
 }

@@ -526,7 +526,10 @@ async function persist(
   // 次回作業日：日付なら予定に入れる（この日報由来の予定を作り直す）。提出時は同じ現場の古い確認を片づける
   if (!materialsLocked) {
     try {
-      await syncNextWorkEvent(savedId, d.siteId, nextWorkDate, userId);
+      // 近い日に同じ現場の予定があり「同じ工事」と選ばれたら、その予定に結び付ける
+      const linkRaw = formData.get("nextWorkLinkEventId");
+      const linkEventId = typeof linkRaw === "string" && linkRaw ? linkRaw : null;
+      await syncNextWorkEvent(savedId, d.siteId, nextWorkDate, userId, linkEventId);
       if (d.status === "SUBMITTED" && nextChoice) {
         await resolveOlderNextWorkChecks(d.siteId, savedId);
       }
@@ -585,7 +588,7 @@ export async function updateReport(formData: FormData) {
 // 未定にしていた日報の確認日が来たら、本人が「次回作業日を決める」か「確認日を延期する」。
 export async function resolveNextWork(
   reportId: string,
-  input: { date: string } | { postpone: string },
+  input: { date: string; linkEventId?: string | null } | { postpone: string },
 ): Promise<{ ok?: true; error?: string }> {
   const user = await requireUser();
   const report = await db.dailyReport.findUnique({
@@ -606,7 +609,7 @@ export async function resolveNextWork(
         where: { id: reportId },
         data: { nextWorkChoice: "DATE", nextWorkDate: date, nextCheckResolvedAt: new Date() },
       });
-      await syncNextWorkEvent(reportId, report.siteId, date, user.id);
+      await syncNextWorkEvent(reportId, report.siteId, date, user.id, input.linkEventId);
       await resolveOlderNextWorkChecks(report.siteId, reportId);
     } else {
       if (!isKey(input.postpone) || input.postpone <= todayKey) {
@@ -771,7 +774,10 @@ export async function deleteReport(id: string) {
         const reads = await tx.handoverRead.findMany({
           where: { handoverId: { in: handovers.map((h) => h.id) } },
         });
-        const events = await tx.calendarEvent.findMany({ where: { reportId: id } });
+        // 日報から作った予定だけ。既にあった手動の予定に結び付けたものは消さずに残す（結び付きだけ外す）
+        const events = await tx.calendarEvent.findMany({
+          where: { reportId: id, source: { not: "MANUAL" } },
+        });
         const participants = await tx.eventParticipant.findMany({
           where: { eventId: { in: events.map((e) => e.id) } },
         });
@@ -798,7 +804,8 @@ export async function deleteReport(id: string) {
         // 起票元の日報が消えるのに引き継ぎ掲示だけ残らないよう、未解決の引き継ぎも一緒に削除する。
         // 日報から作られた予定（配達・次回工程など）も出所が消えるので一緒に削除する。
         await tx.handover.deleteMany({ where: { reportId: id, resolvedAt: null } });
-        await tx.calendarEvent.deleteMany({ where: { reportId: id } });
+        await tx.calendarEvent.deleteMany({ where: { reportId: id, source: { not: "MANUAL" } } });
+        await tx.calendarEvent.updateMany({ where: { reportId: id }, data: { reportId: null } });
         // その日のその人の現場入りも消す（残ると「日報未入力」として再入力を求められるため）
         await tx.siteVisit.deleteMany({
           where: { siteId: report.siteId, userId: report.userId, date: report.workDate },
