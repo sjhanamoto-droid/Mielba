@@ -64,10 +64,15 @@ export async function findNearbySiteWorkEvents(
     },
     orderBy: { date: "asc" },
   });
+  // 編集中の予定と「どちらも正しい」と確認済みの組は候補にしない
+  const acked = opts.excludeEventId
+    ? await notDuplicatePairs([opts.excludeEventId, ...events.map((e) => e.id)])
+    : new Set<string>();
   const candidates = events.filter(
     (e) =>
       isDuplicateCandidateCategory(e.category) &&
-      !(opts.excludeReportId && e.reportId === opts.excludeReportId),
+      !(opts.excludeReportId && e.reportId === opts.excludeReportId) &&
+      !(opts.excludeEventId && acked.has(pairKey(opts.excludeEventId, e.id))),
   );
   const reportIds = [...new Set(candidates.map((e) => e.reportId).filter((x): x is string => !!x))];
   const reports = reportIds.length
@@ -96,4 +101,42 @@ export async function findNearbySiteWorkEvents(
         Math.abs(dateFromKey(a.dateKey).getTime() - target) -
         Math.abs(dateFromKey(b.dateKey).getTime() - target),
     );
+}
+
+// ───────── 「どちらも正しい」と確認した組（EventNotDuplicate） ─────────
+
+/** 2つの予定の組を表すキー（順序によらず同じ） */
+export function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** ids の中で「どちらも正しい」と確認済みの組のキー集合 */
+export async function notDuplicatePairs(ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db.eventNotDuplicate.findMany({
+    where: { OR: [{ eventAId: { in: ids } }, { eventBId: { in: ids } }] },
+    select: { eventAId: true, eventBId: true },
+  });
+  return new Set(rows.map((r) => pairKey(r.eventAId, r.eventBId)));
+}
+
+/** eventId と otherIds の各予定を「どちらも正しい（重複ではない）」として記録する */
+export async function recordNotDuplicate(eventId: string, otherIds: string[]): Promise<void> {
+  const others = [...new Set(otherIds)].filter((id) => id && id !== eventId);
+  if (others.length === 0) return;
+  const exists = await db.calendarEvent.findMany({
+    where: { id: { in: [eventId, ...others] } },
+    select: { id: true },
+  });
+  const alive = new Set(exists.map((e) => e.id));
+  if (!alive.has(eventId)) return;
+  for (const other of others) {
+    if (!alive.has(other)) continue;
+    const [eventAId, eventBId] = eventId < other ? [eventId, other] : [other, eventId];
+    await db.eventNotDuplicate.upsert({
+      where: { eventAId_eventBId: { eventAId, eventBId } },
+      update: {},
+      create: { eventAId, eventBId },
+    });
+  }
 }

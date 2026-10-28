@@ -203,7 +203,11 @@ export function ReportForm({
   //（同じ日付で保存し直すときは聞き直さない。「同じ工事」を選んだらその予定に結び付ける）
   const initialNextWorkDate = initial?.nextWorkDate ? toDateInputValue(initial.nextWorkDate) : "";
   const [nextDup, setNextDup] = useState<{ formData: FormData; events: NearbyEvent[] } | null>(null);
-  const [nextDecided, setNextDecided] = useState<{ dateKey: string; linkEventId: string | null } | null>(null);
+  const [nextDecided, setNextDecided] = useState<{
+    dateKey: string;
+    linkEventId: string | null;
+    notDuplicateOf?: string[];
+  } | null>(null);
 
   const [materials, setMaterials] = useState<MaterialRow[]>(
     initial?.materials?.map((m) => ({
@@ -990,6 +994,10 @@ export function ReportForm({
             {nextDecided?.linkEventId && nextDecided.dateKey === nextWorkDate && (
               <input type="hidden" name="nextWorkLinkEventId" value={nextDecided.linkEventId} />
             )}
+            {nextDecided?.dateKey === nextWorkDate &&
+              nextDecided.notDuplicateOf?.map((id) => (
+                <input key={id} type="hidden" name="nextWorkNotDuplicateOf" value={id} />
+              ))}
             <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="次回の作業日">
               {(
                 [
@@ -1092,9 +1100,10 @@ export function ReportForm({
         setNextDup(null);
         await send(nextDup.formData);
       }}
-      onSeparate={async () => {
+      onSeparate={async (ids) => {
         if (!nextDup) return;
-        setNextDecided({ dateKey: nextWorkDate, linkEventId: null });
+        for (const id of ids) nextDup.formData.append("nextWorkNotDuplicateOf", id);
+        setNextDecided({ dateKey: nextWorkDate, linkEventId: null, notDuplicateOf: ids });
         setNextDup(null);
         await send(nextDup.formData);
       }}

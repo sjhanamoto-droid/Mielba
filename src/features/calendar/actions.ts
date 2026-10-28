@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { dateFromKey, storedDateKey } from "@/lib/date";
-import { findNearbySiteWorkEvents, type NearbyEvent } from "@/lib/nearby-events";
+import { findNearbySiteWorkEvents, recordNotDuplicate, type NearbyEvent } from "@/lib/nearby-events";
 import {
   EVENT_CATEGORY_LABEL,
   isNonWorkEventCategory,
@@ -211,6 +211,8 @@ export async function createEvent(
         await ensureVisits(siteId, participantIds, date, user.id);
       }
     }
+    // 「どちらも正しい（別の工事）」と選んだ近い日の予定は、以後 重複かもの印を出さない
+    await recordNotDuplicate(event.id, formData.getAll("notDuplicateOf").map(String));
 
     revalidateCalendar(siteId);
     return { ok: true };
@@ -344,6 +346,8 @@ export async function updateEvent(
           : prevParticipantIds.filter((uid) => !participantIds.includes(uid));
       await pruneVisits(oldSiteId, oldDate, removeCandidates, id);
     }
+
+    await recordNotDuplicate(id, formData.getAll("notDuplicateOf").map(String));
 
     revalidateCalendar(siteId);
     if (oldSiteId && oldSiteId !== siteId) revalidatePath(`/sites/${oldSiteId}`);
@@ -591,5 +595,26 @@ export async function resolveDuplicate(
   } catch (e) {
     console.error("resolveDuplicate failed:", e);
     return { error: "予定をまとめられませんでした。通信環境をご確認のうえ、もう一度お試しください。" };
+  }
+}
+
+/** 予定の詳細の「どちらも正しい」：近い日の同じ現場の予定を別の工事として残し、重複かもの印を消す */
+export async function markNotDuplicate(
+  eventId: string,
+  otherId: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  try {
+    const user = await requireUser();
+    const [a, b] = await Promise.all([
+      loadEditableEvent(eventId, user.id),
+      loadEditableEvent(otherId, user.id),
+    ]);
+    if (!a || !b || a.siteId !== b.siteId) return { error: "予定が見つかりません" };
+    await recordNotDuplicate(a.id, [b.id]);
+    revalidateCalendar(a.siteId);
+    return { ok: true };
+  } catch (e) {
+    console.error("markNotDuplicate failed:", e);
+    return { error: "記録できませんでした。通信環境をご確認のうえ、もう一度お試しください。" };
   }
 }

@@ -119,10 +119,10 @@ function NextWorkCard({
     });
   }
 
-  async function decide(dateKey: string, linkEventId: string | null) {
+  async function decide(dateKey: string, linkEventId: string | null, notDuplicateOf: string[] = []) {
     setDup(null);
     setDate(dateKey);
-    const r = await resolveNextWork(item.reportId, { date: dateKey, linkEventId });
+    const r = await resolveNextWork(item.reportId, { date: dateKey, linkEventId, notDuplicateOf });
     if (r.error) setError(r.error);
     else onDone();
   }
@@ -238,7 +238,7 @@ function NextWorkCard({
           const target = dup?.find((e) => e.id === eventId);
           return decide(useNewDate || !target ? date : target.dateKey, eventId);
         }}
-        onSeparate={() => decide(date, null)}
+        onSeparate={(ids) => decide(date, null, ids)}
       />
     </div>
   );

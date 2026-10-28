@@ -604,9 +604,25 @@ model CalendarEvent {
   owner        User?              @relation("EventOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   createdBy    User?              @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
   participants EventParticipant[]
+  notDupA      EventNotDuplicate[] @relation("NotDupA")
+  notDupB      EventNotDuplicate[] @relation("NotDupB")
 
   @@index([siteId])
   @@index([date])
+}
+
+// 同じ現場の近い日の予定でも「どちらも正しい（連日の工事など）」と確認した組。重複かもの印を出さない。
+// eventAId < eventBId の順で1組1行。どちらかの予定が消えたら一緒に消える。
+model EventNotDuplicate {
+  id        String   @id @default(cuid())
+  eventAId  String
+  eventBId  String
+  createdAt DateTime @default(now())
+  eventA    CalendarEvent @relation("NotDupA", fields: [eventAId], references: [id], onDelete: Cascade)
+  eventB    CalendarEvent @relation("NotDupB", fields: [eventBId], references: [id], onDelete: Cascade)
+
+  @@unique([eventAId, eventBId])
+  @@index([eventBId])
 }
 
 // 予定の参加者（現場に行く人・複数）。SITE予定では現場入り(SiteVisit)にも連動する。

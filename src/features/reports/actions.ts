@@ -10,7 +10,11 @@ import { assistReport, type AiAssist } from "@/lib/ai";
 import { dateFromKey, jstDateKey, storedDateKey } from "@/lib/date";
 import { removeFromWorkEvent } from "@/lib/work-event";
 import { ABSENCE_REASONS } from "@/lib/constants";
-import { syncNextWorkEvent, resolveOlderNextWorkChecks } from "@/lib/next-work";
+import {
+  syncNextWorkEvent,
+  resolveOlderNextWorkChecks,
+  markReportEventNotDuplicate,
+} from "@/lib/next-work";
 import { putInTrash, snapshotBlobPaths, snapshotGraph } from "@/lib/trash";
 import { deleteBlobPaths } from "@/lib/media";
 import { parseAndValidatePhotosField, type ParsedPhotosField } from "@/lib/photos";
@@ -530,6 +534,11 @@ async function persist(
       const linkRaw = formData.get("nextWorkLinkEventId");
       const linkEventId = typeof linkRaw === "string" && linkRaw ? linkRaw : null;
       await syncNextWorkEvent(savedId, d.siteId, nextWorkDate, userId, linkEventId);
+      // 「どちらも正しい（別の工事）」と選んだ近い日の予定は、以後 重複かもの印を出さない
+      if (nextWorkDate) {
+        const separate = formData.getAll("nextWorkNotDuplicateOf").map(String).filter(Boolean);
+        await markReportEventNotDuplicate(savedId, separate);
+      }
       if (d.status === "SUBMITTED" && nextChoice) {
         await resolveOlderNextWorkChecks(d.siteId, savedId);
       }
@@ -588,7 +597,7 @@ export async function updateReport(formData: FormData) {
 // 未定にしていた日報の確認日が来たら、本人が「次回作業日を決める」か「確認日を延期する」。
 export async function resolveNextWork(
   reportId: string,
-  input: { date: string; linkEventId?: string | null } | { postpone: string },
+  input: { date: string; linkEventId?: string | null; notDuplicateOf?: string[] } | { postpone: string },
 ): Promise<{ ok?: true; error?: string }> {
   const user = await requireUser();
   const report = await db.dailyReport.findUnique({
@@ -610,6 +619,7 @@ export async function resolveNextWork(
         data: { nextWorkChoice: "DATE", nextWorkDate: date, nextCheckResolvedAt: new Date() },
       });
       await syncNextWorkEvent(reportId, report.siteId, date, user.id, input.linkEventId);
+      await markReportEventNotDuplicate(reportId, input.notDuplicateOf ?? []);
       await resolveOlderNextWorkChecks(report.siteId, reportId);
     } else {
       if (!isKey(input.postpone) || input.postpone <= todayKey) {

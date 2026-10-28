@@ -588,8 +588,11 @@ export function EventForm({
           events={dup?.events ?? []}
           onBack={() => setDup(null)}
           onMerge={merge}
-          onSeparate={() => (dup ? save(dup.formData) : undefined)}
-          separateLabel={isEdit ? "別の工事なのでこのまま保存する" : "別の工事として追加する"}
+          onSeparate={(ids) => {
+            if (!dup) return;
+            for (const id of ids) dup.formData.append("notDuplicateOf", id);
+            return save(dup.formData);
+          }}
         />
       </div>
     </div>

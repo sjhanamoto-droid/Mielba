@@ -4,7 +4,12 @@ import { CalendarView, type CalendarViewMode } from "@/features/calendar/calenda
 import { requireUser, isAdmin, isSuperAdmin } from "@/lib/session";
 import { db } from "@/lib/db";
 import { jstDateKey, dateFromKey, addDaysKey, storedDateKey } from "@/lib/date";
-import { NEARBY_EVENT_DAYS, isDuplicateCandidateCategory } from "@/lib/nearby-events";
+import {
+  NEARBY_EVENT_DAYS,
+  isDuplicateCandidateCategory,
+  notDuplicatePairs,
+  pairKey,
+} from "@/lib/nearby-events";
 import { isNonWorkEventCategory, isUserEditableEventSource, USER_EDITABLE_EVENT_SOURCES } from "@/lib/constants";
 import { visibleEventWhere } from "@/lib/event-visibility";
 
@@ -143,11 +148,13 @@ export default async function CalendarPage({
     list.push(e);
     poolBySite.set(e.siteId, list);
   }
+  // 「どちらも正しい」と確認済みの組は印を出さない
+  const acked = await notDuplicatePairs([...poolBySite.values()].flat().map((e) => e.id));
   const DAY_MS = 24 * 60 * 60 * 1000;
   function nearbyOf(e: (typeof events)[number]) {
     if (!e.siteId || e.isPrivate || !isUserEditableEventSource(e.source) || !isDuplicateCandidateCategory(e.category)) return [];
     return (poolBySite.get(e.siteId) ?? [])
-      .filter((o) => o.id !== e.id && Math.abs(Math.round((o.date.getTime() - e.date.getTime()) / DAY_MS)) <= NEARBY_EVENT_DAYS)
+      .filter((o) => o.id !== e.id && !acked.has(pairKey(o.id, e.id)) && Math.abs(Math.round((o.date.getTime() - e.date.getTime()) / DAY_MS)) <= NEARBY_EVENT_DAYS)
       .sort((a, b) => a.date.getTime() - b.date.getTime())
       .map((o) => ({ id: o.id, dateKey: storedDateKey(o.date), source: o.source, fromReport: !!o.reportId }));
   }

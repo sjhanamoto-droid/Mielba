@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getAppSettings } from "@/lib/settings";
 import { todayRange } from "@/lib/date";
 import { isNonWorkEventCategory } from "@/lib/constants";
+import { recordNotDuplicate } from "@/lib/nearby-events";
 
 // 日報の「次回の作業日」まわりの共通処理（日報の保存・確認日の全画面・毎朝の通知で使う）。
 
@@ -226,6 +227,17 @@ export async function syncNextWorkEvent(
       createdById,
     },
   });
+}
+
+/** 日報の次回作業日の予定を、近い日の予定と「どちらも正しい（別の工事）」として記録する */
+export async function markReportEventNotDuplicate(reportId: string, otherIds: string[]): Promise<void> {
+  if (otherIds.length === 0) return;
+  const ev = await db.calendarEvent.findFirst({
+    where: { reportId, source: { in: LINKABLE_SOURCES } },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (ev) await recordNotDuplicate(ev.id, otherIds);
 }
 
 /**
