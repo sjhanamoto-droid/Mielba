@@ -7,11 +7,12 @@ import { restoreBlobPaths } from "@/lib/media";
 // 戻すときは同じ ID で入れ直す。既存の検索（現場・日報を読む多数の画面）には手を入れずに済む。
 // 子テーブルは Prisma のスキーマ情報（DMMF）からたどるので、テーブルを足しても自動で追従する。
 
-export type TrashKind = "SITE" | "REPORT" | "CUSTOMER";
+export type TrashKind = "SITE" | "REPORT" | "CUSTOMER" | "RECEIPT";
 export const TRASH_KIND_LABEL: Record<TrashKind, string> = {
   SITE: "現場",
   REPORT: "日報",
   CUSTOMER: "顧客",
+  RECEIPT: "領収書",
 };
 /** ごみ箱に置く期間（日） */
 export const TRASH_KEEP_DAYS = 30;
@@ -179,7 +180,18 @@ export async function restoreTrashItem(
       async (tx) => {
         for (const t of snap.tables) {
           if (t.rows.length === 0) continue;
-          await delegate(tx, t.model).createMany({ data: t.rows.map((r) => revive(t.model, r)) });
+          let rows = t.rows;
+          // 領収書を戻すとき、出力した回が取り消し済みなら「未出力」として戻す
+          if (t.model === "Receipt") {
+            const exportIds = rows.map((r) => r.exportId as string | null).filter((v): v is string => !!v);
+            const alive = new Set(
+              exportIds.length
+                ? (await tx.receiptExport.findMany({ where: { id: { in: exportIds } }, select: { id: true } })).map((e) => e.id)
+                : [],
+            );
+            rows = rows.map((r) => (r.exportId && !alive.has(r.exportId as string) ? { ...r, exportId: null } : r));
+          }
+          await delegate(tx, t.model).createMany({ data: rows.map((r) => revive(t.model, r)) });
         }
         // 顧客を戻すときは、「その他」へ移していた現場を元の顧客に戻す
         if (item.kind === "CUSTOMER" && snap.movedSiteIds?.length) {
@@ -206,10 +218,7 @@ export async function restoreTrashItem(
   }
 
   // 写真・動画の本体を Blob のごみ箱から戻す（DB を戻した後。失敗しても DB の復元は有効）
-  const blobPaths = snap.tables
-    .filter((t) => t.model === "Photo")
-    .flatMap((t) => t.rows.map((r) => r.blobPath as string | null))
-    .filter((p): p is string => !!p);
+  const blobPaths = snapshotBlobPaths(snap);
   if (blobPaths.length > 0) {
     try {
       await restoreBlobPaths(blobPaths);
@@ -220,10 +229,13 @@ export async function restoreTrashItem(
   return { ok: true, kind: item.kind as TrashKind };
 }
 
-/** スナップショット内の写真・動画の本体パス（削除時に Blob もごみ箱へ移すため） */
+/** 本体を Blob に置いている model（写真・動画と領収書） */
+const BLOB_MODELS = new Set(["Photo", "Receipt"]);
+
+/** スナップショット内の写真・動画・領収書の本体パス（削除時に Blob もごみ箱へ移すため） */
 export function snapshotBlobPaths(snap: TrashSnapshot): string[] {
   return snap.tables
-    .filter((t) => t.model === "Photo")
+    .filter((t) => BLOB_MODELS.has(t.model))
     .flatMap((t) => t.rows.map((r) => r.blobPath as string | null))
     .filter((p): p is string => !!p);
 }

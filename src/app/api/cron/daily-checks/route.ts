@@ -167,7 +167,12 @@ async function handle(req: NextRequest) {
       where: { blobPath: { not: null } },
       select: { blobPath: true },
     });
-    const referenced = new Set(rows.map((r) => r.blobPath as string));
+    // 領収書読み取りの写真・PDF も Blob に置いている（消さないよう参照に含める）
+    const receipts = await db.receipt.findMany({ select: { blobPath: true } });
+    const referenced = new Set([
+      ...rows.map((r) => r.blobPath as string),
+      ...receipts.map((r) => r.blobPath),
+    ]);
     sweep = await sweepOrphanBlobs(referenced, 24 * 60 * 60 * 1000);
     if (sweep.blocked > 0) {
       created += await createNotificationForUsers(adminIds, {

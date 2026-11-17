@@ -1,5 +1,5 @@
 import {
-  Home, MapPin, CalendarDays, Building2, FileText, Users, Clock, Package, Trash2, IdCard,
+  Home, MapPin, CalendarDays, Building2, FileText, Users, Clock, Package, Trash2, IdCard, ReceiptText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,6 +19,7 @@ const DISPATCH: NavItem = { href: "/dispatch", label: "配員", icon: Users, mat
 const ATTENDANCE: NavItem = { href: "/attendance", label: "稼働時間", icon: Clock, match: (p) => p.startsWith("/attendance") };
 const TRASH: NavItem = { href: "/trash", label: "ごみ箱", icon: Trash2, match: (p) => p.startsWith("/trash") };
 const STAFF: NavItem = { href: "/staff", label: "スタッフ", icon: IdCard, match: (p) => p.startsWith("/staff") };
+const RECEIPTS: NavItem = { href: "/receipts", label: "領収書読み取り", icon: ReceiptText, match: (p) => p.startsWith("/receipts") };
 const MATERIALS: NavItem = { href: "/materials", label: "材料登録", icon: Package, match: (p) => p.startsWith("/materials") };
 
 // 管理者権限を持つロール（最高管理者は管理者を内包する）
@@ -38,13 +39,13 @@ export function navForRole(role: string): NavItem[] {
   return [HOME, SITES, REPORTS, CALENDAR];
 }
 
-// PC サイドバー用（幅があるので全項目を出す）。スタッフ・材料登録は最高管理者のみ。
+// PC サイドバー用（幅があるので全項目を出す）。スタッフ・材料登録は最高管理者のみ。領収書読み取りは管理者以上（ごみ箱の上）。
 export function sidebarNavForRole(role: string): NavItem[] {
   if (role === "SUPER_ADMIN") {
-    return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS, ATTENDANCE, STAFF, MATERIALS, TRASH];
+    return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS, ATTENDANCE, STAFF, MATERIALS, RECEIPTS, TRASH];
   }
   if (isAdminRole(role)) {
-    return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS, ATTENDANCE, TRASH];
+    return [HOME, SITES, DISPATCH, REPORTS, CALENDAR, CUSTOMERS, ATTENDANCE, RECEIPTS, TRASH];
   }
   return [HOME, REPORTS, SITES, CALENDAR];
 }

@@ -14,6 +14,7 @@ export async function restoreFromTrash(trashId: string): Promise<{ ok?: true; er
   revalidatePath("/reports");
   revalidatePath("/customers");
   revalidatePath("/calendar");
+  revalidatePath("/receipts");
   revalidatePath("/", "layout");
   return { ok: true };
 }

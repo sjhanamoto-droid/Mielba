@@ -702,7 +702,7 @@ model PushSubscription {
 // 削除の直前に、その行と一緒に消える子の行を丸ごと JSON(snapshot) に保存する。戻すときは同じ ID で入れ直す。
 model TrashItem {
   id          String    @id @default(cuid())
-  kind        String // SITE | REPORT | CUSTOMER
+  kind        String // SITE | REPORT | CUSTOMER | RECEIPT
   label       String // 一覧に出す名前（現場名・「10/9 現場名・氏名」・顧客名）
   snapshot    String // TrashSnapshot の JSON
   deletedById String?
@@ -710,4 +710,67 @@ model TrashItem {
   restoredAt  DateTime? // 元に戻した日時（戻したものは一覧に出さない）
 
   @@index([deletedAt])
+}
+
+// ──────────────────────── Receipt（領収書読み取り：MF会計へ取り込むCSVを作る） ────────────────────────
+// 現場とは結び付けない、会社全体の経費の領収書・レシート。写真（Blob）を Claude で読み取り、
+// 確認したものを MF の仕訳インポート形式の CSV に出す。どの回で出力したかを exportId で持つ。
+model Receipt {
+  id            String    @id @default(cuid())
+  status        String    @default("PROCESSING") // PROCESSING(読み取り中) | FAILED(読み取り失敗) | REVIEW(要確認) | CONFIRMED(確認済み)
+  blobPath      String // 画像・PDFの本体（media/... 形式）
+  mimeType      String
+  thumbUrl      String? // 一覧用の小さなサムネイル（dataUrl）
+  fileHash      String? // 元ファイルの SHA-256（同じファイルの二重登録を防ぐ）
+  fileName      String?
+  receiptDate   String? // 領収書に書かれた日付 YYYY-MM-DD（月ごとの並びはこれで決める）
+  vendor        String? // 店名・発行元
+  invoiceNumber String? // 適格請求書発行事業者の登録番号（T+13桁）
+  totalAmount   Int? // 合計（税込・円）
+  creditAccount String    @default("現金") // 貸方勘定科目（現金 / 未払金 / 普通預金 など）
+  description   String? // 摘要の内容部分（店名の後ろに続ける）
+  ocrModel      String?
+  ocrRaw        String? // 読み取り結果の JSON（あとで見直す用）
+  ocrError      String?
+  uploadedById  String?
+  confirmedById String?
+  confirmedAt   DateTime?
+  exportId      String? // 出力した回（null=未出力）
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  lines  ReceiptLine[]
+  export ReceiptExport? @relation(fields: [exportId], references: [id], onDelete: SetNull)
+
+  @@index([receiptDate])
+  @@index([exportId])
+  @@index([fileHash])
+}
+
+// 領収書の明細（税率・勘定科目ごとに1行。8%と10%が混ざったレシートは2行になる）
+model ReceiptLine {
+  id          String @id @default(cuid())
+  receiptId   String
+  account     String // 借方勘定科目
+  taxCategory String // 借方税区分（課税仕入 10% / 課税仕入 (軽)8% / 対象外 など）
+  amount      Int // 税込金額（円）
+  sortOrder   Int    @default(0)
+
+  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId])
+}
+
+// CSV を出力した回（第N回）。出力した CSV をそのまま保存して、あとで同じものを再ダウンロードできる
+model ReceiptExport {
+  id          String   @id @default(cuid())
+  seq         Int      @unique // 第N回
+  count       Int // 領収書の件数
+  totalAmount Int // 合計金額
+  fileName    String
+  csv         String // 出力した CSV（UTF-8 のテキスト。ダウンロード時に Shift_JIS へ変換）
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  receipts Receipt[]
 }
