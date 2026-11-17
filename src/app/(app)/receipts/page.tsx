@@ -8,6 +8,7 @@ import { ChipBar, ChipLink } from "@/components/ui/chips";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
+import { buttonClass } from "@/components/ui/button";
 import { jstDateKey, jstDateTimeLabel } from "@/lib/date";
 import {
   monthLabel,
@@ -63,6 +64,7 @@ export default async function ReceiptsPage({
         totalAmount: true,
         exportId: true,
         updatedAt: true,
+        createdAt: true,
       },
     }),
     db.receiptExport.findMany({
@@ -75,7 +77,20 @@ export default async function ReceiptsPage({
   const views = new Map(all.map((r) => [r.id, receiptView(r, now)]));
   const ready = all.filter((r) => views.get(r.id) === "ready" && r.receiptDate);
   const readyTotal = ready.reduce((s, r) => s + (r.totalAmount ?? 0), 0);
-  const todoCount = all.filter((r) => matches(views.get(r.id)!, "todo")).length;
+  const todoList = all.filter((r) => matches(views.get(r.id)!, "todo"));
+  const todoCount = todoList.length;
+  // 「順番に確認する」の最初の1件（確認画面の前へ／次へと同じ並び：日付順・日付なしは最後）
+  const firstTodoId =
+    todoList
+      .slice()
+      .sort((a, b) => {
+        if (a.receiptDate !== b.receiptDate) {
+          if (!a.receiptDate) return 1;
+          if (!b.receiptDate) return -1;
+          return a.receiptDate < b.receiptDate ? -1 : 1;
+        }
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      })[0]?.id ?? null;
   const lastExport = exports[0] ?? null;
   // 出力済みの中で一番新しい日付。これより前の日付の未出力は「遅れて出てきた」もの
   const exportedMaxDate = all
@@ -204,8 +219,13 @@ export default async function ReceiptsPage({
                   要確認 <span className="tnum">{todoCount}件</span>
                 </Link>
               </div>
-              {todoCount > 0 && (
-                <p className="text-xs text-ink-muted">要確認のものは、確認済みにするとCSVに出せるようになります。</p>
+              {todoCount > 0 && firstTodoId && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Link href={`/receipts/${firstTodoId}`} className={buttonClass({ variant: "accent", size: "sm" })}>
+                    要確認を順番に確認する（{todoCount}件）
+                  </Link>
+                  <span className="text-xs text-ink-muted">前へ／次へで1枚ずつ確認できます</span>
+                </div>
               )}
             </div>
             <ExportButton count={ready.length} total={readyTotal} nextSeq={(lastExport?.seq ?? 0) + 1} />

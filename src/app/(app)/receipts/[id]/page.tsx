@@ -20,13 +20,28 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   });
   if (!r) notFound();
 
-  // 次に確認するもの（要確認・読み取り失敗を日付順に）
-  const todo = await db.receipt.findMany({
-    where: { exportId: null, status: { in: ["REVIEW", "FAILED", "PROCESSING"] }, id: { not: id } },
-    orderBy: [{ receiptDate: "asc" }, { createdAt: "asc" }],
-    select: { id: true },
-    take: 1,
+  // 確認待ち（要確認・読み取り失敗）を日付順に並べ、前へ／次へで順に確認できるようにする。
+  // 日付の無いものは最後（DB によって null の並びが違うのでここで並べる）
+  const todoRows = await db.receipt.findMany({
+    where: { exportId: null, status: { in: ["REVIEW", "FAILED", "PROCESSING"] } },
+    select: { id: true, receiptDate: true, createdAt: true },
   });
+  todoRows.sort((a, b) => {
+    if (a.receiptDate !== b.receiptDate) {
+      if (!a.receiptDate) return 1;
+      if (!b.receiptDate) return -1;
+      return a.receiptDate < b.receiptDate ? -1 : 1;
+    }
+    return a.createdAt.getTime() - b.createdAt.getTime();
+  });
+  const order = todoRows.map((t) => t.id);
+  const idx = order.indexOf(id);
+  // 確認済みのものを開いているときは、次＝確認待ちの先頭
+  const prevId = idx > 0 ? order[idx - 1] : null;
+  const nextId = idx >= 0 ? (order[idx + 1] ?? null) : (order[0] ?? null);
+  // 確認したあとの行き先：後ろに無ければ、飛ばした前の分（先頭）へ戻る
+  const firstOtherId = order.find((x) => x !== id) ?? null;
+  const queue = { position: idx >= 0 ? idx + 1 : null, total: order.length, prevId, nextId, firstOtherId };
 
   // 同じ日・同じ金額の領収書（二重入力の疑い）
   const similar =
@@ -72,7 +87,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               ? `${jstDateTimeLabel(r.confirmedAt)}${r.confirmedById ? `・${nameOf.get(r.confirmedById) ?? ""}` : ""}`
               : null,
           }}
-          nextTodoId={todo[0]?.id ?? null}
+          queue={queue}
           backHref={`/receipts?m=${backMonth}`}
           similar={similar.map((s) => ({ id: s.id, vendor: s.vendor, exportSeq: s.export?.seq ?? null }))}
         />

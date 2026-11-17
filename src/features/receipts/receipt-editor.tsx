@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, ExternalLink, Loader2, Plus, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, ExternalLink, Loader2, Plus, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,17 @@ import {
 import { deleteReceipt, runReceiptOcr, saveReceipt, unconfirmReceipt } from "./actions";
 
 type Line = { account: string; taxCategory: string; amount: string };
+
+/** 確認待ちの並び（前へ／次へ） */
+export type ReviewQueue = {
+  /** 確認待ちの中で何件目か（確認済みのものを開いているときは null） */
+  position: number | null;
+  total: number;
+  prevId: string | null;
+  nextId: string | null;
+  /** 自分以外で先頭の確認待ち（確認したあと後ろに無いときの行き先） */
+  firstOtherId: string | null;
+};
 
 export type EditorReceipt = {
   id: string;
@@ -50,12 +61,12 @@ const toInt = (s: string): number | null => {
 
 export function ReceiptEditor({
   receipt: r,
-  nextTodoId,
+  queue,
   backHref,
   similar,
 }: {
   receipt: EditorReceipt;
-  nextTodoId: string | null;
+  queue: ReviewQueue;
   backHref: string;
   similar: { id: string; vendor: string | null; exportSeq: number | null }[];
 }) {
@@ -77,6 +88,34 @@ export function ReceiptEditor({
   const [pending, start] = useTransition();
   const [reading, setReading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // 入力を変えたか（保存せずに前へ／次へで離れるときに確かめる）
+  const snapshot = JSON.stringify([receiptDate, vendor, invoiceNumber, total, creditAccount, description, lines]);
+  const initial = useRef(snapshot);
+  const dirty = !locked && snapshot !== initial.current;
+
+  const go = useCallback(
+    (targetId: string | null) => {
+      if (!targetId) return;
+      if (dirty && !window.confirm("保存していない変更があります。保存せずに移動しますか？")) return;
+      router.push(`/receipts/${targetId}`);
+    },
+    [dirty, router],
+  );
+
+  // PC では ← → キーでも前後に移動できる（入力中は効かない）
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.closest("input, textarea, select, [contenteditable=true]") || e.metaKey || e.ctrlKey || e.altKey)) return;
+      if (e.key === "ArrowLeft") go(queue.prevId);
+      if (e.key === "ArrowRight") go(queue.nextId);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go, queue.prevId, queue.nextId]);
+
+  const afterConfirmId = queue.nextId ?? queue.firstOtherId;
 
   const sum = lines.reduce((s, l) => s + (toInt(l.amount) ?? 0), 0);
   const totalNum = toInt(total);
@@ -107,7 +146,12 @@ export function ReceiptEditor({
       }
       if (confirm) {
         toast("確認済みにしました");
-        router.push(nextTodoId ? `/receipts/${nextTodoId}` : backHref);
+        if (afterConfirmId) {
+          router.push(`/receipts/${afterConfirmId}`);
+        } else {
+          toast("確認待ちはすべて終わりました");
+          router.push(backHref);
+        }
       } else {
         toast("保存しました");
         router.refresh();
@@ -129,6 +173,33 @@ export function ReceiptEditor({
 
   return (
     <div className="grid gap-5 md:grid-cols-2 md:items-start">
+      {/* 確認待ちの前へ／次へ */}
+      <div className="card flex items-center gap-2 p-2 md:col-span-2 md:p-3">
+        <Button type="button" variant="outline" disabled={!queue.prevId} onClick={() => go(queue.prevId)}>
+          <ChevronLeft className="h-5 w-5" /> 前へ
+        </Button>
+        <div className="min-w-0 flex-1 text-center">
+          {queue.position != null ? (
+            <p className="text-sm font-semibold text-ink tnum">
+              確認待ち <span className="text-lg">{queue.position}</span> / {queue.total}件目
+            </p>
+          ) : queue.total > 0 ? (
+            <p className="text-sm font-semibold text-ink tnum">確認待ちはあと {queue.total}件</p>
+          ) : (
+            <p className="text-sm font-semibold text-emerald-700">確認待ちはありません</p>
+          )}
+          <p className="hidden text-xs text-ink-muted md:block">キーボードの ← → でも移動できます</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={!queue.nextId}
+          onClick={() => go(queue.nextId)}
+        >
+          {queue.position == null && queue.nextId ? "確認待ちへ" : "次へ"} <ChevronRight className="h-5 w-5" />
+        </Button>
+      </div>
+
       {/* 写真 */}
       <div className="md:sticky md:top-24">
         {r.isPdf ? (
@@ -315,7 +386,7 @@ export function ReceiptEditor({
           <div className="space-y-2 border-t border-line pt-4">
             <Button type="button" size="lg" className="w-full" disabled={pending || reading} onClick={() => save(true)}>
               {pending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
-              確認済みにする{nextTodoId ? "（次の要確認へ）" : ""}
+              {afterConfirmId ? "確認済みにして次へ" : "確認済みにする"}
             </Button>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" className="flex-1" disabled={pending || reading} onClick={() => save(false)}>
