@@ -79,7 +79,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             description: r.description ?? "",
             ocrError: r.ocrError,
             ocrModel: r.ocrModel,
-            lines: r.lines.map((l) => ({ account: l.account, taxCategory: l.taxCategory, amount: l.amount })),
+            lines: r.lines.map((l) => ({ account: l.account, subAccount: l.subAccount, taxCategory: l.taxCategory, amount: l.amount })),
             exportSeq: r.export?.seq ?? null,
             exportedAtLabel: r.export ? jstDateTimeLabel(r.export.createdAt) : null,
             uploadedLabel: `${jstDateTimeLabel(r.createdAt)}${r.uploadedById ? `・${nameOf.get(r.uploadedById) ?? ""}` : ""}`,

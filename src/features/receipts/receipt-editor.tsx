@@ -12,7 +12,10 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import {
   CREDIT_ACCOUNTS,
+  ACCOUNT_DEFS,
+  ACCOUNT_GROUP_LABEL,
   RECEIPT_ACCOUNTS,
+  subAccountsOf,
   RECEIPT_VIEW_LABEL,
   receiptMemo,
   TAX_10,
@@ -22,7 +25,7 @@ import {
 } from "@/lib/receipts";
 import { deleteReceipt, runReceiptOcr, saveReceipt, unconfirmReceipt } from "./actions";
 
-type Line = { account: string; taxCategory: string; amount: string };
+type Line = { account: string; subAccount: string; taxCategory: string; amount: string };
 
 /** 確認待ちの並び（前へ／次へ） */
 export type ReviewQueue = {
@@ -47,7 +50,7 @@ export type EditorReceipt = {
   description: string;
   ocrError: string | null;
   ocrModel: string | null;
-  lines: { account: string; taxCategory: string; amount: number }[];
+  lines: { account: string; subAccount: string | null; taxCategory: string; amount: number }[];
   exportSeq: number | null;
   exportedAtLabel: string | null;
   uploadedLabel: string;
@@ -82,8 +85,8 @@ export function ReceiptEditor({
   const [description, setDescription] = useState(r.description);
   const [lines, setLines] = useState<Line[]>(
     r.lines.length
-      ? r.lines.map((l) => ({ ...l, amount: String(l.amount) }))
-      : [{ account: "", taxCategory: TAX_10, amount: r.totalAmount != null ? String(r.totalAmount) : "" }],
+      ? r.lines.map((l) => ({ ...l, subAccount: l.subAccount ?? "", amount: String(l.amount) }))
+      : [{ account: "", subAccount: "", taxCategory: TAX_10, amount: r.totalAmount != null ? String(r.totalAmount) : "" }],
   );
   const [pending, start] = useTransition();
   const [reading, setReading] = useState(false);
@@ -137,7 +140,12 @@ export function ReceiptEditor({
         description,
         lines: lines
           .filter((l) => l.account.trim() || l.amount.trim())
-          .map((l) => ({ account: l.account, taxCategory: l.taxCategory, amount: toInt(l.amount) ?? 0 })),
+          .map((l) => ({
+            account: l.account,
+            subAccount: l.subAccount || null,
+            taxCategory: l.taxCategory,
+            amount: toInt(l.amount) ?? 0,
+          })),
         confirm,
       });
       if (res.error) {
@@ -321,55 +329,90 @@ export function ReceiptEditor({
           {/* 明細（税率・勘定科目ごと） */}
           <div>
             <p className="mb-1.5 text-sm font-semibold text-ink-soft">勘定科目と金額（税率ごと）</p>
-            <datalist id="receipt-accounts">
-              {RECEIPT_ACCOUNTS.map((a) => (
-                <option key={a} value={a} />
-              ))}
-            </datalist>
             <div className="space-y-2">
-              {lines.map((l, i) => (
-                <div key={i} className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-line p-2 sm:grid-cols-[1fr_1fr_8rem_auto] sm:items-center">
-                  <Input
-                    list="receipt-accounts"
-                    value={l.account}
-                    onChange={(e) => setLine(i, { account: e.target.value })}
-                    placeholder="勘定科目"
-                    aria-label="勘定科目"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setLines((prev) => prev.filter((_, j) => j !== i))}
-                    disabled={lines.length <= 1}
-                    className="flex h-12 w-10 items-center justify-center text-ink-muted disabled:opacity-30 sm:order-last"
-                    aria-label="この行を消す"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                  <Select value={l.taxCategory} onChange={(e) => setLine(i, { taxCategory: e.target.value })} aria-label="税区分">
-                    {!(TAX_CATEGORIES as readonly string[]).includes(l.taxCategory) && (
-                      <option value={l.taxCategory}>{l.taxCategory}</option>
-                    )}
-                    {TAX_CATEGORIES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </Select>
-                  <Input
-                    inputMode="numeric"
-                    value={l.amount}
-                    onChange={(e) => setLine(i, { amount: e.target.value })}
-                    placeholder="税込金額"
-                    aria-label="税込金額"
-                    className="text-right"
-                  />
-                </div>
-              ))}
+              {lines.map((l, i) => {
+                const subs = subAccountsOf(l.account);
+                const known = RECEIPT_ACCOUNTS.includes(l.account);
+                return (
+                  <div key={i} className="space-y-2 rounded-xl border border-line p-2">
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-[3]">
+                        <Select
+                          value={l.account}
+                          onChange={(e) => setLine(i, { account: e.target.value, subAccount: "" })}
+                          aria-label="勘定科目"
+                          aria-invalid={!known && !!l.account}
+                        >
+                          {!l.account && <option value="">勘定科目を選ぶ</option>}
+                          {!known && l.account && <option value={l.account}>{l.account}（MFに無い科目）</option>}
+                          {(["COST", "SGA"] as const).map((g) => (
+                            <optgroup key={g} label={ACCOUNT_GROUP_LABEL[g]}>
+                              {ACCOUNT_DEFS.filter((a) => a.group === g).map((a) => (
+                                <option key={a.name} value={a.name}>
+                                  {a.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </Select>
+                      </div>
+                      {subs.length > 0 && (
+                        <div className="min-w-0 flex-[2]">
+                          <Select
+                            value={l.subAccount}
+                            onChange={(e) => setLine(i, { subAccount: e.target.value })}
+                            aria-label="補助科目"
+                          >
+                            <option value="">補助科目なし</option>
+                            {l.subAccount && !subs.includes(l.subAccount) && (
+                              <option value={l.subAccount}>{l.subAccount}</option>
+                            )}
+                            {subs.map((x) => (
+                              <option key={x} value={x}>
+                                {x}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setLines((prev) => prev.filter((_, j) => j !== i))}
+                        disabled={lines.length <= 1}
+                        className="flex h-12 w-8 shrink-0 items-center justify-center text-ink-muted disabled:opacity-30"
+                        aria-label="この行を消す"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-[1fr_9rem] gap-2 pr-10">
+                      <Select value={l.taxCategory} onChange={(e) => setLine(i, { taxCategory: e.target.value })} aria-label="税区分">
+                        {!(TAX_CATEGORIES as readonly string[]).includes(l.taxCategory) && (
+                          <option value={l.taxCategory}>{l.taxCategory}</option>
+                        )}
+                        {TAX_CATEGORIES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </Select>
+                      <Input
+                        inputMode="numeric"
+                        value={l.amount}
+                        onChange={(e) => setLine(i, { amount: e.target.value })}
+                        placeholder="税込金額"
+                        aria-label="税込金額"
+                        className="text-right"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={() => setLines((prev) => [...prev, { account: "", taxCategory: TAX_10, amount: "" }])}
+                onClick={() => setLines((prev) => [...prev, { account: "", subAccount: "", taxCategory: TAX_10, amount: "" }])}
                 className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700"
               >
                 <Plus className="h-4 w-4" /> 行を足す（税率や科目が分かれるとき）

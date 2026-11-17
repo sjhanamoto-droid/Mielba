@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { buttonClass } from "@/components/ui/button";
 import { jstDateKey, jstDateTimeLabel } from "@/lib/date";
 import {
+  accountLabel,
   monthLabel,
   receiptView,
   RECEIPT_VIEW_LABEL,
@@ -155,7 +156,7 @@ export default async function ReceiptsPage({
           updatedAt: true,
           ocrError: true,
           export: { select: { seq: true } },
-          lines: { orderBy: { sortOrder: "asc" }, select: { account: true, amount: true } },
+          lines: { orderBy: { sortOrder: "asc" }, select: { account: true, subAccount: true, amount: true } },
         },
       })
     : [];
@@ -295,7 +296,7 @@ export default async function ReceiptsPage({
                 if (view !== "exported" && r.receiptDate && exportedMaxDate && r.receiptDate <= exportedMaxDate) {
                   warnings.push("出力済みの期間の日付");
                 }
-                const accounts = Array.from(new Set(r.lines.map((l) => l.account))).join("・");
+                const accounts = Array.from(new Set(r.lines.map((l) => accountLabel(l.account, l.subAccount)))).join("、");
                 return (
                   <li key={r.id}>
                     <Link href={`/receipts/${r.id}`} className="flex items-center gap-3 px-3 py-3 hover:bg-surface-subtle md:px-4">

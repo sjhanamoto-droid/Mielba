@@ -18,7 +18,9 @@ import { putInTrash, snapshotBlobPaths, snapshotGraph } from "@/lib/trash";
 import {
   buildMfCsv,
   isDateKey,
+  ACCOUNT_DEFS,
   RECEIPT_ACCOUNTS,
+  subAccountsOf,
   TAX_10,
   TAX_8,
   yen,
@@ -110,7 +112,8 @@ export async function createReceipt(input: z.input<typeof createSchema>): Promis
 const ocrLineSchema = z.object({
   taxRate: z.enum(["10", "8", "0"]).describe("消費税率。10=標準税率、8=軽減税率（食品など）、0=非課税・対象外"),
   amount: z.number().int().describe("この行の税込金額（円・整数）"),
-  account: z.string().describe("勘定科目（指定の一覧から選ぶ）"),
+  account: z.string().describe("勘定科目（指定の一覧の名前をそのまま。括弧の全角・半角も一覧どおり）"),
+  subAccount: z.string().nullable().describe("補助科目（その勘定科目の補助科目一覧から選ぶ。当てはまらない・無いときは null）"),
 });
 
 const ocrSchema = z.object({
@@ -144,28 +147,33 @@ function ocrSystemPrompt(today: string): string {
     "- 同じ税率でも明らかに用途の違うもの（例: 来客用のお菓子と文房具）は勘定科目を分けて別の行にしてよい。",
     "- lines の金額の合計が totalAmount と一致するようにする。",
     "",
-    `勘定科目は次の一覧から選ぶ: ${RECEIPT_ACCOUNTS.join("、")}`,
-    "目安（会社のMFの科目の説明に合わせる）:",
-    "- 消耗品費: 文房具類・パソコン関連用品・工具・作業用品・日用品など、使える期間が1年に満たない物品",
-    "- 材料費: 工事に使う電線・ケーブル・配管・ボックス・器具・ブレーカーなどの電材や部材",
-    "- 旅費交通費: 電車・バス・タクシー・高速道路・コインパーキング・宿泊",
-    "- 地代家賃: 月極駐車場・事務所や倉庫の家賃",
-    "- リース料: 機械・車・複合機などのリース代",
-    "- 外注工賃: 外部の業者に頼んだ作業・加工の代金",
-    "- 研修採用費: 講習・資格試験・求人広告",
-    "- 車両費: ガソリン・洗車・オイル交換など車の費用",
-    "- 会議費: 打合せの飲食・カフェ",
-    "- 接待交際費: 得意先・取引先との食事、お歳暮・お中元・お土産",
-    "- 通信費: インターネット利用料・電話代・切手・郵便などの送付費用",
-    "- 新聞図書費: 書籍・雑誌・新聞",
-    "- 水道光熱費: 電気代・ガス代・水道代",
-    "- 修繕費: 事務所・店舗・機械・車などのメンテナンスや壊れたものの補修",
-    "- 租税公課: 収入印紙・税金・車庫証明や印鑑証明書などの公的な書類の発行手数料",
-    "- 荷造運賃: 梱包材料を含む発送費用",
-    "- 広告宣伝費: チラシ・POP・試供品・ネット広告",
-    "- 損害保険料: 事務所や事業用の車の保険",
-    "- 支払手数料: 振込手数料など、福利厚生費: 従業員全体のための飲食・慰安、雑費: どれにも当たらないもの",
-    "1点が10万円を超える物品は、勘定科目を消耗品費にしたうえで summary の先頭に「10万円超」と書く（経理が判断する）。",
+    "勘定科目と補助科目は次の一覧から選ぶ（名前は一字一句そのまま。補助科目は「→」の後ろから選び、当てはまらなければ null）:",
+    ...ACCOUNT_DEFS.map(
+      (a) => `- [${a.group === "COST" ? "原価" : "販管費"}] ${a.name}${a.subs?.length ? ` → ${a.subs.join(" / ")}` : ""}`,
+    ),
+    "",
+    "原価（名前に(製)が付く科目）と販管費の分け方:",
+    "- 現場の工事・作業に使ったもの・現場への移動は原価。電気工事会社なので、電材・工具・ガソリン・現場近くの駐車場などは原価。",
+    "- 接待・広告・保険・税金・手数料・採用や講習・発送など会社全体の経費は販管費。",
+    "",
+    "勘定科目の目安:",
+    "- 材料仕入高(製): 工事に使う電線・ケーブル・配管・ボックス・器具・ブレーカーなどの電材・部材。仕入先が渡辺パイプ・イトウ電機・新明電材なら同じ名前の補助科目、それ以外は補助科目 null",
+    "- 備品・消耗品費(製): 工具・作業用品・作業着・軍手・テープ・文房具・日用品など",
+    "- 燃料費（製）: ガソリン・軽油（車の燃料）",
+    "- 旅費交通費(製): 現場への移動。コインパーキング=パーキング、タクシー=タクシー、ホテル=宿泊費、ETC利用=ETC、電車やバス=電車・バス、高速道路・有料道路の現金払い=有料道路",
+    "- 外注加工費(製): 外部の業者に頼んだ作業・加工",
+    "- 福利厚生費(製): 現場の作業員の飲み物・差し入れ",
+    "- 会議費(製): 工事の打合せの飲食・カフェ",
+    "- 会議費 / 飲食費: 会社としての打合せの飲食・カフェ",
+    "- 接待交際費: 得意先・取引先との食事（飲食費）、お歳暮・お中元・手土産（補助科目 null）",
+    "- 旅費交通費: 現場以外の移動（会社の用事・出張）。補助科目は原価と同じ考え方",
+    "- 車両費: 洗車・オイル交換・車検整備・修理は補助科目「整備」、それ以外は null",
+    "- 租税公課: 収入印紙・自動車税・車庫証明や印鑑証明書などの公的な書類の手数料",
+    "- 保険料: 自動車保険・事業の保険、リース料: 機械・車・複合機のリース代",
+    "- 支払手数料: 振込手数料など、荷造運賃: 梱包材料を含む発送費用、広告宣伝費: チラシ・ネット広告",
+    "- 研修採用費: 講習・資格試験・求人広告、業務委託料: 業務の委託",
+    "- 福利厚生費: 社内の慰安・従業員全体のための飲食、雑費: どれにも当たらないもの",
+    "1点が10万円を超える物品は、summary の先頭に「10万円超」と書く（経理が判断する）。",
   ].join("\n");
 }
 
@@ -247,13 +255,17 @@ export async function runReceiptOcr(id: string, precise = false): Promise<Result
   const invoiceNumber = normalizeInvoice(out.invoiceNumber);
   let lines = out.lines
     .filter((l) => Number.isFinite(l.amount) && l.amount !== 0)
-    .map((l) => ({
-      account: l.account?.trim() || "雑費",
-      taxCategory: taxCategoryOf(l.taxRate),
-      amount: l.amount,
-    }));
+    .map((l) => {
+      const account = normalizeAccount(l.account);
+      return {
+        account,
+        subAccount: normalizeSub(account, l.subAccount),
+        taxCategory: taxCategoryOf(l.taxRate),
+        amount: l.amount,
+      };
+    });
   if (lines.length === 0 && out.totalAmount != null) {
-    lines = [{ account: "雑費", taxCategory: TAX_10, amount: out.totalAmount }];
+    lines = [{ account: "雑費", subAccount: null, taxCategory: TAX_10, amount: out.totalAmount }];
   }
   let creditAccount = creditOf(out.paymentMethod);
 
@@ -270,14 +282,15 @@ export async function runReceiptOcr(id: string, precise = false): Promise<Result
             ],
           },
           orderBy: { confirmedAt: "desc" },
-          select: { creditAccount: true, lines: { select: { account: true } } },
+          select: { creditAccount: true, lines: { select: { account: true, subAccount: true } } },
         })
       : null;
   if (prev) {
-    const accounts = new Set(prev.lines.map((l) => l.account));
-    if (accounts.size === 1) {
-      const only = [...accounts][0];
-      lines = lines.map((l) => ({ ...l, account: only }));
+    // 前回が1つの科目だけなら、その科目・補助科目に揃える（一覧に無い古い科目名は引き継がない）
+    const keys = new Set(prev.lines.map((l) => `${l.account}\t${l.subAccount ?? ""}`));
+    if (keys.size === 1 && RECEIPT_ACCOUNTS.includes(prev.lines[0].account)) {
+      const { account, subAccount } = prev.lines[0];
+      lines = lines.map((l) => ({ ...l, account, subAccount: normalizeSub(account, subAccount) }));
     }
     if (out.paymentMethod === "UNKNOWN") creditAccount = prev.creditAccount;
   }
@@ -307,6 +320,23 @@ export async function runReceiptOcr(id: string, precise = false): Promise<Result
   return { ok: true };
 }
 
+/** 一覧に無い科目名は、括弧の全角・半角違いを吸収して寄せる。それでも無ければ雑費 */
+function normalizeAccount(raw: string | null | undefined): string {
+  const name = raw?.trim() ?? "";
+  if (RECEIPT_ACCOUNTS.includes(name)) return name;
+  const loose = (s: string) => s.replace(/[（(]/g, "(").replace(/[）)]/g, ")").replace(/\s/g, "");
+  return RECEIPT_ACCOUNTS.find((a) => loose(a) === loose(name)) ?? "雑費";
+}
+
+/** その科目の補助科目一覧にあるものだけ残す */
+function normalizeSub(account: string, raw: string | null | undefined): string | null {
+  const sub = raw?.trim();
+  if (!sub) return null;
+  const subs = subAccountsOf(account);
+  const loose = (s: string) => s.replace(/[・･•]/g, "").replace(/\s/g, "");
+  return subs.find((x) => x === sub || loose(x) === loose(sub)) ?? null;
+}
+
 function normalizeInvoice(s: string | null | undefined): string | null {
   if (!s) return null;
   const digits = s.replace(/[^\d]/g, "");
@@ -326,7 +356,8 @@ const saveSchema = z.object({
   lines: z
     .array(
       z.object({
-        account: z.string().trim().min(1, "勘定科目を入れてください").max(30),
+        account: z.string().trim().min(1, "勘定科目を選んでください").max(30),
+        subAccount: z.string().trim().max(30).nullish(),
         taxCategory: z.string().trim().min(1, "税区分を選んでください").max(30),
         amount: z.number().int(),
       }),
@@ -353,6 +384,11 @@ export async function saveReceipt(input: SaveReceiptInput): Promise<Result> {
   if (d.confirm) {
     if (!receiptDate) return { error: "日付を入れてください（月ごとの並びとCSVに使います）" };
     if (d.lines.some((l) => l.amount <= 0)) return { error: "金額が0円以下の行があります" };
+    // MF に無い科目・補助科目は取り込みでエラーになるので、確認済みにする前に止める
+    const badAccount = d.lines.find((l) => !RECEIPT_ACCOUNTS.includes(l.account));
+    if (badAccount) return { error: `「${badAccount.account}」はMFの勘定科目にありません。一覧から選び直してください` };
+    const badSub = d.lines.find((l) => l.subAccount && !subAccountsOf(l.account).includes(l.subAccount));
+    if (badSub) return { error: `「${badSub.account}」に補助科目「${badSub.subAccount}」はありません` };
     const sum = d.lines.reduce((s, l) => s + l.amount, 0);
     if (d.totalAmount != null && sum !== d.totalAmount) {
       return { error: `明細の合計（${yen(sum)}）が領収書の合計（${yen(d.totalAmount)}）と合いません` };
@@ -379,6 +415,7 @@ export async function saveReceipt(input: SaveReceiptInput): Promise<Result> {
         lines: {
           create: d.lines.map((l, i) => ({
             account: l.account,
+            subAccount: l.subAccount || null,
             taxCategory: l.taxCategory,
             amount: l.amount,
             sortOrder: i,
@@ -460,7 +497,10 @@ export async function exportReceipts(): Promise<ExportResult> {
             vendor: true,
             description: true,
             creditAccount: true,
-            lines: { orderBy: { sortOrder: "asc" }, select: { account: true, taxCategory: true, amount: true } },
+            lines: {
+              orderBy: { sortOrder: "asc" },
+              select: { account: true, subAccount: true, taxCategory: true, amount: true },
+            },
           },
         });
         const usable = targets.filter((t) => t.lines.length > 0);

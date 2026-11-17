@@ -752,6 +752,7 @@ model ReceiptLine {
   id          String @id @default(cuid())
   receiptId   String
   account     String // 借方勘定科目
+  subAccount  String? // 借方補助科目（例: 旅費交通費(製) の「パーキング」）。null=補助科目なし
   taxCategory String // 借方税区分（課税仕入 10% / 課税仕入 (軽)8% / 対象外 など）
   amount      Int // 税込金額（円）
   sortOrder   Int    @default(0)
